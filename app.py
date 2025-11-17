@@ -1855,48 +1855,43 @@ def login():
             flash("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน", "danger")
             return render_template("auth/login.html")
 
-        # หา user ตาม username
-        user = User.query.filter_by(username=username).first()
-
-        # ===== กรณีระบบยังไม่มี user เลย ให้สร้าง user แรกขึ้นมาทันที =====
-        if user is None and User.query.count() == 0:
+        # ---------- BOOTSTRAP ADMIN ถ้ายังไม่มี user ในระบบเลย ----------
+        if User.query.count() == 0:
             from werkzeug.security import generate_password_hash
 
             try:
-                # สร้าง User ด้วย username อย่างเดียวก่อน
-                user = User(username=username)
+                admin = User(username="admin")
 
-                # ถ้าโมเดลมีฟิลด์ role_code / role ให้เซ็ตเป็น admin
+                # มีฟิลด์ role_code / role อะไรก็เซ็ตเป็น admin ให้
                 if hasattr(User, "role_code"):
-                    user.role_code = "admin"
+                    admin.role_code = "admin"
                 elif hasattr(User, "role"):
-                    # กรณีโปรเจคเก่าเคยใช้ field ชื่อ role
-                    user.role = "admin"
+                    admin.role = "admin"
 
                 # ตั้งชื่อแสดงผล ถ้ามีฟิลด์เหล่านี้
                 if hasattr(User, "full_name"):
-                    user.full_name = "ผู้ดูแลระบบ"
+                    admin.full_name = "ผู้ดูแลระบบ"
                 elif hasattr(User, "name"):
-                    user.name = "ผู้ดูแลระบบ"
+                    admin.name = "ผู้ดูแลระบบ"
 
                 # เปิดสถานะ active ถ้ามีฟิลด์นี้
                 if hasattr(User, "is_active"):
-                    user.is_active = True
+                    admin.is_active = True
 
-                # ตั้งรหัสผ่านจากที่กรอกในฟอร์ม
-                user.password_hash = generate_password_hash(password)
+                # รหัสผ่านเริ่มต้น admin123
+                admin.password_hash = generate_password_hash("admin123")
 
-                db.session.add(user)
+                db.session.add(admin)
                 db.session.commit()
-                print(f"[seed-login] created initial user from login: {username}")
+                print("[bootstrap] created default admin user: admin / admin123")
             except Exception as e:
                 db.session.rollback()
-                print(f"[seed-login] failed to create initial user: {e}")
-                user = None  # กันเผื่อจะไปเช็คต่อด้านล่าง
+                print(f"[bootstrap] failed to create default admin: {e}")
 
-        # ===== เช็ครหัสผ่านตามปกติ =====
+        # ---------- ล็อกอินตามปกติ ----------
+        user = User.query.filter_by(username=username).first()
+
         if user and hasattr(user, "check_password") and user.check_password(password):
-            # ถ้ามีฟิลด์ is_active และเป็น False ก็ไม่ให้เข้า
             if hasattr(user, "is_active") and not user.is_active:
                 flash("บัญชีนี้ถูกปิดการใช้งาน", "danger")
             else:
@@ -1908,6 +1903,7 @@ def login():
 
     # GET หรือกรณีเช็คไม่ผ่าน กลับมาแสดงหน้า login
     return render_template("auth/login.html")
+
 
 
 @app.route("/auth/logout", methods=["POST"])
