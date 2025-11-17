@@ -1,0 +1,18 @@
+# virtual environment
+.venv/
+env/
+venv/
+
+# compiled python files
+__pycache__/
+*.pyc
+
+# local db & instance folder
+instance/
+*.db
+
+# alembic cache
+migrations/versions/__pycache__/
+
+# IDE settings (เอาออกได้ถ้าอยากแชร์ .vscode)
+.vscode/
