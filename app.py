@@ -869,14 +869,32 @@ def load_user(user_id: str):
 def user_has_perm(user, perm_code: str) -> bool:
     if not user or not user.is_authenticated:
         return False
+
+    # ----- ให้ admin เป็น superuser -----
+    # 1) ถ้าชื่อผู้ใช้เป็น admin
+    if getattr(user, "username", None) == "admin":
+        return True
+
+    # 2) ถ้ามี field user.role แล้วเป็น admin (เผื่อใช้แบบเก่า)
+    if getattr(user, "role", None) == "admin":
+        return True
+
+    # 3) ถ้ามี role object ที่ code == 'admin'
     if any(r.code == "admin" for r in getattr(user, "roles", [])):
         return True
+
+    # ----- ตรวจสิทธิ์ตาม perm ปกติ -----
+    # perm ตรง ๆ ผูกกับ user
     if any(p.code == perm_code for p in getattr(user, "perms", [])):
         return True
+
+    # perm ผ่าน role ต่าง ๆ
     for r in getattr(user, "roles", []):
         if any(p.code == perm_code for p in getattr(r, "perms", [])):
             return True
+
     return False
+
 
 def permission_required(perm_code: str):
     def deco(fn):
@@ -4648,15 +4666,16 @@ def permission_required(code):
     def decorator(f):
         @wraps(f)
         def wrapped(*args, **kwargs):
+            # ยังไม่ล็อกอิน → เด้งไปหน้า login
             if not current_user.is_authenticated:
                 return login_manager.unauthorized()
 
-            # --- ให้ admin เป็น superuser ---
+            # ----- ให้ admin เป็น superuser ใช้ได้ทุกเมนู -----
             if getattr(current_user, "username", None) == "admin":
                 return f(*args, **kwargs)
 
-            # ถ้าไม่มี has_perm หรือไม่มีสิทธิ์ -> 403
-            if not hasattr(current_user, "has_perm") or not current_user.has_perm(code):
+            # ตรวจสิทธิ์ปกติสำหรับ user อื่น
+            if not user_has_perm(current_user, code):
                 abort(403)
 
             return f(*args, **kwargs)
