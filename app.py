@@ -1843,22 +1843,59 @@ def dashboard():
 # ---- Auth ----
 @app.route("/auth/login", methods=["GET", "POST"])
 def login():
+    # ถ้าล็อกอินอยู่แล้ว ให้เด้งไปหน้า dashboard เลย
     if current_user.is_authenticated:
-        return redirect(url_for("home"))
+        return redirect(url_for("dashboard"))
+
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
-        remember = bool(request.form.get("remember"))
+
+        if not username or not password:
+            flash("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน", "danger")
+            return render_template("auth/login.html")
+
+        # หา user ตาม username
         user = User.query.filter_by(username=username).first()
-        if not user or not check_password_hash(user.password_hash, password):
-            flash("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง", "danger")
-            return redirect(url_for("login"))
-        if not user.is_active:
-            flash("ผู้ใช้นี้ถูกปิดการใช้งาน", "warning")
-            return redirect(url_for("login"))
-        login_user(user, remember=remember)
-        return redirect(url_for("home"))
+
+        # ===== กรณีระบบยังไม่มี user เลย ให้สร้าง user แรกขึ้นมาทันที =====
+        if user is None and User.query.count() == 0:
+            from werkzeug.security import generate_password_hash
+
+            user = User(username=username, role="admin")
+
+            # ตั้งชื่อแสดงผล ถ้ามีฟิลด์เหล่านี้
+            if hasattr(User, "full_name"):
+                user.full_name = "ผู้ดูแลระบบ"
+            elif hasattr(User, "name"):
+                user.name = "ผู้ดูแลระบบ"
+
+            # เปิดสถานะ active ถ้ามีฟิลด์นี้
+            if hasattr(User, "is_active"):
+                user.is_active = True
+
+            # ตั้งรหัสผ่านจากที่กรอกในฟอร์ม
+            user.password_hash = generate_password_hash(password)
+
+            db.session.add(user)
+            db.session.commit()
+            print(f"[seed-login] created initial user from login: {username}")
+
+        # ===== เช็ครหัสผ่านตามปกติ =====
+        if user and hasattr(user, "check_password") and user.check_password(password):
+            # ถ้ามีฟิลด์ is_active และเป็น False ก็ไม่ให้เข้า
+            if hasattr(user, "is_active") and not user.is_active:
+                flash("บัญชีนี้ถูกปิดการใช้งาน", "danger")
+            else:
+                login_user(user)
+                next_url = request.args.get("next") or url_for("dashboard")
+                return redirect(next_url)
+        else:
+            flash("ชื่อผู้ใช้หรือรหัสผ่านผิด", "danger")
+
+    # GET หรือกรณีเช็คไม่ผ่าน กลับมาแสดงหน้า login
     return render_template("auth/login.html")
+
 
 @app.route("/auth/logout", methods=["POST"])
 def logout():
