@@ -1841,6 +1841,8 @@ def dashboard():
     )
 
 # ---- Auth ----
+from werkzeug.security import check_password_hash  # ถ้ายังไม่ได้ import ไว้ด้านบน ให้ใส่บรรทัดนี้เพิ่ม
+
 @app.route("/auth/login", methods=["GET", "POST"])
 def login():
     # ถ้าล็อกอินอยู่แล้ว ให้เด้งไปหน้า dashboard เลย
@@ -1855,51 +1857,44 @@ def login():
             flash("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน", "danger")
             return render_template("auth/login.html")
 
-        # ---------- BOOTSTRAP ADMIN ถ้ายังไม่มี user ในระบบเลย ----------
-        if User.query.count() == 0:
-            from werkzeug.security import generate_password_hash
-
-            try:
-                admin = User(username="admin")
-
-                # มีฟิลด์ role_code / role อะไรก็เซ็ตเป็น admin ให้
-                if hasattr(User, "role_code"):
-                    admin.role_code = "admin"
-                elif hasattr(User, "role"):
-                    admin.role = "admin"
-
-                # ตั้งชื่อแสดงผล ถ้ามีฟิลด์เหล่านี้
-                if hasattr(User, "full_name"):
-                    admin.full_name = "ผู้ดูแลระบบ"
-                elif hasattr(User, "name"):
-                    admin.name = "ผู้ดูแลระบบ"
-
-                # เปิดสถานะ active ถ้ามีฟิลด์นี้
-                if hasattr(User, "is_active"):
-                    admin.is_active = True
-
-                # รหัสผ่านเริ่มต้น admin123
-                admin.password_hash = generate_password_hash("admin123")
-
-                db.session.add(admin)
-                db.session.commit()
-                print("[bootstrap] created default admin user: admin / admin123")
-            except Exception as e:
-                db.session.rollback()
-                print(f"[bootstrap] failed to create default admin: {e}")
-
-        # ---------- ล็อกอินตามปกติ ----------
+        # หา user ตาม username
         user = User.query.filter_by(username=username).first()
 
-        if user and hasattr(user, "check_password") and user.check_password(password):
+        # ---------- เช็ครหัสผ่าน ----------
+        password_ok = False
+
+        if user:
+            if hasattr(user, "check_password"):
+                # กรณี model มี method check_password()
+                try:
+                    password_ok = user.check_password(password)
+                except Exception as e:
+                    print(f"[login] user.check_password error: {e}")
+                    password_ok = False
+            elif hasattr(user, "password_hash"):
+                # กรณีเก่า: เก็บ hash ไว้ใน field password_hash
+                try:
+                    if user.password_hash:
+                        password_ok = check_password_hash(user.password_hash, password)
+                except Exception as e:
+                    print(f"[login] check_password_hash error: {e}")
+                    password_ok = False
+            elif hasattr(user, "password"):
+                # fallback สุดท้าย: เก็บ plain text ไว้ใน field password
+                password_ok = (user.password == password)
+
+        if password_ok:
+            # ถ้ามีฟิลด์ is_active และเป็น False ก็ไม่ให้เข้า
             if hasattr(user, "is_active") and not user.is_active:
                 flash("บัญชีนี้ถูกปิดการใช้งาน", "danger")
             else:
                 login_user(user)
                 next_url = request.args.get("next") or url_for("dashboard")
+                print(f"[login] user '{user.username}' logged in")
                 return redirect(next_url)
         else:
             flash("ชื่อผู้ใช้หรือรหัสผ่านผิด", "danger")
+            print(f"[login] invalid login for username='{username}'")
 
     # GET หรือกรณีเช็คไม่ผ่าน กลับมาแสดงหน้า login
     return render_template("auth/login.html")
