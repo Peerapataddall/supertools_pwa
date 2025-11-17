@@ -1862,24 +1862,37 @@ def login():
         if user is None and User.query.count() == 0:
             from werkzeug.security import generate_password_hash
 
-            user = User(username=username, role="admin")
+            try:
+                # สร้าง User ด้วย username อย่างเดียวก่อน
+                user = User(username=username)
 
-            # ตั้งชื่อแสดงผล ถ้ามีฟิลด์เหล่านี้
-            if hasattr(User, "full_name"):
-                user.full_name = "ผู้ดูแลระบบ"
-            elif hasattr(User, "name"):
-                user.name = "ผู้ดูแลระบบ"
+                # ถ้าโมเดลมีฟิลด์ role_code / role ให้เซ็ตเป็น admin
+                if hasattr(User, "role_code"):
+                    user.role_code = "admin"
+                elif hasattr(User, "role"):
+                    # กรณีโปรเจคเก่าเคยใช้ field ชื่อ role
+                    user.role = "admin"
 
-            # เปิดสถานะ active ถ้ามีฟิลด์นี้
-            if hasattr(User, "is_active"):
-                user.is_active = True
+                # ตั้งชื่อแสดงผล ถ้ามีฟิลด์เหล่านี้
+                if hasattr(User, "full_name"):
+                    user.full_name = "ผู้ดูแลระบบ"
+                elif hasattr(User, "name"):
+                    user.name = "ผู้ดูแลระบบ"
 
-            # ตั้งรหัสผ่านจากที่กรอกในฟอร์ม
-            user.password_hash = generate_password_hash(password)
+                # เปิดสถานะ active ถ้ามีฟิลด์นี้
+                if hasattr(User, "is_active"):
+                    user.is_active = True
 
-            db.session.add(user)
-            db.session.commit()
-            print(f"[seed-login] created initial user from login: {username}")
+                # ตั้งรหัสผ่านจากที่กรอกในฟอร์ม
+                user.password_hash = generate_password_hash(password)
+
+                db.session.add(user)
+                db.session.commit()
+                print(f"[seed-login] created initial user from login: {username}")
+            except Exception as e:
+                db.session.rollback()
+                print(f"[seed-login] failed to create initial user: {e}")
+                user = None  # กันเผื่อจะไปเช็คต่อด้านล่าง
 
         # ===== เช็ครหัสผ่านตามปกติ =====
         if user and hasattr(user, "check_password") and user.check_password(password):
@@ -5502,15 +5515,19 @@ print("REPAIRS ROUTES:",
 def seed_default_admin():
     from werkzeug.security import generate_password_hash
 
-    # ถ้ามี admin อยู่แล้วก็ไม่ต้องทำอะไร
     admin = User.query.filter_by(username="admin").first()
     if admin:
         print("[seed] admin already exists")
         return
 
-    admin = User(username="admin", role="admin")
+    admin = User(username="admin")
 
-    # ตั้งชื่อถ้ามี field
+    # ถ้ามี role_code ให้ใช้เป็น admin
+    if hasattr(User, "role_code"):
+        admin.role_code = "admin"
+    elif hasattr(User, "role"):
+        admin.role = "admin"
+
     if hasattr(User, "full_name"):
         admin.full_name = "ผู้ดูแลระบบ"
     elif hasattr(User, "name"):
@@ -5524,6 +5541,7 @@ def seed_default_admin():
     db.session.add(admin)
     db.session.commit()
     print("[seed] created default admin user: admin / admin123")
+
 
 
 # ==== run startup tasks (create tables + seed) =====================
