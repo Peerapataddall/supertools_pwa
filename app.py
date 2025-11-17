@@ -7,6 +7,7 @@ import re
 from flask_sqlalchemy import SQLAlchemy
 from collections import defaultdict
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, current_user, login_required
 )
@@ -4671,15 +4672,19 @@ def seed_transport_perms():
 # ============================================================================
 
 # ==== call transport seeding once at startup ================================
+with app.app_context():
+    try:
+        db.create_all()
+        print("[init] db.create_all completed")
+    except OperationalError as e:
+        print(f"[init] db.create_all failed: {e}")
+
+# ==== call transport seeding once at startup =================
 try:
     with app.app_context():
         seed_transport_perms()
 except Exception as e:
     print(f"[seed] transport perms failed: {e}")
-
-# ============================================================================
-
-
 
 # ================== DELIVERY / TRANSPORT BLUEPRINT (PLACEHOLDER) ==================
 
