@@ -893,7 +893,17 @@ def permission_required(perm_code: str):
 @app.context_processor
 def inject_perms():
     def _can(code):
+        # ถ้ายังไม่ล็อกอิน → ไม่มีสิทธิ์
+        if not current_user.is_authenticated:
+            return False
+
+        # ให้ admin เห็นทุกเมนู (superuser)
+        if getattr(current_user, "username", None) == "admin":
+            return True
+
+        # ปกติใช้ฟังก์ชันเดิมเช็คสิทธิ์
         return user_has_perm(current_user, code)
+
     return {"can": _can}
 
 def _unit_to_days(unit: str, n: int | float) -> int:
@@ -4635,13 +4645,24 @@ def print_doc(did):
 bp_delivery = Blueprint("delivery", __name__, url_prefix="/delivery")
 
 def permission_required(code):
-    # ใช้ตัวเดิมของคุณ ถ้ามีอยู่แล้วให้ลบสตับนี้ทิ้ง
-    def deco(fn):
-        def wrapped(*a, **kw):
-            return fn(*a, **kw)
-        wrapped.__name__ = fn.__name__
-        return login_required(wrapped)
-    return deco
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return login_manager.unauthorized()
+
+            # --- ให้ admin เป็น superuser ---
+            if getattr(current_user, "username", None) == "admin":
+                return f(*args, **kwargs)
+
+            # ถ้าไม่มี has_perm หรือไม่มีสิทธิ์ -> 403
+            if not hasattr(current_user, "has_perm") or not current_user.has_perm(code):
+                abort(403)
+
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
 
 @bp_delivery.route("/")
 @permission_required("transport.view")
