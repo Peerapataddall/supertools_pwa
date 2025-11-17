@@ -1,0 +1,119 @@
+{# templates/deliveries/vehicles.html #}
+{% extends "base.html" %}
+{% block title %}รถขนส่ง{% endblock %}
+
+{% block head %}
+<style>
+  .dv-hero{
+    background:
+      radial-gradient(900px 300px at -10% -40%, rgba(131,105,83,.2), transparent),
+      linear-gradient(135deg,#f8fafc,#e5e7eb);
+    border-radius:1.25rem;
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+    border:1px solid rgba(15,23,42,.06);
+    box-shadow:0 18px 40px rgba(15,23,42,.08);
+  }
+  .dv-hero-title{
+    display:flex; align-items:center; gap:.6rem; font-weight:700;
+  }
+  .dv-hero-title i{
+    width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center;
+    background:#fff; color:#836953;
+    box-shadow:0 8px 20px rgba(131,105,83,.25);
+  }
+
+  .dv-card{
+    border-radius:1rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:#ffffff;
+    box-shadow:0 16px 36px rgba(15,23,42,.08);
+  }
+
+  .table-modern thead th{
+    background:linear-gradient(180deg,#f9fafb,#e5e7eb);
+    border-bottom:1px solid rgba(15,23,42,.08);
+    font-weight:600; color:#111827;
+  }
+  .table-modern tbody tr:hover{
+    background:rgba(59,130,246,.04);
+  }
+
+  .small-muted{ font-size:.85rem; color:#6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dv-hero d-flex flex-wrap justify-content-between align-items-center">
+  <div>
+    <div class="dv-hero-title">
+      <i class="bi bi-truck-front"></i>
+      <div>
+        <div class="fs-5">รถขนส่ง</div>
+        <div class="small text-muted">จัดการรายชื่อรถสำหรับใช้วางแผนจัดส่ง</div>
+      </div>
+    </div>
+    <div class="small text-muted mt-1">
+      ทั้งหมด <strong>{{ items|length }}</strong> คัน
+    </div>
+  </div>
+</div>
+
+<div class="dv-card p-3 p-md-4">
+  {% if can('transport.manage') %}
+  <div class="mb-3">
+    <h6 class="fw-semibold mb-2"><i class="bi bi-plus-circle"></i> เพิ่มรถขนส่ง</h6>
+    <form class="row g-2 align-items-end" method="post" action="{{ url_for('deliveries.vehicle_create') }}">
+      {{ csrf_field() if csrf_field is defined }}
+      <div class="col-md-3">
+        <label class="form-label">รหัสรถ (Code) *</label>
+        <input type="text" name="code" class="form-control" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">ชื่อเรียก / รุ่น *</label>
+        <input type="text" name="name" class="form-control" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">ทะเบียนรถ</label>
+        <input type="text" name="plate_no" class="form-control">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-check-lg"></i> บันทึก
+        </button>
+      </div>
+    </form>
+    <div class="small-muted mt-1">* จำเป็นต้องกรอก</div>
+  </div>
+  <hr class="my-3">
+  {% endif %}
+
+  <div class="table-responsive">
+    <table class="table table-modern table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:120px;">รหัส</th>
+          <th>ชื่อรถ</th>
+          <th style="width:140px;">ทะเบียนรถ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in items %}
+        <tr>
+          <td class="fw-semibold text-primary">{{ v.code }}</td>
+          <td>{{ v.name }}</td>
+          <td>{{ v.plate_no or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-muted py-4">
+            ยังไม่มีข้อมูลรถขนส่ง
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

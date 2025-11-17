@@ -1,0 +1,298 @@
+{# templates/deliveries/create_from_source.html #}
+{% extends "base.html" %}
+{% block title %}สร้างใบส่งสินค้า{% endblock %}
+
+{% block head %}
+<style>
+  .dl-hero{
+    background:
+      radial-gradient(900px 260px at -10% -40%, rgba(59,130,246,.16), transparent),
+      linear-gradient(135deg,#f8fafc,#e5e7eb);
+    border-radius:1.25rem;
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+    border:1px solid rgba(15,23,42,.06);
+    box-shadow:0 18px 40px rgba(15,23,42,.08);
+  }
+  .dl-hero-title{
+    display:flex; align-items:center; gap:.6rem; font-weight:700;
+  }
+  .dl-hero-title i{
+    width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center;
+    background:#fff; color:#2563eb;
+    box-shadow:0 8px 20px rgba(37,99,235,.25);
+  }
+  .dl-pill{
+    border-radius:999px;
+    padding:.15rem .7rem;
+    font-size:.8rem;
+    background:#eff6ff;
+    color:#1d4ed8;
+    border:1px solid #bfdbfe;
+  }
+
+  .dl-layout{ display:grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap:1.25rem; }
+  @media (max-width: 992px){
+    .dl-layout{ grid-template-columns: minmax(0,1fr); }
+  }
+
+  .dl-card{
+    border-radius:1rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:#ffffff;
+    box-shadow:0 16px 36px rgba(15,23,42,.08);
+  }
+  .dl-card-header{
+    padding:.85rem 1rem;
+    border-bottom:1px solid rgba(15,23,42,.06);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:.75rem;
+  }
+  .dl-card-body{ padding:1rem 1rem 1.1rem; }
+
+  .table-items thead th{
+    background:linear-gradient(180deg,#f9fafb,#e5e7eb);
+    border-bottom:1px solid rgba(15,23,42,.08);
+    font-weight:600; color:#111827;
+  }
+  .table-items tbody tr:hover{
+    background:rgba(59,130,246,.04);
+  }
+
+  .small-muted{ font-size:.85rem; color:#6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ---------- เลือกเอกสารต้นทาง (QU / CLAIM) ---------- #}
+{# view จะส่งมาแบบใดแบบหนึ่ง: quotation, claim #}
+{% set q = quotation if quotation is defined else None %}
+{% set cl = claim     if claim     is defined else None %}
+{% set src = q if q is not none else (cl if cl is not none else None) %}
+{% set is_claim = is_claim|default(false, true) %}
+
+{% set doc_type_label = 'ใบเสนอราคา' %}
+{% if is_claim %}
+  {% set doc_type_label = 'ใบเคลม' %}
+{% endif %}
+
+<div class="dl-hero">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <div class="dl-hero-title">
+        <i class="bi bi-truck-front"></i>
+        <div>
+          <div class="fs-5">สร้างใบส่งสินค้า</div>
+          <div class="small text-muted">
+            สร้างใบส่งจาก {{ doc_type_label }}
+            {% if src and src.number is defined %}เลขที่ <strong>{{ src.number }}</strong>{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="mt-1 small text-muted">
+        เลือกดูข้อมูลเอกสารต้นทางทางฝั่งซ้าย และกรอกรายละเอียดสถานที่จัดส่งทางฝั่งขวา
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <span class="dl-pill">
+        {% if is_claim %}
+          ส่งอุปกรณ์เคลม
+        {% else %}
+          ส่งสินค้าปกติ
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="dl-layout">
+
+  {# ---------- ฝั่งซ้าย: ข้อมูลเอกสารต้นทาง + รายการสินค้า ---------- #}
+  <section class="dl-card">
+    <div class="dl-card-header">
+      <div>
+        <div class="fw-semibold">
+          <i class="bi bi-file-earmark-text me-1"></i>
+          ข้อมูล {{ doc_type_label }}
+        </div>
+        <div class="small-muted">
+          ตรวจสอบเลขที่ วันที่ ลูกค้า และรายการที่ต้องจัดส่ง
+        </div>
+      </div>
+      {% if src and src.number is defined %}
+      <span class="badge rounded-pill text-bg-light border">
+        # {{ src.number }}
+      </span>
+      {% endif %}
+    </div>
+    <div class="dl-card-body">
+      <dl class="row mb-3 small">
+        <dt class="col-4 col-md-3 text-muted">เลขที่</dt>
+        <dd class="col-8 col-md-9">
+          {{ src and src.number or '—' }}
+        </dd>
+
+        <dt class="col-4 col-md-3 text-muted">วันที่เอกสาร</dt>
+        <dd class="col-8 col-md-9">
+          {% if src and src.date is defined and src.date %}
+            {{ src.date.strftime('%d/%m/%Y') }}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+
+        <dt class="col-4 col-md-3 text-muted">ลูกค้า</dt>
+        <dd class="col-8 col-md-9">
+          {% if src and src.customer is defined and src.customer %}
+            {{ src.customer.name }}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+
+        {% if is_claim and cl and cl.quote is defined and cl.quote %}
+        <dt class="col-4 col-md-3 text-muted">อ้างอิง QU</dt>
+        <dd class="col-8 col-md-9">
+          {{ cl.quote.number }}
+        </dd>
+        {% endif %}
+      </dl>
+
+      <div class="table-responsive">
+        <table class="table table-items table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:60px;">#</th>
+              <th>รายการสินค้า / อุปกรณ์</th>
+              <th class="text-end" style="width:80px;">จำนวน</th>
+              <th class="text-end" style="width:90px;">หน่วย</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set lines = items if items is defined and items is not none else [] %}
+            {% for it in lines %}
+              {% if is_claim %}
+                {# ClaimItem: ใช้ sales_item เป็นหลัก #}
+                {% set si = it.sales_item %}
+                <tr>
+                  <td>{{ loop.index }}</td>
+                  <td>
+                    <div class="fw-semibold">
+                      {{ si and si.name or '—' }}
+                    </div>
+                  </td>
+                  <td class="text-end">
+                    {{ '{:,.2f}'.format(it.qty_claim or 0) }}
+                  </td>
+                  <td class="text-end">
+                    {{ si and si.rent_unit or '' }}
+                  </td>
+                </tr>
+              {% else %}
+                {# SalesItem จากใบเสนอราคา #}
+                <tr>
+                  <td>{{ loop.index }}</td>
+                  <td>
+                    <div class="fw-semibold">{{ it.name or '—' }}</div>
+                  </td>
+                  <td class="text-end">
+                    {{ '{:,.2f}'.format(it.qty or 0) }}
+                  </td>
+                  <td class="text-end">
+                    {{ it.rent_unit or '' }}
+                  </td>
+                </tr>
+              {% endif %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="text-center small text-muted py-3">
+                  ยังไม่มีรายการสินค้าในเอกสารต้นทาง
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {# ---------- ฝั่งขวา: ฟอร์มกรอกรายละเอียดจัดส่ง ---------- #}
+  <section class="dl-card">
+    <div class="dl-card-header">
+      <div>
+        <div class="fw-semibold">
+          <i class="bi bi-geo-alt me-1"></i>
+          รายละเอียดสถานที่จัดส่ง
+        </div>
+        <div class="small-muted">
+          กรอกข้อมูลปลายทางที่จะใช้ในใบส่งสินค้าและปริ้นเอกสาร
+        </div>
+      </div>
+    </div>
+    <div class="dl-card-body">
+      <form method="post" action="">
+        {{ csrf_field() if csrf_field is defined }}
+
+        <div class="mb-3">
+          <label class="form-label">ชื่อลูกค้า / ผู้รับ *</label>
+          <input type="text" name="ship_to_name"
+                 class="form-control"
+                 value="{% if src and src.customer is defined and src.customer %}{{ src.customer.name }}{% endif %}"
+                 required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">สถานที่จัดส่ง / ที่อยู่ *</label>
+          <textarea name="ship_to_address" rows="3" class="form-control" required>{% if src and src.customer is defined and src.customer and src.customer.address is defined %}{{ src.customer.address }}{% endif %}</textarea>
+          <div class="small-muted mt-1">
+            สามารถระบุจุดสังเกต หรือรายละเอียดเพิ่มเติมของสถานที่จัดส่งได้ที่นี่
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">เบอร์โทรผู้รับ / หน้างาน</label>
+          <input type="text" name="ship_to_phone" class="form-control"
+                 value="{% if src and src.customer is defined and src.customer and src.customer.phone is defined %}{{ src.customer.phone }}{% endif %}">
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">วันที่นัดจัดส่ง *</label>
+            <input type="date" name="delivery_date" class="form-control"
+                   value="{{ (default_delivery_date.strftime('%Y-%m-%d') if default_delivery_date is defined and default_delivery_date else '') }}"
+                   required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ช่วงเวลา (ถ้ามี)</label>
+            <input type="text" name="delivery_time_slot" class="form-control"
+                   placeholder="เช่น รอบเช้า / 09:00–12:00">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">หมายเหตุภายใน (ไม่แสดงในใบส่ง)</label>
+          <textarea name="ship_to_note" rows="2" class="form-control"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="small-muted">
+            เมื่อบันทึกแล้วจะสร้างเลขที่ใบส่งสินค้าใหม่ และผูกกับ {{ doc_type_label }} นี้โดยอัตโนมัติ
+          </div>
+          <div class="d-flex gap-2">
+            <a href="{{ back_url or request.referrer or url_for('qu_list') }}" class="btn btn-outline-secondary">
+              ยกเลิก
+            </a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-truck-front me-1"></i> บันทึกใบส่งสินค้า
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

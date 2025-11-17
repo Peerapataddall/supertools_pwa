@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}งานซ่อม {{ job.number }}{% endblock %}
+{% block content %}
+<div class="container-xxl py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h5 m-0"><i class="bi bi-wrench-adjustable-circle"></i> งานซ่อม {{ job.number }}</h1>
+    <a href="{{ url_for('repairs.list_') }}" class="btn btn-light"><i class="bi bi-arrow-left"></i> กลับรายการ</a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card st-softcard border-0">
+        <div class="card-body">
+          <!-- ฟอร์มบันทึกงานซ่อม -->
+          <form method="post" action="{{ url_for('repairs.save_', jid=job.id) }}" class="row g-3">
+            <div class="col-12">
+              <label class="form-label">สรุปอาการเสีย</label>
+              <textarea class="form-control" name="symptom" rows="3">{{ job.symptom or '' }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">ค่าแรง (บาท)</label>
+              <input type="number" step="0.01" class="form-control" name="labor_cost" value="{{ job.labor_cost or 0 }}">
+            </div>
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-primary"><i class="bi bi-save"></i> บันทึก</button>
+              {% if job.status != 'DONE' %}
+              <button class="btn btn-success"
+                      formaction="{{ url_for('repairs.close_', jid=job.id) }}"
+                      formmethod="post">
+                <i class="bi bi-check2-circle"></i> ปิดงานซ่อม
+              </button>
+              {% endif %}
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card st-softcard border-0 mt-3">
+        <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+          <div class="fw-600"><i class="bi bi-gear"></i> อะไหล่ที่ใช้</div>
+          {% if job.status != 'DONE' %}
+          <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#pickPart">
+            <i class="bi bi-plus"></i> เพิ่มอะไหล่
+          </button>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>#</th>
+                <th>อะไหล่</th>
+                <th class="text-end">จำนวน</th>
+                <th class="text-end">ราคา/หน่วย</th>
+                <th class="text-end">รวม</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in job.items %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ it.part_code }} {{ it.part_name }}</td>
+                <td class="text-end">{{ '{:,.2f}'.format(it.qty or 0) }}</td>
+                <td class="text-end">{{ '{:,.2f}'.format(it.unit_price or 0) }}</td>
+                <td class="text-end">{{ '{:,.2f}'.format(it.line_total or 0) }}</td>
+                <td class="text-end">
+                  {% if job.status != 'DONE' %}
+                  <form method="post" action="{{ url_for('repairs.remove_part', jid=job.id, item_id=it.id) }}">
+                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center text-muted py-4">ยังไม่มีอะไหล่</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card st-softcard border-0">
+        <div class="card-body">
+          <div class="d-flex justify-content-between">
+            <span>ค่าอะไหล่</span>
+            <strong id="js-parts">{{ '{:,.2f}'.format(job.parts_total or 0) }}</strong>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span>ค่าแรง</span>
+            <strong id="js-labor">{{ '{:,.2f}'.format(job.labor_cost or 0) }}</strong>
+          </div>
+          <hr class="my-2">
+          <div class="d-flex justify-content-between fs-5">
+            <span>รวมทั้งงาน</span>
+            <strong id="js-grand">{{ '{:,.2f}'.format((job.parts_total or 0) + (job.labor_cost or 0)) }}</strong>
+          </div>
+          {% if job.claim_id %}
+            <div class="small text-muted mt-2">อ้างใบเคลม: {{ cl.number if cl else '' }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal เลือกอะไหล่ -->
+<div class="modal fade" id="pickPart" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-nut"></i> เลือกอะไหล่</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- ฟอร์มเลือกอะไหล่: ใช้ spare_list และส่ง part_id / qty -->
+        <form method="post" action="{{ url_for('repairs.add_part', jid=job.id) }}" class="d-flex gap-2 mb-3">
+          <select class="form-select" name="part_id" required>
+            {% if spare_list and spare_list|length > 0 %}
+              {% for p in spare_list %}
+                {# รองรับ object / dict / string ป้องกัน attribute error #}
+                {% set is_str = p is string %}
+                {% set is_map = p is mapping %}
+                {% set _id    = is_map and p.get('id', loop.index) or (is_str and loop.index) or p.id %}
+                {% set _code  = is_map and p.get('code', p)      or (is_str and p)           or p.code %}
+                {% set _name  = is_map and p.get('name', p)      or (is_str and p)           or p.name %}
+                {% set _price = is_map and (p.get('unit_price', p.get('unit_cost', 0))) or (is_str and 0) or (p.unit_price or 0) %}
+                <option value="{{ _id }}">{{ _code }} — {{ _name }} ({{ '%.2f'|format((_price or 0)|float) }})</option>
+              {% endfor %}
+            {% else %}
+              <option value="">— (0.00)</option>
+            {% endif %}
+          </select>
+
+          <input type="number" step="0.01" min="0.01" name="qty" class="form-control" placeholder="จำนวน" value="1" required>
+
+          <button class="btn btn-primary" {% if not spare_list or not spare_list|length %}disabled{% endif %}>
+            <i class="bi bi-plus"></i> เพิ่ม
+          </button>
+        </form>
+
+        <div class="text-muted small">* ดึงรายการจากเมนูอะไหล่เดิม</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- อัปเดตรวมยอดตามค่าแรงแบบทันที -->
+<script>
+  (function () {
+    const fmt = n => (isNaN(n) ? '0.00' : n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}));
+
+    const partsEl = document.getElementById('js-parts');
+    const laborEl = document.getElementById('js-labor');
+    const grandEl = document.getElementById('js-grand');
+    const laborInput = document.querySelector('input[name="labor_cost"]');
+
+    const parts = (() => {
+      const t = (partsEl?.textContent || '0').replace(/,/g,'');
+      const v = parseFloat(t);
+      return isNaN(v) ? 0 : v;
+    })();
+
+    function recalc() {
+      const labor = parseFloat((laborInput?.value || '0').replace(/,/g,'')) || 0;
+      laborEl.textContent = fmt(labor);
+      grandEl.textContent = fmt(parts + labor);
+    }
+    if (laborInput) {
+      laborInput.addEventListener('input', recalc);
+      recalc();
+    }
+  })();
+</script>
+{% endblock %}

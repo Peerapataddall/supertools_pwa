@@ -1,0 +1,159 @@
+{# templates/returns/view.html #}
+{% extends "base.html" %}
+{% block title %}ใบคืนสินค้า {{ d.number }}{% endblock %}
+
+{% block head %}
+<style>
+  .rtv-hero{
+    border-radius:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(1200px 600px at -10% -10%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(135deg,#f8fafc 0%,#e5e7eb 35%,#dbeafe 100%);
+    box-shadow:0 18px 40px rgba(15,23,42,.12);
+    padding:1.25rem 1.5rem;
+    margin-bottom:1.25rem;
+  }
+  .rtv-hero-title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:700; letter-spacing:.3px;
+  }
+  .rtv-hero-title i{
+    width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center;
+    background:#fff; color:#16a34a;
+    box-shadow:0 8px 18px rgba(148,163,184,.45);
+  }
+  .rtv-badge{
+    display:inline-flex; align-items:center; gap:.25rem;
+    border-radius:999px; padding:.15rem .65rem;
+    font-size:.78rem;
+    background:#ecfdf3; color:#15803d;
+    border:1px solid rgba(22,163,74,.18);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <!-- HERO -->
+  <section class="rtv-hero mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+      <div>
+        <div class="rtv-hero-title mb-1">
+          <i class="bi bi-box-arrow-in-down-left"></i>
+          <div>
+            <div class="text-uppercase small text-muted mb-1">เอกสารขาย</div>
+            <h1 class="h5 mb-0">ใบคืนสินค้า {{ d.number }}</h1>
+          </div>
+        </div>
+        <p class="small text-muted mb-1">
+          แสดงรายละเอียดการคืนอุปกรณ์เข้าระบบ พร้อมบันทึกสถานะ “พร้อมให้เช่า” ให้อัตโนมัติ
+        </p>
+
+        <div class="small text-muted">
+          <span class="me-3">
+            <i class="bi bi-calendar3 me-1"></i>
+            วันที่ {{ d.date.strftime("%d/%m/%Y") if d.date }}
+          </span>
+
+          {% if d.quote is defined and d.quote %}
+            <span class="me-3">
+              อ้างอิงใบเสนอราคา
+              <span class="rtv-badge">
+                <i class="bi bi-file-earmark-text"></i>
+                {{ d.quote.number }}
+              </span>
+            </span>
+          {% endif %}
+        </div>
+
+        {% if d.customer is defined and d.customer %}
+          <div class="small text-muted mt-1 d-flex flex-wrap gap-3">
+            <span>
+              <span class="text-muted">ลูกค้า:</span>
+              <span class="fw-semibold">{{ d.customer.name }}</span>
+            </span>
+            {% if d.customer.phone %}
+              <span><i class="bi bi-telephone me-1"></i>{{ d.customer.phone }}</span>
+            {% endif %}
+            {% if d.customer.address %}
+              <span class="text-truncate" style="max-width:420px;">
+                <i class="bi bi-geo-alt me-1"></i>{{ d.customer.address }}
+              </span>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="d-flex flex-column flex-sm-row gap-2">
+        <a href="{{ url_for('returns_list') }}"
+           class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+          <i class="bi bi-arrow-left"></i>
+          <span>กลับรายการใบคืนสินค้า</span>
+        </a>
+
+        {# ปุ่มพิมพ์ใบคืนสินค้า เปิดแท็บใหม่ #}
+        <a href="{{ url_for('returns_print', rid=d.id) }}"
+           target="_blank"
+           class="btn btn-primary btn-sm d-flex align-items-center gap-1">
+          <i class="bi bi-printer"></i>
+          <span>พิมพ์ใบคืนสินค้า</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- TABLE รายการอุปกรณ์ -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-0">
+      <div class="fw-semibold">รายการอุปกรณ์ที่คืน</div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:50px;">#</th>
+            <th style="width:160px;">รหัส / SKU</th>
+            <th>อุปกรณ์</th>
+            <th style="width:120px;" class="text-end">จำนวนที่คืน</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if d.items %}
+            {% for it in d.items %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ (it.equipment and (it.equipment.sku or it.equipment.code)) or '-' }}</td>
+                <td>{{ it.equipment and it.equipment.name or 'ไม่พบข้อมูลอุปกรณ์' }}</td>
+                <td class="text-end">{{ it.qty or 0 }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-4">
+                <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                ไม่มีรายการอุปกรณ์ในใบคืนสินค้านี้
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if d.remark %}
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-0 fw-semibold">
+        หมายเหตุ
+      </div>
+      <div class="card-body small text-muted">
+        {{ d.remark }}
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

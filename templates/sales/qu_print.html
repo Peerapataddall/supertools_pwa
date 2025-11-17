@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>พิมพ์ใบเสนอราคา {{ d.number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 12mm; }
+    html,body{ background:#fff; color:#000; font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif; }
+    body{ font-size:12.2px; }
+    .doc{ width:100%; }
+
+    .text-right{ text-align:right; }
+    .small{ font-size:11px; }
+    .muted{ color:#666; }
+    .fw-600{ font-weight:600; }
+
+    .head{ display:grid; grid-template-columns:80px 1fr auto; align-items:start; column-gap:10px; row-gap:4px; margin-bottom:8px; padding-bottom:8px; border-bottom:2px solid #1da1f2; page-break-inside:avoid; }
+    .logo-box{ width:80px; height:80px; border:2px solid #1da1f2; border-radius:14px; overflow:hidden; background:#fff; display:flex; align-items:center; justify-content:center; }
+    .logo-img{ width:100%; height:100%; background-repeat:no-repeat; background-position:center; background-size:cover; }
+    .comp-name{ font-size:15px; font-weight:700; line-height:1.15; margin:0 0 2px 0; }
+    .comp-lines .line{ line-height:1.25; }
+    .head-right{ min-width:260px; }
+    .doc-title{ font-size:18px; font-weight:700; line-height:1.2; margin:0 0 4px 0; }
+    .chip{ display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; border:1px solid #d0e7ff; background:#eef7ff; color:#1a6eea; font-size:11px; margin-left:6px; }
+
+    .box{ border:1px solid #e6e9ef; border-radius:10px; padding:10px 12px; margin:10px 0 12px; page-break-inside:avoid; }
+    table{ width:100%; border-collapse:collapse; }
+    thead th{ background:#f6f8fc; border-top:1px solid #dfe6f4; border-bottom:1px solid #dfe6f4; padding:8px 8px; font-weight:600; }
+    tbody td{ padding:7px 8px; border-bottom:1px solid #eef1f7; vertical-align:top; }
+    tbody tr:last-child td{ border-bottom:1px solid #dfe6f4; }
+    tbody tr{ page-break-inside:avoid; }
+
+    .photo{ width:64px; }
+    .name{ width:40%; }
+    .qty{ width:12%; }
+    .unit{ width:12%; }
+    .price{ width:14%; }
+    .disc{ width:10%; }
+    .sum{ width:14%; }
+
+    .thumb{ width:52px; height:52px; border:1px solid #e6e9ef; border-radius:8px; overflow:hidden; background:#fff; }
+    .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+    /* แถวสรุปท้ายหน้า */
+    .totals{ margin-top:10px; display:flex; gap:14px; align-items:stretch; }
+    .totals .spacer{ flex:1; }
+    .totals .panel{ width:320px; border:1px solid #e6e9ef; border-radius:10px; padding:10px 12px; page-break-inside:avoid; background:#fff; }
+    .row-sum{ display:flex; justify-content:space-between; margin:6px 0; }
+    .row-sum.total{ font-weight:700; border-top:1px dashed #ccd6ea; padding-top:8px; margin-top:8px; }
+
+    /* หมายเหตุ (ให้อยู่ด้านซ้ายของสรุปยอด) */
+    .remarks-panel{ flex:1; border:1px solid #e6e9ef; border-radius:10px; padding:10px 12px; background:#fff; min-height:110px; }
+    .remarks-title{ font-weight:600; margin-bottom:4px; }
+    .remarks-body{ white-space:pre-line; } /* ให้ขึ้นบรรทัดใหม่ตาม \n */
+
+    .sign{ margin-top:26px; display:flex; gap:18px; page-break-inside:avoid; }
+    .sign .cell{ flex:1; text-align:center; }
+    .sig-line{ margin-top:36px; border-top:1px dashed #b5c2db; padding-top:6px; }
+
+    .toolbar{ position:fixed; top:10px; right:10px; display:flex; gap:8px; }
+    .tbtn{ border:1px solid #cfe0ff; background:#eaf2ff; color:#195fe0; padding:6px 10px; font-size:12px; border-radius:8px; cursor:pointer; }
+    @media print{ .toolbar{ display:none!important; } body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="tbtn" onclick="window.print()">พิมพ์</button>
+    <button class="tbtn" onclick="window.close()">ปิด</button>
+  </div>
+
+  {% set c = company %}
+  {% set logo_url = (c and c.logo_path) and url_for('static', filename=c.logo_path) or url_for('static', filename='im/logo-print.png') %}
+  {% set addr_parts = [ c and c.address or '', c and c.district or '', c and c.amphoe or '', c and c.province or '', c and c.postcode or '' ] %}
+  {% set addr_join = addr_parts|select|join(' ') %}
+
+  <div class="doc">
+    <!-- หัวเอกสาร -->
+    <div class="head">
+      <div class="logo-box"><div class="logo-img" style="background-image:url('{{ logo_url }}');"></div></div>
+      <div class="comp">
+        <div class="comp-name">{{ (c and c.name) or 'ชื่อบริษัทของคุณ' }}</div>
+        <div class="comp-lines small muted">
+          <div class="line">{{ addr_join or 'ที่อยู่บริษัท' }}</div>
+          <div class="line">เลขผู้เสียภาษี: {{ (c and c.tax_id) or '-' }}</div>
+          <div class="line">โทร: {{ (c and c.phone) or '-' }}</div>
+        </div>
+      </div>
+      <div class="head-right">
+        <div class="doc-title">
+          ใบเสนอราคา (Quotation)
+          {% if d.status %}<span class="chip">สถานะ: {{ d.status|sale_status_th }}</span>{% endif %}
+        </div>
+        <div class="small muted">เลขที่เอกสาร: <span class="fw-600">{{ d.number }}</span></div>
+        <div class="small muted">วันที่: {{ d.date|strftime('%d/%m/%Y') or '-' }}</div>
+      </div>
+    </div>
+
+    <!-- บล็อกลูกค้า/เงื่อนไข -->
+    <div class="box">
+      <div style="display:flex; gap:14px;">
+        <div style="flex:1;">
+          <div class="fw-600">ลูกค้า</div>
+          <div>{{ d.customer and d.customer.name or '-' }}</div>
+          {% if d.customer and d.customer.tax_id %}<div class="small muted">เลขผู้เสียภาษี: {{ d.customer.tax_id }}</div>{% endif %}
+          {% if d.customer and d.customer.address %}<div class="small muted">ที่อยู่: {{ d.customer.address }}</div>{% endif %}
+          {% if d.customer and (d.customer.district or d.customer.amphoe or d.customer.province or d.customer.postcode) %}
+            <div class="small muted">{{ d.customer.district }} {{ d.customer.amphoe }} {{ d.customer.province }} {{ d.customer.postcode }}</div>
+          {% endif %}
+          {% if d.customer and (d.customer.contact_name or d.customer.phone or d.customer.contact_phone) %}
+            <div class="small muted">ผู้ติดต่อ: {{ d.customer.contact_name or '-' }} · โทร: {{ d.customer.phone or d.customer.contact_phone or '-' }}</div>
+          {% endif %}
+        </div>
+        <div style="flex:1;">
+          <div class="fw-600">เงื่อนไข</div>
+          <div class="small muted">เครดิต: {{ d.credit_days or 0 }} วัน</div>
+          <div class="small muted">เลขที่ PO ลูกค้า: {{ d.po_customer or '-' }}</div>
+          {% if d.note %}<div class="small muted">หมายเหตุ: {{ d.note }}</div>{% endif %}
+          <div class="small muted">
+            ภาษี: {{ d.tax_mode|tax_mode_th if d.tax_mode is defined else 'คิด VAT แยก' }}
+            {% if d.wht_pct %} · หัก ณ ที่จ่าย {{ d.wht_pct }}% {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ตารางรายการ -->
+    <table>
+      <thead>
+        <tr>
+          <th class="photo">รูป</th>
+          <th class="name">รายการ</th>
+          <th class="qty text-right">จำนวน</th>
+          <th class="unit">หน่วย/ระยะ</th>
+          <th class="price text-right">ราคาต่อหน่วย</th>
+          <th class="disc text-right">ส่วนลด (%)</th>
+          <th class="sum text-right">รวม</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in d.items or [] %}
+        <tr>
+          <td class="photo">
+            {% set url = img_map.get(it.id) if img_map else None %}
+            {% if url %}<div class="thumb"><img src="{{ url }}" alt=""></div>{% endif %}
+          </td>
+          <td class="name">{{ it.name }}</td>
+          <td class="qty text-right">{{ '%.0f'|format(it.qty or 0) }}</td>
+          <td class="unit">{{ it.rent_unit|unit_th }} × {{ it.rent_duration }}</td>
+          <td class="price text-right">{{ '{:,.2f}'.format(it.unit_price or 0) }}</td>
+          <td class="disc text-right">{{ '{:,.2f}'.format(it.discount_pct or 0) }}</td>
+          <td class="sum text-right">{{ '{:,.2f}'.format(it.line_total or 0) }}</td>
+        </tr>
+        {% endfor %}
+        {% if not d.items or d.items|length == 0 %}
+        <tr><td colspan="7" class="text-right small muted" style="padding:10px 8px;">ไม่มีรายการ</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    {# หมายเหตุที่จะวาง “ข้างกล่องสรุปยอด” #}
+    {% set _remark = d.remark or d.note %}
+    {% if (q is defined) and q and q.remark and not _remark %}
+      {% set _remark = q.remark %}
+    {% endif %}
+
+    <!-- สรุป + หมายเหตุ (ข้างกัน) -->
+    <div class="totals">
+      {% if _remark %}
+        <div class="remarks-panel">
+          <div class="remarks-title">หมายเหตุ</div>
+          <div class="remarks-body small">{{ _remark }}</div>
+        </div>
+      {% else %}
+        <div class="spacer"></div>
+      {% endif %}
+
+      <div class="panel">
+        <div class="row-sum"><div>ยอดรวมก่อนภาษี</div><div class="text-right">{{ '{:,.2f}'.format(d.amount_subtotal or 0) }}</div></div>
+        {% if d.amount_discount is defined %}
+          <div class="row-sum"><div>ส่วนลดท้ายบิล</div><div class="text-right">{{ '{:,.2f}'.format(d.amount_discount or 0) }}</div></div>
+        {% endif %}
+        <div class="row-sum"><div>ภาษีมูลค่าเพิ่ม {{ (d.vat_pct if d.vat_pct is defined else 7) }}%</div><div class="text-right">{{ '{:,.2f}'.format(d.amount_vat or 0) }}</div></div>
+        <div class="row-sum total"><div>ยอดรวมสุทธิ</div><div class="text-right">{{ '{:,.2f}'.format(d.amount_total or 0) }}</div></div>
+        {% if d.wht_pct %}
+          <div class="row-sum"><div>หัก ณ ที่จ่าย ({{ d.wht_pct }}%)</div><div class="text-right">-{{ '{:,.2f}'.format(d.amount_wht or 0) }}</div></div>
+          <div class="row-sum total"><div>ยอดหลังหัก ณ ที่จ่าย</div><div class="text-right">{{ '{:,.2f}'.format(d.amount_grand or 0) }}</div></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ลายเซ็น -->
+    <div class="sign">
+      <div class="cell"><div class="sig-line">ผู้เสนอราคา</div><div class="small muted">วันที่........../........../..........</div></div>
+      <div class="cell"><div class="sig-line">ผู้อนุมัติ</div><div class="small muted">วันที่........../........../..........</div></div>
+      <div class="cell"><div class="sig-line">ผู้สั่งซื้อ</div><div class="small muted">วันที่........../........../..........</div></div>
+    </div>
+  </div>
+
+  <script>window.addEventListener('load',()=>{ setTimeout(()=>window.print(),200); });</script>
+</body>
+</html>

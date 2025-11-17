@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}ออกใบเคลม · เลือกใบเสนอราคา{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero / Gradient ===== */
+  .cl-hero{
+    background:
+      radial-gradient(1200px 600px at -10% -20%, rgba(131,105,83,.25) 0%, rgba(131,105,83,0) 60%),
+      linear-gradient(135deg, #f6f7fb 0%, #eef2ff 100%);
+    border-bottom: 1px solid rgba(0,0,0,.06);
+  }
+  .cl-hero .title{
+    display:flex; align-items:center; gap:.65rem; font-weight:700; letter-spacing:.3px;
+  }
+  .cl-hero .title i{
+    background:#fff; color:#836953; width:42px; height:42px; display:grid; place-items:center;
+    border-radius:12px; box-shadow:0 6px 20px rgba(131,105,83,.18);
+  }
+
+  /* ===== Glass card ===== */
+  .glass{
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border:1px solid rgba(0,0,0,.06);
+    border-radius: 1rem;
+    box-shadow: 0 10px 30px rgba(20,20,40,.06);
+  }
+
+  /* Buttons */
+  .btn-gradient{
+    background: linear-gradient(135deg, #7c5a3f 0%, #9b7b5f 60%, #c8a88e 100%);
+    border: none; color:#fff;
+    box-shadow: 0 8px 16px rgba(131,105,83,.25);
+  }
+  .btn-gradient:hover{ filter: brightness(.98); }
+
+  /* Nice table */
+  .table-modern thead th{
+    background: linear-gradient(180deg, #fafbff 0%, #f2f4ff 100%);
+    border-bottom:1px solid rgba(0,0,0,.06);
+    color:#334155; font-weight:600;
+  }
+  .table-modern tbody tr{
+    cursor:pointer;
+    transition: transform .08s ease, box-shadow .2s ease, background-color .2s ease;
+  }
+  .table-modern tbody tr:hover{ background:#f9fafb; }
+  .table-modern td, .table-modern th{ vertical-align: middle; }
+
+  /* Custom radio */
+  .pick input[type="radio"]{ display:none; }
+  .pick .dot{
+    width:18px; height:18px; border-radius:999px; border:2px solid #c7c7c7; display:inline-block; position:relative;
+    transition: all .15s ease;
+  }
+  .pick input[type="radio"]:checked + .dot{
+    border-color:#836953; box-shadow:0 0 0 4px rgba(131,105,83,.15) inset;
+  }
+
+  /* Tiny */
+  .hint{ color:#64748b; }
+  .badge-soft{ background:#eef2ff; color:#3730a3; border-radius:999px; padding:.25rem .6rem; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ===== Hero ===== -->
+<div class="cl-hero py-3 py-md-4">
+  <div class="container">
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <div class="title fs-4">
+          <i class="bi bi-shield-exclamation"></i>
+          ออกใบเคลม (ขั้นที่ 1)
+        </div>
+        {% if quotes %}
+          <span class="badge bg-light text-dark border">{{ quotes|length }} QU</span>
+        {% endif %}
+      </div>
+      <div class="hint small">
+        ระบบจะแสดงเฉพาะ <span class="badge-soft">ใบเสนอราคาที่อนุมัติแล้ว</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container my-3">
+  <!-- ===== Step 1: เลือกลูกค้า ===== -->
+  <div class="glass p-3 p-md-4 mb-3">
+    <form method="get" class="row gy-2 gx-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">
+          <i class="bi bi-person-check me-1"></i> ลูกค้า
+        </label>
+        <select class="form-select" name="customer_id" required>
+          <option value="">-- เลือกลูกค้า --</option>
+          {% for c in customers %}
+            <option value="{{ c.id }}" {% if selected_customer_id==c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-gradient">
+          <i class="bi bi-search me-1"></i> แสดงใบเสนอราคา
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ===== Step 2: เลือก QU ===== -->
+  {% if quotes %}
+  <form method="post" class="glass p-3 p-md-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-semibold">
+        <i class="bi bi-journal-text me-1"></i> เลือกใบเสนอราคา (QU)
+      </div>
+      <div class="hint small">
+        คลิกแถวเพื่อเลือก <i class="bi bi-mouse"></i>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-modern table-hover align-middle m-0">
+        <thead>
+          <tr>
+            <th style="width:46px"></th>
+            <th style="width:180px">เลขที่</th>
+            <th style="width:120px">วันที่</th>
+            <th style="width:140px" class="text-end">ยอดสุทธิ</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody id="qu-rows">
+          {% for q in quotes %}
+          <tr data-radio="q{{ q.id }}">
+            <td class="pick">
+              <label class="m-0">
+                <input id="q{{ q.id }}" type="radio" name="quote_id" value="{{ q.id }}" required>
+                <span class="dot"></span>
+              </label>
+            </td>
+            <td class="fw-semibold text-primary">{{ q.number }}</td>
+            <td>{{ q.date.strftime('%d/%m/%Y') }}</td>
+            <td class="text-end">{{ '%.2f'|format(q.amount_grand or 0) }}</td>
+            <td class="text-muted">{{ q.remark }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <input type="hidden" name="customer_id" value="{{ selected_customer_id }}">
+    <div class="mt-3 d-flex gap-2">
+      <button class="btn btn-gradient">
+        <i class="bi bi-arrow-right-circle me-1"></i> ต่อไป
+      </button>
+      <a href="{{ url_for('claims_list') }}" class="btn btn-outline-secondary">
+        ยกเลิก
+      </a>
+    </div>
+  </form>
+
+  {% elif selected_customer_id %}
+    <div class="glass p-4 text-center">
+      <div class="display-6 mb-2">📝</div>
+      <div class="fw-semibold">ลูกค้ารายนี้ยังไม่มีใบเสนอราคา (QU) ที่อนุมัติ</div>
+      <div class="text-muted">ลองเลือกชื่อลูกค้ารายอื่น หรือกลับไปสร้างใบเสนอราคาใหม่</div>
+      <div class="mt-3 d-flex justify-content-center gap-2">
+        <a class="btn btn-outline-secondary" href="{{ url_for('claim_new') }}">เลือกใหม่</a>
+        <a class="btn btn-gradient" href="{{ url_for('qu_new') }}"><i class="bi bi-plus-circle me-1"></i> สร้าง QU</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // คลิกทั้งแถวเพื่อเลือก radio ของ QU
+  document.querySelectorAll('[data-radio]').forEach(tr=>{
+    tr.addEventListener('click', () => {
+      const id = tr.getAttribute('data-radio');
+      const r = document.getElementById(id);
+      if (r){ r.checked = true; }
+    });
+  });
+</script>
+{% endblock %}

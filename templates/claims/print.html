@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>ใบเคลม {{ c.number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 12mm; }
+    html,body{ background:#fff; color:#000; font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif; }
+    body{ font-size:12.2px; }
+    .doc{ width:100%; }
+
+    .text-right{ text-align:right; }
+    .small{ font-size:11px; }
+    .muted{ color:#666; }
+    .fw-600{ font-weight:600; }
+
+    .head{ display:grid; grid-template-columns:80px 1fr auto; align-items:start; column-gap:10px; row-gap:4px; margin-bottom:8px; padding-bottom:8px; border-bottom:2px solid #1da1f2; page-break-inside:avoid; }
+    .logo-box{ width:80px; height:80px; border:2px solid #1da1f2; border-radius:14px; overflow:hidden; background:#fff; display:flex; align-items:center; justify-content:center; }
+    .logo-img{ width:100%; height:100%; background-repeat:no-repeat; background-position:center; background-size:cover; }
+    .comp-name{ font-size:15px; font-weight:700; line-height:1.15; margin:0 0 2px 0; }
+    .comp-lines .line{ line-height:1.25; }
+    .head-right{ min-width:260px; }
+    .doc-title{ font-size:18px; font-weight:700; line-height:1.2; margin:0 0 4px 0; }
+    .chip{ display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; border:1px solid #d0e7ff; background:#eef7ff; color:#1a6eea; font-size:11px; margin-left:6px; }
+
+    .box{ border:1px solid #e6e9ef; border-radius:10px; padding:10px 12px; margin:10px 0 12px; page-break-inside:avoid; }
+    table{ width:100%; border-collapse:collapse; }
+    thead th{ background:#f6f8fc; border-top:1px solid #dfe6f4; border-bottom:1px solid #dfe6f4; padding:8px 8px; font-weight:600; }
+    tbody td{ padding:7px 8px; border-bottom:1px solid #eef1f7; vertical-align:top; }
+    tbody tr:last-child td{ border-bottom:1px solid #dfe6f4; }
+    tbody tr{ page-break-inside:avoid; }
+
+    .photo{ width:66px; }
+    .name{ width:42%; }
+    .qty{ width:12%; }
+    .repl{ width:28%; }
+
+    .thumb{ width:52px; height:52px; border:1px solid #e6e9ef; border-radius:8px; overflow:hidden; background:#fff; display:inline-block; vertical-align:middle; margin-right:6px; }
+    .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+    .thumb.noimg{ background:#f5f5f7 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'/%3E%3Cpath d='M8 13l3-3 3 3 3-3'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.25'/%3E%3C/svg%3E") center/28px no-repeat; }
+
+    .sign{ margin-top:26px; display:flex; gap:18px; page-break-inside:avoid; }
+    .sign .cell{ flex:1; text-align:center; }
+    .sig-line{ margin-top:36px; border-top:1px dashed #b5c2db; padding-top:6px; }
+
+    .toolbar{ position:fixed; top:10px; right:10px; display:flex; gap:8px; }
+    .tbtn{ border:1px solid #cfe0ff; background:#eaf2ff; color:#195fe0; padding:6px 10px; font-size:12px; border-radius:8px; cursor:pointer; }
+    @media print{ .toolbar{ display:none!important; } body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="tbtn" onclick="window.print()">พิมพ์</button>
+    <button class="tbtn" onclick="window.close()">ปิด</button>
+  </div>
+
+  {% set comp = company %}
+  {% set logo_url = (comp and comp.logo_path) and url_for('static', filename=comp.logo_path) or url_for('static', filename='im/logo-print.png') %}
+  {% set addr_parts = [ comp and comp.address or '', comp and comp.district or '', comp and comp.amphoe or '', comp and comp.province or '', comp and comp.postcode or '' ] %}
+  {% set addr_join = addr_parts|select|join(' ') %}
+
+  <div class="doc">
+    <!-- Header -->
+    <div class="head">
+      <div class="logo-box"><div class="logo-img" style="background-image:url('{{ logo_url }}');"></div></div>
+      <div class="comp">
+        <div class="comp-name">{{ (comp and comp.name) or 'ชื่อบริษัทของคุณ' }}</div>
+        <div class="comp-lines small muted">
+          <div class="line">{{ addr_join or 'ที่อยู่บริษัท' }}</div>
+          <div class="line">เลขผู้เสียภาษี: {{ (comp and comp.tax_id) or '-' }}</div>
+          <div class="line">โทร: {{ (comp and comp.phone) or '-' }}</div>
+        </div>
+      </div>
+      <div class="head-right">
+        <div class="doc-title">
+          ใบเคลม (Claim)
+          {% if c.status %}<span class="chip">สถานะ: {{ c.status }}</span>{% endif %}
+        </div>
+        <div class="small muted">เลขที่เอกสาร: <span class="fw-600">{{ c.number }}</span></div>
+        <div class="small muted">วันที่: {{ c.date and c.date.strftime('%d/%m/%Y') or '-' }}</div>
+      </div>
+    </div>
+
+    <!-- Customer + References -->
+    {% set dn_list = [] %}
+    {% if c.delivery_doc and c.delivery_doc.number %}
+      {% set _ = dn_list.append(c.delivery_doc.number) %}
+    {% endif %}
+    {% if c.delivery_docs %}
+      {% for d in c.delivery_docs %}
+        {% if d and d.number %}
+          {% set _ = dn_list.append(d.number) %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+
+    <div class="box">
+      <div style="display:flex; gap:14px;">
+        <div style="flex:1;">
+          <div class="fw-600">ลูกค้า</div>
+          <div>{{ (c.customer and c.customer.name) or '-' }}</div>
+          {% if c.customer and c.customer.tax_id %}<div class="small muted">เลขผู้เสียภาษี: {{ c.customer.tax_id }}</div>{% endif %}
+          {% if c.customer and c.customer.address %}<div class="small muted">ที่อยู่: {{ c.customer.address }}</div>{% endif %}
+        </div>
+        <div style="flex:1;">
+          <div class="fw-600">อ้างอิง</div>
+          {% set po_ref = c.po_customer or (c.quote and c.quote.po_customer) %}
+          <div class="small muted">PO ลูกค้า: {{ po_ref or '-' }}</div>
+          <div class="small muted">
+            ใบเสนอราคา: {{ (c.quote and c.quote.number) or '-' }}
+            {% if c.quote and c.quote.date %} ({{ c.quote.date.strftime('%d/%m/%Y') }}){% endif %}
+          </div>
+          <div class="small muted">เลขที่ใบส่งสินค้า: {{ dn_list|unique|join(', ') or '-' }}</div>
+          {# ลบหมายเหตุออกตามที่ขอ #}
+        </div>
+      </div>
+    </div>
+
+    <!-- Items table -->
+    <table>
+      <thead>
+        <tr>
+          <th class="photo">รูป</th>
+          <th class="name">รายการ</th>
+          <th class="qty text-right">จำนวนเคลม</th>
+          <th class="repl">อุปกรณ์ทดแทน</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in c.items %}
+          {% set left_url  = img_left  and img_left.get(it.id) %}
+          {% set right_url = img_right and img_right.get(it.id) %}
+
+          {% set item_sku   = (it.sales_item and it.sales_item.sku) or (it.equipment and it.equipment.sku) %}
+          {% set item_name  = (it.sales_item and it.sales_item.name) or (it.equipment and it.equipment.name) or it.name or '-' %}
+
+          <tr>
+            <td class="photo">
+              {% if left_url %}
+                <span class="thumb"><img src="{{ left_url }}" alt=""></span>
+              {% else %}
+                <span class="thumb noimg"></span>
+              {% endif %}
+            </td>
+            <td class="name">
+              {% if item_sku %}[{{ item_sku }}] {% endif %}{{ item_name }}
+            </td>
+            <td class="qty text-right">{{ '%.2f'|format((it.qty_claim or 0) * 1.0) }}</td>
+            <td class="repl">
+              {% if right_url %}
+                <span class="thumb"><img src="{{ right_url }}" alt=""></span>
+              {% else %}
+                <span class="thumb noimg"></span>
+              {% endif %}
+              {% if it.replacement_equipment %}
+                [{{ it.replacement_equipment.sku }}] {{ it.replacement_equipment.name }}
+              {% else %}
+                — ไม่ส่งทดแทน —
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-right small muted" style="padding:10px 8px;">ไม่มีรายการ</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Signatures -->
+    <div class="sign">
+      <div class="cell">
+        <div class="sig-line">ผู้ส่งเคลม</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+      <div class="cell">
+        <div class="sig-line">ผู้รับเรื่อง</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+      <div class="cell">
+        <div class="sig-line">ผู้อนุมัติ</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+    </div>
+  </div>
+
+  <script>window.addEventListener('load',()=>{ setTimeout(()=>window.print(),200); });</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}ใบสั่งซื้อ {{ po.number }}{% endblock %}
+
+{% set STATUS_LABEL = {'DRAFT':'ฉบับร่าง','APPROVED':'อนุมัติ','ORDERED':'สั่งซื้อแล้ว'} %}
+{% set STATUS_BADGE = {'DRAFT':'secondary','APPROVED':'success','ORDERED':'primary'} %}
+{% set _code = po.status or 'DRAFT' %}
+{% set _badge = STATUS_BADGE.get(_code, 'secondary') %}
+
+{% block content %}
+<div class="st-card rounded-4 p-0 overflow-hidden">
+  <!-- Gradient hero -->
+  <div class="st-hero p-3 p-md-4 d-flex align-items-center gap-3">
+    <div class="st-hero-icon">
+      <i class="bi bi-clipboard2-check"></i>
+    </div>
+    <div class="flex-grow-1">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <h1 class="h5 m-0 text-white d-flex align-items-center gap-2">
+          ใบสั่งซื้อ <span class="fw-bold">{{ po.number }}</span>
+        </h1>
+        <span class="badge rounded-pill bg-{{ _badge }} shadow-sm st-chip-status">
+          <i class="bi bi-circle-fill me-1 small"></i>{{ STATUS_LABEL.get(_code, _code) }}
+        </span>
+      </div>
+      <div class="text-white-50 small mt-1">
+        <i class="bi bi-calendar2-week me-1"></i>{{ po.po_date.strftime("%d/%m/%Y") if po.po_date else '-' }}
+        · <i class="bi bi-building me-1"></i>{{ po.supplier.name if po.supplier else '-' }}
+      </div>
+    </div>
+
+    <!-- Actions on hero (glass buttons) -->
+    <div class="d-flex flex-wrap gap-2">
+      <!-- ปุ่มพิมพ์ A4 -->
+      <a href="{{ url_for('po_print', pid=po.id) }}"
+         target="_blank" rel="noopener"
+         class="btn btn-hero btn-light text-primary">
+        <i class="bi bi-printer-fill me-1"></i> พิมพ์ (A4)
+      </a>
+
+      {% if can('purchases.create') and _code != 'APPROVED' %}
+      <form method="post" action="{{ url_for('po_set_status', pid=po.id) }}">
+        <input type="hidden" name="status" value="APPROVED">
+        <button class="btn btn-hero btn-outline-light">
+          <i class="bi bi-check2-circle me-1"></i> อนุมัติ
+        </button>
+      </form>
+      {% endif %}
+
+      {% if can('purchases.create') and _code != 'ORDERED' %}
+      <form method="post" action="{{ url_for('po_set_status', pid=po.id) }}">
+        <input type="hidden" name="status" value="ORDERED">
+        <button class="btn btn-hero btn-outline-light">
+          <i class="bi bi-bag-check me-1"></i> สั่งซื้อแล้ว
+        </button>
+      </form>
+      {% endif %}
+
+      {% if can('goods.receive') %}
+      <form method="post" action="{{ url_for('po_create_grn', pid=po.id) }}">
+        <button class="btn btn-hero btn-light text-primary">
+          <i class="bi bi-box-seam me-1"></i> สร้างใบรับสินค้า (GRN)
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="p-3 p-md-4">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="table-responsive">
+          <table class="table align-middle st-table">
+            <thead class="small text-muted">
+              <tr>
+                <th style="width:10%">SKU</th>
+                <th>ชื่อรายการ</th>
+                <th class="text-end" style="width:12%">จำนวน</th>
+                <th style="width:10%">หน่วย</th>
+                <th class="text-end" style="width:16%">ราคา/หน่วย</th>
+                <th class="text-end" style="width:12%">ส่วนลด%</th>
+                <th class="text-end" style="width:16%">รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in po.items %}
+              <tr>
+                <td class="text-muted">{{ it.sku or '-' }}</td>
+                <td class="fw-semibold">
+                  <i class="bi bi-tag text-muted me-1"></i>{{ it.name }}
+                </td>
+                <td class="text-end">{{ '%.2f'|format(it.qty or 0) }}</td>
+                <td>{{ it.unit or '-' }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.unit_cost or 0) }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.discount_pct or 0) }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.line_total or 0) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Totals / meta -->
+      <div class="col-lg-4">
+        <div class="st-total-card rounded-4 p-3 p-md-4 h-100">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">
+              <i class="bi bi-receipt me-1"></i>สรุปยอด
+            </div>
+            <span class="badge rounded-pill bg-{{ _badge }}">
+              {{ STATUS_LABEL.get(_code, _code) }}
+            </span>
+          </div>
+
+          <hr class="my-3">
+
+          {# ===== คำนวณ VAT (สมมติราคายังไม่รวม VAT) ===== #}
+          {% set base = (po.amount_total or 0.0) %}
+          {% set vat_rate = 0.07 %}
+          {% set vat = base * vat_rate %}
+          {% set grand = base + vat %}
+
+          <div class="d-flex justify-content-between small text-muted">
+            <span>มูลค่าก่อนส่วนลด</span>
+            <span>{{ '%.2f'|format(po.amount_subtotal or 0) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted">
+            <span>ส่วนลดรวม</span>
+            <span>{{ '%.2f'|format(po.amount_discount or 0) }}</span>
+          </div>
+
+          <div class="d-flex justify-content-between small text-muted mt-2">
+            <span>ฐานภาษี (หลังหักส่วนลด)</span>
+            <span>{{ '%.2f'|format(base) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted">
+            <span>ภาษีมูลค่าเพิ่ม {{ (vat_rate*100)|round|int }}%</span>
+            <span>{{ '%.2f'|format(vat) }}</span>
+          </div>
+
+          <div class="d-flex justify-content-between mt-2">
+            <span class="fw-semibold">รวมทั้งสิ้น</span>
+            <span class="fw-bold fs-5">{{ '%.2f'|format(grand) }}</span>
+          </div>
+          <div class="small text-muted mt-1">
+            * คิด VAT {{ (vat_rate*100)|round|int }}% จากฐานภาษี (ราคายังไม่รวม VAT)
+          </div>
+
+          <div class="mt-4">
+            <div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>ข้อมูล</div>
+            <div class="st-meta">
+              <div><i class="bi bi-hash me-2 text-primary"></i>เลขที่: <span class="fw-semibold">{{ po.number }}</span></div>
+              <div><i class="bi bi-calendar-event me-2 text-primary"></i>วันที่: {{ po.po_date.strftime("%d/%m/%Y") if po.po_date else '-' }}</div>
+              <div><i class="bi bi-building me-2 text-primary"></i>ผู้ขาย: {{ po.supplier.name if po.supplier else '-' }}</div>
+            </div>
+          </div>
+
+          <div class="mt-4 d-grid gap-2">
+            <a href="{{ url_for('po_list') }}" class="btn btn-outline-secondary">
+              <i class="bi bi-arrow-left-short me-1"></i> กลับรายการใบสั่งซื้อ
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // คอนเฟิร์มเล็กน้อยสำหรับปุ่มสำคัญ
+  document.querySelectorAll('form[action$="set_status"]').forEach(f=>{
+    f.addEventListener('submit', (e)=>{
+      const v = new FormData(f).get('status');
+      const label = {APPROVED:'อนุมัติ', ORDERED:'สั่งซื้อแล้ว'}[v] || v;
+      if(!confirm(`ยืนยันการเปลี่ยนสถานะเป็น “${label}” ?`)) e.preventDefault();
+    });
+  });
+  document.querySelectorAll('form[action$="create_grn"]').forEach(f=>{
+    f.addEventListener('submit', (e)=>{
+      if(!confirm('สร้างใบรับสินค้า (GRN) จากใบสั่งซื้อนี้?')) e.preventDefault();
+    });
+  });
+</script>
+{% endblock %}

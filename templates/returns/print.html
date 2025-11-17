@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>ใบคืนสินค้า {{ d.number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 12mm; }
+    html,body{
+      background:#fff; color:#000;
+      font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif;
+    }
+    body{ font-size:12.2px; }
+    .doc{ width:100%; }
+
+    .text-right{ text-align:right; }
+    .small{ font-size:11px; }
+    .muted{ color:#666; }
+    .fw-600{ font-weight:600; }
+
+    /* ---------- Header: Grid ---------- */
+    .head{
+      display:grid;
+      grid-template-columns: 80px 1fr auto;
+      align-items:start;
+      column-gap:10px;
+      row-gap:4px;
+      margin-bottom:8px;
+      padding-bottom:8px;
+      border-bottom:2px solid #1da1f2;
+      page-break-inside:avoid;
+    }
+
+    .logo-box{
+      width:80px; height:80px;
+      border:2px solid #1da1f2; border-radius:14px;
+      overflow:hidden; background:#fff;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .logo-img{
+      width:100%; height:100%;
+      background-repeat:no-repeat;
+      background-position:center;
+      background-size:cover;
+    }
+
+    .comp-name{ font-size:15px; font-weight:700; line-height:1.15; margin:0 0 2px 0; }
+    .comp-lines .line{ line-height:1.25; }
+
+    .head-right{ min-width:260px; }
+    .doc-title{ font-size:18px; font-weight:700; line-height:1.2; margin:0 0 4px 0; }
+
+    .box{ border:1px solid #e6e9ef; border-radius:10px; padding:10px 12px; margin:10px 0 12px; page-break-inside:avoid; }
+    table{ width:100%; border-collapse:collapse; }
+    thead th{
+      background:#f6f8fc;
+      border-top:1px solid #dfe6f4;
+      border-bottom:1px solid #dfe6f4;
+      padding:8px 8px;
+      font-weight:600;
+    }
+    tbody td{
+      padding:7px 8px;
+      border-bottom:1px solid #eef1f7;
+      vertical-align:top;
+    }
+    tbody tr:last-child td{ border-bottom:1px solid #dfe6f4; }
+    tbody tr{ page-break-inside:avoid; }
+
+    .sku{ width:18% } .name{ width:44% } .qty{ width:14% } .note{ width:24% }
+
+    .sign{ margin-top:26px; display:flex; gap:18px; page-break-inside:avoid; }
+    .sign .cell{ flex:1; text-align:center; }
+    .sig-line{ margin-top:36px; border-top:1px dashed #b5c2db; padding-top:6px; }
+
+    .toolbar{ position:fixed; top:10px; right:10px; display:flex; gap:8px; }
+    .tbtn{
+      border:1px solid #cfe0ff; background:#eaf2ff; color:#195fe0;
+      padding:6px 10px; font-size:12px; border-radius:8px; cursor:pointer;
+    }
+
+    @media print{
+      .toolbar{ display:none !important; }
+      body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="tbtn" onclick="window.print()">พิมพ์</button>
+    <button class="tbtn" onclick="window.close()">ปิด</button>
+  </div>
+
+  {# ===== Data binding ===== #}
+  {% set c = company %}
+  {# ถ้ามี company + logo_path ใช้อันนั้น ไม่งั้นใช้โลโก้ดีฟอลต์ของระบบ #}
+  {% set logo_url = (c and c.logo_path)
+        and url_for('static', filename=c.logo_path)
+        or url_for('static', filename='images/logo-supertool.png') %}
+
+  {% set addr_parts = [
+      c and c.address or '',
+      c and c.district or '',
+      c and c.amphoe or '',
+      c and c.province or '',
+      c and c.postcode or ''
+  ] %}
+  {% set addr_join = addr_parts|select|join(' ') %}
+
+  {% set q = d.quote %}
+  {# ลองหลายชื่อฟิลด์สำหรับเลขที่ PO ลูกค้า เผื่อชื่อคอลัมน์ไม่ตรง #}
+  {% set po_customer_no =
+      q and (
+        q.customer_po
+        or q.customer_po_number
+        or q.po_customer_number
+        or q.po_customer
+        or q.po_number
+      ) or '' %}
+
+  <div class="doc">
+    <!-- HEADER -->
+    <div class="head">
+      <div class="logo-box">
+        <div class="logo-img" style="background-image:url('{{ logo_url }}');"></div>
+      </div>
+
+      <div class="comp">
+        <div class="comp-name">{{ (c and c.name) or 'ชื่อบริษัทของคุณ' }}</div>
+        <div class="comp-lines small muted">
+          <div class="line">{{ addr_join or 'ที่อยู่บริษัท' }}</div>
+          <div class="line">เลขผู้เสียภาษี: {{ (c and c.tax_id) or '-' }}</div>
+          <div class="line">โทร: {{ (c and c.phone) or '-' }}</div>
+        </div>
+      </div>
+
+      <div class="head-right">
+        <div class="doc-title">
+          ใบคืนสินค้า (Return Note)
+        </div>
+        <div class="small muted">
+          เลขที่เอกสาร:
+          <span class="fw-600">{{ d.number }}</span>
+        </div>
+        <div class="small muted">
+          วันที่: {{ d.date and d.date.strftime('%d/%m/%Y') or '-' }}
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div class="box">
+      <div style="display:flex; gap:14px;">
+        <div style="flex:1;">
+          <div class="fw-600">ลูกค้า (Customer)</div>
+          <div>{{ d.customer and d.customer.name or '-' }}</div>
+          {% if d.customer and d.customer.tax_id %}
+            <div class="small muted">เลขผู้เสียภาษี: {{ d.customer.tax_id }}</div>
+          {% endif %}
+          {% if d.customer and d.customer.address %}
+            <div class="small muted">ที่อยู่: {{ d.customer.address }}</div>
+          {% endif %}
+          {% if d.customer and d.customer.phone %}
+            <div class="small muted">โทร: {{ d.customer.phone }}</div>
+          {% endif %}
+        </div>
+
+        <div style="flex:1;">
+          <div class="fw-600">ข้อมูลอ้างอิง</div>
+          <div class="small muted">
+            อ้างอิงใบ PO ลูกค้าเลขที่:
+            <span class="fw-600">{{ po_customer_no or '-' }}</span>
+          </div>
+          <div class="small muted">
+            อ้างอิงใบเสนอราคาเลขที่:
+            <span class="fw-600">{{ q and q.number or '-' }}</span>
+          </div>
+          <div class="small muted">
+            อ้างอิงใบส่งสินค้าเลขที่:
+            <span class="fw-600">{{ delivery and delivery.number or '-' }}</span>
+          </div>
+          <div class="small muted">
+            พิมพ์เมื่อ:
+            {{ (today or d.date)|strftime('%d/%m/%Y') }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <table>
+      <thead>
+        <tr>
+          <th class="sku"># / SKU</th>
+          <th class="name">อุปกรณ์</th>
+          <th class="qty text-right">จำนวนที่คืน</th>
+          <th class="note">หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in d.items %}
+        <tr>
+          <td class="sku">
+            {{ loop.index }} /
+            {{ (it.equipment and (it.equipment.sku or it.equipment.code)) or '-' }}
+          </td>
+          <td class="name">
+            {{ it.equipment and it.equipment.name or 'ไม่พบข้อมูลอุปกรณ์' }}
+          </td>
+          <td class="qty text-right">
+            {{ '{:,.2f}'.format(it.qty or 0) }}
+          </td>
+          <td class="note">
+            {{ it.remark or '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- SIGNATURES -->
+    <div class="sign">
+      <div class="cell">
+        <div class="sig-line">ผู้ส่งคืน</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+      <div class="cell">
+        <div class="sig-line">ผู้รับคืน</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('load', () => {
+      setTimeout(() => window.print(), 200);
+    });
+  </script>
+</body>
+</html>

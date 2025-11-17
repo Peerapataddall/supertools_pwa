@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}ตั้งค่าบริษัท · Supertools{% endblock %}
+{% set logo_url = (prof.logo_path and url_for('static', filename=prof.logo_path)) or url_for('static', filename='images/logo-supertool.png') %}
+
+{% block content %}
+<div class="st-wrap">
+  <!-- Hero -->
+  <div class="st-hero card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex align-items-center gap-3 py-3 py-md-4">
+      <div class="st-hero-icon">
+        <i class="bi bi-building-gear"></i>
+      </div>
+      <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <h1 class="h5 m-0 text-white">ตั้งค่าบริษัท</h1>
+          <span class="badge bg-light text-primary-emphasis st-chip"><i class="bi bi-shield-check me-1"></i>ต้องมีสิทธิ์ company.manage</span>
+        </div>
+        <div class="small text-white-50 mt-1"><i class="bi bi-info-circle me-1"></i>ข้อมูลนี้จะแสดงในเอกสารทุกใบ เช่น PO/GRN ฯลฯ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form -->
+  <form method="post" enctype="multipart/form-data" class="st-form card border-0 shadow-sm">
+    <div class="card-body p-3 p-md-4">
+      <div class="row g-3">
+        <!-- ซ้าย: ข้อมูลทั่วไป -->
+        <div class="col-lg-8">
+          <div class="st-section-title"><i class="bi bi-card-text me-2 text-primary"></i>ข้อมูลบริษัท</div>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">ชื่อบริษัท</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-buildings"></i></span>
+                <input name="name" class="form-control" value="{{ prof.name or '' }}" placeholder="เช่น บริษัท ซูเปอร์ทูลส์ จำกัด" required>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">เลขผู้เสียภาษี</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-upc"></i></span>
+                <input name="tax_id" class="form-control" value="{{ prof.tax_id or '' }}" placeholder="เลข 13 หลัก">
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">ที่อยู่ (บรรทัดหลัก)</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                <textarea name="address" class="form-control" rows="2" placeholder="บ้านเลขที่/ถนน/หมู่">{{ prof.address or '' }}</textarea>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">แขวง/ตำบล</label>
+              <input name="district" class="form-control" value="{{ prof.district or '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">เขต/อำเภอ</label>
+              <input name="amphoe" class="form-control" value="{{ prof.amphoe or '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">จังหวัด</label>
+              <input name="province" class="form-control" value="{{ prof.province or '' }}">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label">รหัสไปรษณีย์</label>
+              <input name="postcode" class="form-control" value="{{ prof.postcode or '' }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">เบอร์โทร</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+                <input name="phone" class="form-control" value="{{ prof.phone or '' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ขวา: โลโก้ -->
+        <div class="col-lg-4">
+          <div class="st-section-title"><i class="bi bi-image me-2 text-primary"></i>โลโก้บริษัท</div>
+          <div class="st-logo-card p-3 rounded-4 border">
+            <div class="d-flex align-items-center gap-3">
+              <div class="st-logo-box rounded-4 overflow-hidden border">
+                <img id="logoPreview" src="{{ logo_url }}" alt="Logo" class="w-100 h-100 object-fit-cover">
+              </div>
+              <div class="flex-grow-1">
+                <div class="small text-muted mb-1">PNG/JPG/SVG/WEBP ≤ 2MB</div>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-upload"></i></span>
+                  <input id="logoInput" type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,.svg">
+                </div>
+                {% if prof.logo_path %}
+                  <div class="small text-success mt-2"><i class="bi bi-check-circle me-1"></i>กำลังใช้โลโก้ที่อัปโหลดแล้ว</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ปุ่ม -->
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <button class="btn btn-primary px-3">
+          <i class="bi bi-check2-circle me-1"></i> บันทึก
+        </button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left-short me-1"></i> กลับหน้าแรก
+        </a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // พรีวิวโลโก้ + ตรวจขนาด (ให้สอดคล้อง backend 2MB)
+  const input = document.getElementById('logoInput');
+  const img   = document.getElementById('logoPreview');
+  if (input) {
+    input.addEventListener('change', () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const okTypes = ['image/png','image/jpeg','image/webp','image/svg+xml'];
+      if (!okTypes.includes(f.type)) {
+        alert('ชนิดไฟล์ไม่รองรับ โปรดเลือก PNG/JPG/WEBP/SVG');
+        input.value = ''; return;
+      }
+      if (f.size > 2 * 1024 * 1024) {
+        alert('ไฟล์ใหญ่เกิน 2MB');
+        input.value = ''; return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => { img.src = e.target.result; };
+      reader.readAsDataURL(f);
+    });
+  }
+</script>
+{% endblock %}

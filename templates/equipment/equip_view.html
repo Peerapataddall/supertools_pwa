@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}รายละเอียดอุปกรณ์ · {{ e.name }}{% endblock %}
+
+{% block head %}
+<style>
+  :root{
+    --pad:14px;         /* ลด padding ให้โปร่งขึ้น */
+    --gap:12px;         /* ระยะระหว่างบล็อก */
+    --radius:16px;
+    --shadow:0 10px 26px rgba(16,24,40,.07);
+  }
+
+  .st-card{
+    border:0; border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    background:linear-gradient(180deg,#ffffff,#fafcff);
+  }
+  .st-card .st-card-hd{
+    padding:10px 14px;
+    border-bottom:1px solid rgba(0,0,0,.06);
+    background:linear-gradient(90deg,#f3f6ff,#ffffff);
+    border-top-left-radius:var(--radius); border-top-right-radius:var(--radius);
+    font-weight:600; color:#344054;
+  }
+  .st-card .st-card-bd{ padding:var(--pad) calc(var(--pad)+2px); }
+
+  /* KPI compact */
+  .kpi-grid{
+    display:grid; gap: var(--gap);
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+  @media (max-width: 768px){ .kpi-grid{ grid-template-columns: repeat(2, minmax(140px,1fr)); } }
+  .st-kpi{ text-align:center; padding:8px 4px; }
+  .st-kpi .num{ font-weight:700; font-size:clamp(18px, 2.2vw, 26px); letter-spacing:.2px; }
+  .st-kpi .lbl{ font-size:13px; color:#667085; }
+
+  .chip{
+    display:inline-flex; gap:.4rem; align-items:center;
+    padding:.2rem .55rem; border-radius:999px; font-size:.82rem; font-weight:600;
+    background:#e8faf0; color:#0f6b3a;
+  }
+  .chip.warn{ background:#fff7e8; color:#b35b00; }
+  .chip.bad{ background:#ffe9ea; color:#a30d1a; }
+
+  .muted{ color:#98a2b3; }
+  .avatar-xxl{ width:100%; max-height:360px; object-fit:contain; border-radius:14px; }
+
+  .table-log tr td, .table-log tr th{ vertical-align:middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+  <div class="fs-5 fw-semibold">รายละเอียดอุปกรณ์</div>
+  <div class="muted">SKU {{ e.sku }}</div>
+  <span class="chip {{ 'warn' if e.status=='REPAIR' else ('bad' if e.status=='RENTED' else '') }}">
+    {% if e.status=='RENTED' %}<i class="bi bi-box-arrow-right"></i>{% elif e.status=='REPAIR' %}<i class="bi bi-tools"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
+    {{ e.status_th }}
+  </span>
+  <div class="ms-auto d-flex gap-2">
+    {% if can('equipment.manage') %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('equip_edit', eid=e.id) }}"><i class="bi bi-pencil-square me-1"></i> แก้ไข</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('equip_list') }}"><i class="bi bi-arrow-left me-1"></i> กลับ</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- ซ้าย: รูป + ข้อมูลพื้นฐาน -->
+  <div class="col-lg-5">
+    <div class="st-card">
+      <div class="st-card-hd d-flex align-items-center gap-2">
+        <i class="bi bi-image"></i> รูป & ข้อมูลพื้นฐาน
+      </div>
+      <div class="st-card-bd">
+        {% if e.image_path %}
+          <img class="avatar-xxl mb-2" src="{{ url_for('static', filename=e.image_path) }}" alt="image">
+        {% endif %}
+
+        <div class="d-grid" style="row-gap:.35rem">
+          <div><span class="muted">ชื่ออุปกรณ์:</span> <b>{{ e.name }}</b></div>
+          <div><span class="muted">หมวดหมู่:</span> {{ e.category.prefix_sku }} · {{ e.category.name }}</div>
+          <div><span class="muted">รับเข้า:</span> {{ e.received_date|strftime('%d/%m/%Y') }}</div>
+          <div><span class="muted">ต้นทุน:</span> {{ '{:,.2f}'.format(e.cost or 0) }} บาท</div>
+          <div><span class="muted">อายุใช้งานรวม:</span> {{ e.lifetime_days }} วัน</div>
+          <div><span class="muted">ใช้งานแล้ว:</span> {{ e.days_used }} วัน</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ขวา: กล่องชุดที่ 1 และ 3 -->
+  <div class="col-lg-7 d-flex flex-column gap-3">
+    <!-- ชุดที่ 1: ราคาเช่าคืนทุน -->
+    <div class="st-card">
+      <div class="st-card-hd d-flex align-items-center gap-2">
+        <i class="bi bi-cash-coin"></i> ราคาเช่าคืนทุน (ไม่รวมกำไร)
+      </div>
+      <div class="st-card-bd">
+        <div class="kpi-grid">
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.price_per_day_break_even) }}</div>
+            <div class="lbl">บาท/วัน</div>
+          </div>
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.price_per_month_break_even) }}</div>
+            <div class="lbl">บาท/เดือน</div>
+          </div>
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.price_per_year_break_even) }}</div>
+            <div class="lbl">บาท/ปี</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ชุดที่ 3: รายละเอียดค่าเสื่อมสภาพปัจจุบัน -->
+    <div class="st-card">
+      <div class="st-card-hd d-flex align-items-center gap-2">
+        <i class="bi bi-graph-down-arrow"></i> ค่าเสื่อมสภาพ (เส้นตรง) ณ วันนี้
+      </div>
+      <div class="st-card-bd">
+        <div class="kpi-grid" style="grid-template-columns: repeat(4, minmax(110px,1fr));">
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.depreciation_per_day) }}</div>
+            <div class="lbl">ค่าเสื่อม/วัน</div>
+          </div>
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.depreciation_per_month) }}</div>
+            <div class="lbl">ค่าเสื่อม/เดือน</div>
+          </div>
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.depreciation_per_year) }}</div>
+            <div class="lbl">ค่าเสื่อม/ปี</div>
+          </div>
+          <div class="st-kpi">
+            <div class="num">{{ '{:,.2f}'.format(e.accumulated_depr) }}</div>
+            <div class="lbl">สะสมแล้ว</div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <div class="muted">มูลค่าตามบัญชีปัจจุบัน</div>
+          <div class="fw-semibold" style="font-size:clamp(18px,2vw,24px);">
+            {{ '{:,.2f}'.format(e.current_value) }} บาท
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- แถวล่างเต็มความกว้าง: ชุดที่ 2 Log -->
+<div class="mt-3 st-card">
+  <div class="st-card-hd d-flex align-items-center gap-2">
+    <i class="bi bi-clock-history"></i> ประวัติ (Log)
+  </div>
+  <div class="st-card-bd">
+    <div class="table-responsive">
+      <table class="table table-hover table-log align-middle mb-0">
+        <thead>
+          <tr class="text-nowrap">
+            <th style="width:160px;">เวลา</th>
+            <th style="width:120px;">เหตุการณ์</th>
+            <th>รายละเอียด</th>
+            <th style="width:180px;">โดย</th>
+            <th style="width:200px;">ลูกค้า</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lg in logs %}
+          <tr>
+            <td class="text-nowrap">{{ lg.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+            <td>
+              {% if lg.action == 'ADD' %}<span class="badge text-bg-primary">ADD</span>
+              {% elif lg.action == 'EDIT' %}<span class="badge text-bg-secondary">EDIT</span>
+              {% elif lg.action == 'STATUS' %}<span class="badge text-bg-warning text-dark">STATUS</span>
+              {% else %}<span class="badge text-bg-light text-dark">{{ lg.action }}</span>{% endif %}
+            </td>
+            <td>{{ lg.note or '-' }}</td>
+            <td>{{ (lg.user.full_name or lg.user.username) if lg.user else '-' }}</td>
+            <td>{{ lg.customer_name or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted">ยังไม่มีประวัติ</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

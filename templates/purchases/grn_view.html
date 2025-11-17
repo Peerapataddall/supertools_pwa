@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}ใบรับสินค้า {{ grn.number }}{% endblock %}
+{% block content %}
+
+<style>
+  /* ===== Soft gradients & tiles (เฉพาะหน้านี้) ===== */
+  .gx-card{
+    background: linear-gradient(180deg,#f4f9ff 0%,#eef6ff 100%);
+    border: 1px solid #e6eefc !important;
+    box-shadow: 0 6px 20px rgba(20,90,200,.06), 0 1px 0 rgba(20,90,200,.06);
+    border-radius: 16px;
+  }
+  .gx-tile{
+    width: 44px; height: 44px; border-radius: 12px;
+    display: inline-grid; place-items: center;
+    color:#165ef0; 
+    background: linear-gradient(145deg,#e8f1ff, #f5f9ff);
+    border: 1px solid #dbe8ff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 6px 14px rgba(22,94,240,.08);
+  }
+  .gx-chip{
+    background: #eefcf3; color:#1e7a46;
+    border:1px solid #cfeedd; border-radius: 999px;
+    padding: 4px 10px; font-weight:600; font-size:.875rem;
+  }
+  .gx-section-title{ font-weight:700; }
+  .gx-note{ color:#6b7280; font-size:.875rem; }
+
+  /* ตารางหัวคอลัมน์ให้ดูใสขึ้น */
+  .table thead th{
+    background: linear-gradient(180deg,#f5f8ff 0%, #eef4ff 100%) !important;
+    border-bottom: 1px solid #e3ebff !important;
+  }
+
+  /* กล่องสรุปรวม */
+  .gx-total{
+    background: linear-gradient(180deg,#f7fbff 0%, #f0f6ff 100%);
+    border:1px solid #e0e9ff; border-radius:14px;
+    box-shadow: 0 6px 16px rgba(20,90,200,.06);
+  }
+</style>
+
+<!-- ===== Header ===== -->
+<div class="card gx-card border-0 mb-3">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="gx-tile">
+        <!-- ไอคอนสื่อ “รับเข้า” และเหมือนหน้า List -->
+        <i class="bi bi-clipboard-check"></i>
+      </div>
+      <div>
+        <div class="h6 m-0 fw-semibold">ใบรับสินค้า (GRN)</div>
+        <div class="small text-muted">
+          เลขที่: <span class="fw-semibold">{{ grn.number }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <span class="gx-chip">สถานะ: รับเข้าแล้ว</span>
+      <a href="{{ url_for('grn_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> กลับรายการ
+      </a>
+      <a class="btn btn-outline-primary"
+            href="{{ url_for('grn_print', gid=grn.id) }}"
+                target="_blank" rel="noopener">
+            <i class="bi bi-printer me-1"></i> พิมพ์ (A4)
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Supplier / Ref ===== -->
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card gx-card border-0 h-100">
+      <div class="card-body">
+        <div class="gx-section-title mb-2">
+          <i class="bi bi-building me-1 text-primary"></i>ผู้ขาย (Supplier)
+        </div>
+        {% set sup = grn.po.supplier if grn.po else None %}
+        <div>{{ sup.name if sup else '-' }}</div>
+        {% if sup and sup.tax_id %}<div class="gx-note">เลขผู้เสียภาษี: {{ sup.tax_id }}</div>{% endif %}
+        {% if sup and sup.address %}<div class="gx-note">ที่อยู่: {{ sup.address }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card gx-card border-0 h-100">
+      <div class="card-body">
+        <div class="gx-section-title mb-2">
+          <i class="bi bi-info-circle me-1 text-primary"></i>อ้างอิง
+        </div>
+        <div class="gx-note">วันที่รับเข้า: {{ grn.grn_date|strftime('%d/%m/%Y') }}</div>
+        <div class="gx-note">
+          อ้างอิง PO:
+          {% if grn.po %}
+            <a href="{{ url_for('po_view', pid=grn.po.id) }}" class="link-primary text-decoration-none">
+              {{ grn.po.number }}
+            </a>
+          {% else %}-{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Items ===== -->
+<div class="card gx-card border-0">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead class="table-light">
+          <tr>
+            <th style="width:14%">SKU</th>
+            <th>ชื่อรายการ</th>
+            <th style="width:12%" class="text-end">จำนวน</th>
+            <th style="width:10%">หน่วย</th>
+            <th style="width:14%" class="text-end">ราคาต่อหน่วย</th>
+            <th style="width:14%" class="text-end">รวม</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% set ns = namespace(subtotal=0.0) %}
+        {% for it in grn.items %}
+          {% set line = (it.qty or 0) * (it.unit_cost or 0) %}
+          {% set ns.subtotal = ns.subtotal + line %}
+          <tr>
+            <td>{{ it.sku or '-' }}</td>
+            <td>{{ it.name }}</td>
+            <td class="text-end">{{ '{:,.2f}'.format(it.qty or 0) }}</td>
+            <td>{{ it.unit or '' }}</td>
+            <td class="text-end">{{ '{:,.2f}'.format(it.unit_cost or 0) }}</td>
+            <td class="text-end">{{ '{:,.2f}'.format(line) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">ไม่มีรายการ</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# รวมเงินจากโมเดลถ้ามี ไม่งั้นใช้ที่คำนวณจากตาราง #}
+    {% set total_from_model = grn.amount_total if grn is defined else None %}
+    {% set total_display = total_from_model if total_from_model is not none else ns.subtotal %}
+
+    <div class="d-flex mt-2">
+      <div class="ms-auto" style="max-width:360px;">
+        <div class="gx-total p-3">
+          <div class="d-flex justify-content-between mb-2">
+            <div class="fw-semibold">มูลค่ารับเข้า</div>
+            <div class="fw-semibold">{{ '{:,.2f}'.format(total_display) }}</div>
+          </div>
+          <div class="gx-note">* มูลค่านี้อ้างอิงราคาจาก PO</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

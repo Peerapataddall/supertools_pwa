@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}สร้างใบเสนอราคา{% endblock %}
+{% block content %}
+
+<div class="container-xxl">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-file-earmark-plus-fill text-primary fs-4"></i>
+    <h1 class="h5 m-0">สร้างใบเสนอราคา</h1>
+  </div>
+
+  <!-- datalist สำหรับค้นหาอุปกรณ์ -->
+  <datalist id="equip-options"></datalist>
+
+  <!-- Header -->
+  <div class="card st-softcard border-0 mb-3">
+    <div class="card-body row g-3">
+      <div class="col-md-6 col-lg-3">
+        <label class="form-label">ลูกค้า</label>
+        <select class="form-select" name="customer_id" form="quForm" required>
+          <option value="">— เลือกลูกค้า —</option>
+          {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <label class="form-label">เครดิต (วัน)</label>
+        <input type="number" class="form-control" name="credit_days" form="quForm" value="0" min="0">
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <label class="form-label">เลขที่ PO ลูกค้า</label>
+        <input type="text" class="form-control" name="po_customer" form="quForm" placeholder="เช่น RX3030">
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <label class="form-label">ภาษี</label>
+        <select class="form-select" name="tax_mode" id="taxMode" form="quForm">
+          <option value="EXC">ค่าของไม่รวมภาษี (+VAT 7%)</option>
+          <option value="INC">รวมภาษีแล้ว (VAT 7% อยู่ในยอด)</option>
+          <option value="NONE">ไม่คิดภาษี</option>
+        </select>
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <label class="form-label">หัก ณ ที่จ่าย (%)</label>
+        <select class="form-select" name="wht_pct" id="whtPct" form="quForm">
+          <option value="0">0</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="5">5</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- รายการ -->
+  <div class="card st-softcard border-0 mb-3">
+    <div class="card-header bg-transparent">
+      <div class="fw-semibold"><i class="bi bi-ui-radios-grid me-2 text-primary"></i>รายการอุปกรณ์</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle m-0" id="itemsTable">
+          <thead class="table-light">
+          <tr>
+            <th style="width:28%">รายการ (ค้นหาอุปกรณ์)</th>
+            <th style="width:8%">จำนวน</th>
+            <th style="width:12%">หน่วยเช่า</th>
+            <th style="width:10%">ระยะเวลา</th>
+            <th style="width:16%">ราคา/หน่วย</th>
+            <th style="width:10%">%ลด</th>
+            <th style="width:8%"></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr>
+            <td>
+              <input type="text" class="form-control js-equip-input"
+                     name="name[]" placeholder="พิมพ์เพื่อค้นหา… (จะแสดง [SKU] ชื่อ)"
+                     list="equip-options" autocomplete="off" form="quForm">
+            </td>
+            <td><input type="number" class="form-control text-end item-qty" name="qty[]" value="1" min="0" form="quForm"></td>
+            <td>
+              <select class="form-select item-unit" name="unit[]" form="quForm">
+                <option value="HOUR">ชั่วโมง</option>
+                <option value="DAY" selected>วัน</option>
+                <option value="MONTH">เดือน</option>
+                <option value="YEAR">ปี</option>
+              </select>
+            </td>
+            <td><input type="number" class="form-control text-end item-dur" name="duration[]" value="1" min="0" form="quForm"></td>
+            <td><input type="number" class="form-control text-end item-price" name="price[]" value="0" min="0" step="0.01" form="quForm"></td>
+            <td><input type="number" class="form-control text-end item-disc" name="disc[]" value="0" min="0" max="100" step="0.01" form="quForm"></td>
+            <td class="text-center">
+              <button type="button" class="btn btn-outline-danger btn-sm btn-del-row"><i class="bi bi-x-lg"></i></button>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="p-3 border-top d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary" id="btnAddRow" data-add-row>
+          <i class="bi bi-plus-circle me-1"></i> เพิ่มแถว
+        </button>
+
+        <!-- ปุ่มใหม่: ตรวจสอบโปรโมชั่น -->
+        <button type="button" class="btn btn-outline-success" id="btnCheckPromo">
+          <i class="bi bi-magic me-1"></i> ตรวจสอบโปรโมชั่น
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- สรุป -->
+  <div class="row g-3 align-items-stretch">
+    <div class="col-lg-8">
+      <div class="card st-softcard border-0 h-100">
+        <div class="card-body">
+          <label class="form-label">หมายเหตุ</label>
+          <textarea class="form-control" name="remark" id="remarkBox" form="quForm" rows="4" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card st-softcard st-softcard--accent border-0 h-100">
+        <div class="card-body st-totals">
+          <div class="fw-semibold mb-2"><i class="bi bi-calculator me-2 text-primary"></i>สรุปยอด</div>
+          <div class="row-line"><span>มูลค่าก่อนส่วนลด</span><span id="sum-before">0.00</span></div>
+          <div class="row-line"><span>ส่วนลดรวม</span><span id="sum-discount">0.00</span></div>
+          <hr class="my-2">
+          <div class="row-line"><span>ฐานภาษี (หลังหักส่วนลด)</span><span id="sum-taxbase">0.00</span></div>
+          <div class="row-line"><span>ภาษีมูลค่าเพิ่ม 7%</span><span id="sum-vat">0.00</span></div>
+          <div class="row-line"><span>ภาษีหัก ณ ที่จ่าย</span><span id="sum-wht">0.00</span></div>
+          <div class="row-line row-line--grand border-top pt-2"><span>รวมทั้งสิ้น</span><span id="sum-grand">0.00</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ปุ่มบันทึก -->
+  <form id="quForm" action="{{ url_for('qu_new') }}" method="post" class="mt-3">
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('qu_list') }}" class="btn btn-outline-secondary">ยกเลิก</a>
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-save2 me-1"></i> บันทึก
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Modal: โปรโมชัน -->
+<div class="modal fade" id="promoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-stars me-2 text-warning"></i>ตรงตามเงื่อนไขโปรโมชัน</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="promoDesc" class="mb-2"></div>
+        <div class="small text-muted">เมื่อยืนยัน ระบบจะลดราคาให้กับ “ชิ้นที่ถูกสุด” ตามเงื่อนไขอัตโนมัติ และจะเพิ่มบันทึกในช่องหมายเหตุ</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btnApplyPromo">นำส่วนลดมาใช้</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ---------------- Formatting / calc ----------------
+  const fmt = (n)=> (Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+
+  function calc() {
+    let before=0, discAll=0;
+    document.querySelectorAll('#itemsTable tbody tr').forEach(tr=>{
+      const qty = parseFloat(tr.querySelector('.item-qty').value||0);
+      const dur = parseFloat(tr.querySelector('.item-dur').value||0);
+      const price = parseFloat(tr.querySelector('.item-price').value||0);
+      const disc = parseFloat(tr.querySelector('.item-disc').value||0);
+      const gross = qty * dur * price;
+      const discAmt = gross * (isNaN(disc)?0:disc/100);
+      before += gross;
+      discAll += discAmt;
+    });
+    const taxMode = document.getElementById('taxMode').value;
+    const whtPct  = parseFloat(document.getElementById('whtPct').value||0);
+
+    const taxBase = Math.max(0, before - discAll);
+    let vat=0, total=0;
+    if (taxMode === 'EXC') { vat = taxBase * 0.07; total = taxBase + vat; }
+    else if (taxMode === 'INC') { vat = taxBase * (7/107); total = taxBase; }
+    else { vat = 0; total = taxBase; }
+    const wht = total * (whtPct/100);
+    const grand = total - wht;
+
+    document.getElementById('sum-before').innerText   = fmt(before);
+    document.getElementById('sum-discount').innerText = fmt(discAll);
+    document.getElementById('sum-taxbase').innerText  = fmt(taxBase);
+    document.getElementById('sum-vat').innerText      = fmt(vat);
+    document.getElementById('sum-wht').innerText      = fmt(wht);
+    document.getElementById('sum-grand').innerText    = fmt(grand);
+  }
+
+  function bindRow(tr){
+    tr.querySelectorAll('input,select').forEach(el=>{
+      el.addEventListener('input', calc);
+      el.addEventListener('change', calc);
+    });
+    tr.querySelector('.btn-del-row').addEventListener('click', ()=>{
+      const tbody = document.querySelector('#itemsTable tbody');
+      if (tbody.children.length > 1) { tr.remove(); calc(); }
+      else {
+        tr.querySelectorAll('input').forEach(i=>{
+          if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) i.value = '1';
+          else i.value = '';
+        });
+        tr.querySelector('.item-price').value='0';
+        tr.querySelector('.item-disc').value='0';
+        calc();
+      }
+    });
+  }
+
+  // --------- datalist Autocomplete ----------
+  (function(){
+    const dl = document.getElementById('equip-options');
+    if (!dl) return;
+    let t=null;
+    const fetchEquip = (q)=>{
+      if (!q || q.length<1){ dl.innerHTML=''; return; }
+      fetch(`/api/equipment/search?q=${encodeURIComponent(q)}`)
+        .then(r=>r.json())
+        .then(list=>{
+          dl.innerHTML='';
+          list.forEach(it=>{
+            const opt=document.createElement('option');
+            opt.value = `[${it.sku}] ${it.name}`;
+            opt.label = it.label || `${it.sku} · ${it.name}`;
+            dl.appendChild(opt);
+          });
+        }).catch(()=> dl.innerHTML='');
+    };
+    const onType = (ev)=>{ const q=ev.target.value.trim(); clearTimeout(t); t=setTimeout(()=>fetchEquip(q),200); };
+    const wire = (el)=>{ if(el.dataset._wired) return; el.addEventListener('input',onType); el.addEventListener('focus',onType); el.dataset._wired='1'; };
+    document.querySelectorAll('.js-equip-input').forEach(wire);
+    document.addEventListener('click',(e)=>{
+      if (!e.target.closest('[data-add-row]')) return;
+      setTimeout(()=> document.querySelectorAll('.js-equip-input').forEach(wire),30);
+    });
+  })();
+
+  // --------- เพิ่มแถว ----------
+  bindRow(document.querySelector('#itemsTable tbody tr'));
+  document.getElementById('btnAddRow').addEventListener('click', ()=>{
+    const tr0 = document.querySelector('#itemsTable tbody tr');
+    const tr = tr0.cloneNode(true);
+    tr.querySelectorAll('input').forEach(i=>{
+      if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) i.value = '1';
+      else i.value = '';
+    });
+    tr.querySelector('.item-price').value='0';
+    tr.querySelector('.item-disc').value='0';
+    document.querySelector('#itemsTable tbody').appendChild(tr);
+    bindRow(tr); calc();
+  });
+
+  document.getElementById('taxMode').addEventListener('change', calc);
+  document.getElementById('whtPct').addEventListener('change', calc);
+  calc();
+
+  // ===================== Promotion (ใช้คำนวณจากเซิร์ฟเวอร์) =====================
+  const unitToDays = (unit,n)=>{
+    unit = (unit||'DAY').toUpperCase();
+    n = Math.max(0, parseInt(n||0,10));
+    if (unit==='MONTH') return n*30;
+    if (unit==='YEAR')  return n*365;
+    return n;
+  };
+
+  function collectItems(){
+    const rows = [];
+    document.querySelectorAll('#itemsTable tbody tr').forEach((tr,idx)=>{
+      rows.push({
+        index: idx,
+        el: tr,
+        name: tr.querySelector('input[name="name[]"]').value.trim(),
+        qty: parseFloat(tr.querySelector('.item-qty').value||0),
+        rent_unit: (tr.querySelector('.item-unit').value||'DAY').toUpperCase(),
+        rent_duration: parseFloat(tr.querySelector('.item-dur').value||0),
+        unit_price: parseFloat(tr.querySelector('.item-price').value||0),
+        discPct: parseFloat(tr.querySelector('.item-disc').value||0)
+      });
+    });
+    return rows;
+  }
+
+  // แตกเป็นหน่วย แล้วเรียงจากราคาต่อหน่วยถูกสุด
+  function explodeUnits(rows){
+    const units = [];
+    rows.forEach((r)=>{
+      const qty = Math.max(0, Math.floor(r.qty||0));
+      for (let i=0;i<qty;i++){
+        units.push({ row: r, idxInRow: i, pricePerUnit: r.unit_price });
+      }
+    });
+    return units.sort((a,b)=> a.pricePerUnit - b.pricePerUnit);
+  }
+
+  // ถ้าจำนวนในแถวนั้นมากกว่าจำนวนที่จะลด ให้แยกแถว
+  function splitRowIfNeeded(rowEl, needUnits){
+    const qtyEl = rowEl.querySelector('.item-qty');
+    let qty = parseInt(qtyEl.value||0,10);
+    if (qty <= needUnits) return rowEl;
+    const tbody = document.querySelector('#itemsTable tbody');
+    const clone = rowEl.cloneNode(true);
+    clone.querySelector('.item-qty').value = String(needUnits);
+    qtyEl.value = String(qty - needUnits);
+    rowEl.after(clone);
+    bindRow(clone);
+    return clone;
+  }
+
+  // นำส่วนลดมาใช้กับฟอร์ม (โปรลดชิ้นถูกสุด K ชิ้น)
+  function applyPromoToForm(promo, rows){
+    const k = Math.max(1, parseInt(promo.cheapest_units_to_discount||1,10));
+    const cheapest = explodeUnits(rows).slice(0, k);
+    const byRow = new Map();
+    cheapest.forEach(u=>{
+      const key = u.row.el;
+      byRow.set(key, (byRow.get(key)||0) + 1);
+    });
+    byRow.forEach((needUnits, row)=>{
+      const targetRow = splitRowIfNeeded(row, needUnits);
+      const discEl = targetRow.querySelector('.item-disc');
+      if (promo.discount_type === 'PCT'){
+        discEl.value = String(promo.discount_value || 0);
+      }else{
+        const price = parseFloat(targetRow.querySelector('.item-price').value||0);
+        const perUnitAmt = (promo.discount_value || 0);
+        const pct = price > 0 ? (perUnitAmt / price) * 100.0 : 0;
+        discEl.value = String(pct.toFixed(2));
+      }
+    });
+
+    // เพิ่มบันทึกในหมายเหตุ
+    const box = document.getElementById('remarkBox');
+    const tag = `โปรโมชั่น: ${promo.name}`;
+    if (!box.value.includes(tag)){
+      box.value = (box.value.trim() ? (box.value.trim() + '\n') : '') + tag;
+    }
+    calc();
+  }
+
+  // ---------- Modal + ปุ่มตรวจสอบ ----------
+  let promoToApply = null;
+  const promoModal = new bootstrap.Modal(document.getElementById('promoModal'));
+  document.getElementById('btnApplyPromo').addEventListener('click', ()=>{
+    if (promoToApply){
+      applyPromoToForm(promoToApply.promo, promoToApply.rows);
+      promoModal.hide();
+      promoToApply = null;
+    }
+  });
+
+  // cache โปรทั้งหมดเพื่อดึงรายละเอียด (type/value) หลังรู้ว่าโปรไหนชนะจาก server
+  let activePromosCache = null;
+  async function getActivePromos(){
+    if (activePromosCache) return activePromosCache;
+    const r = await fetch('/api/promos/active');
+    activePromosCache = await r.json();
+    return activePromosCache;
+  }
+
+  async function checkPromoNow(){
+    try{
+      const rows = collectItems().filter(r=> r.name && r.qty>0 && r.rent_duration>0 && r.unit_price>0);
+      if (!rows.length){ alert('กรุณากรอกรายการอย่างน้อย 1 รายการก่อนตรวจสอบโปรโมชัน'); return; }
+      const anyNoDisc = rows.some(r => (parseFloat(r.discPct||0) <= 0));
+      if (!anyNoDisc) { alert('รายการนี้ได้รับส่วนลดแล้ว'); return; }
+
+      // เรียกเซิร์ฟเวอร์คำนวณว่า “โปรไหนดีที่สุด”
+      const res = await fetch("{{ url_for('api_promos_evaluate') }}", {
+        method:"POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ items: rows })
+      });
+      const data = await res.json();
+
+      if (!data.ok || !data.hasPromo){
+        alert('ยังไม่เข้าเงื่อนไขโปรโมชันที่ใช้งานอยู่'); 
+        return;
+      }
+
+      // หารายละเอียดโปร (type/value/cheapest_units_to_discount) จากรายการโปรที่เปิดอยู่
+      const promos = await getActivePromos();
+      const promoDetail = (promos || []).find(p => String(p.id) === String(data.promo.id));
+      if (!promoDetail){
+        alert('ไม่พบรายละเอียดโปรโมชันที่เลือก'); 
+        return;
+      }
+
+      // อธิบายในโมดัล + เตรียม apply
+      const durText = (promoDetail.rental_unit==='MONTH'?'เดือน':promoDetail.rental_unit==='YEAR'?'ปี':'วัน');
+      const cond = `เงื่อนไข: อย่างน้อย ${promoDetail.min_items||0} ชิ้น, ระยะเช่า ≥ ${promoDetail.min_duration||0} ${durText}`;
+      const how  = `ลดชิ้นราคาถูกสุด ${promoDetail.cheapest_units_to_discount||1} ชิ้น — ` +
+                   (promoDetail.discount_type==='PCT' ? `${promoDetail.discount_value||0}%`
+                   : `${promoDetail.discount_value||0} บาท/ชิ้น`);
+      const approx = Number(data.discount||0).toLocaleString();
+      document.getElementById('promoDesc').innerHTML =
+        `<div class="fw-semibold">${data.promo.name}</div>
+         <div class="small text-muted">${cond}</div>
+         <div class="small">${how}</div>
+         <div class="mt-2">ประมาณการส่วนลด: <strong>${approx}</strong> บาท</div>`;
+
+      promoToApply = { promo: { ...promoDetail, name: data.promo.name }, rows };
+      promoModal.show();
+
+      // เติมหมายเหตุล่วงหน้าด้วยข้อความแจ้งเตือน (ไม่ซ้ำบรรทัดเดิม)
+      const box = document.getElementById('remarkBox');
+      const note = `[AUTO PROMO] ใช้โปร '${data.promo.name}' ส่วนลดโดยประมาณ ${approx} บาท`;
+      if (!box.value.includes(note)){
+        box.value = (box.value.trim()? box.value.trim()+'\n' : '') + note;
+      }
+    }catch(e){
+      console.warn('promo check failed', e);
+      alert('ตรวจสอบโปรโมชันไม่สำเร็จ');
+    }
+  }
+
+  // ผูกเฉพาะ “ปุ่มตรวจสอบโปรโมชั่น”
+  document.getElementById('btnCheckPromo')?.addEventListener('click', checkPromoNow);
+</script>
+{% endblock %}

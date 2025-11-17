@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% set is_edit = e is defined and e %}
+{% block title %}{{ 'แก้ไขอุปกรณ์' if is_edit else 'เพิ่มอุปกรณ์' }} · Supertools{% endblock %}
+
+{% block head %}
+<style>
+  /* Hero */
+  .hero {
+    background:
+      radial-gradient(1200px 220px at 10% -60%, rgba(99,102,241,.18), transparent),
+      radial-gradient(900px 260px at 90% -70%, rgba(16,185,129,.18), transparent),
+      linear-gradient(180deg,#f7fbff,#fff 60%);
+    border:1px solid rgba(0,0,0,.04);
+    box-shadow:0 10px 30px rgba(24,39,75,.06);
+    border-radius:1.25rem;
+  }
+  .hero .title{ font-weight:800; letter-spacing:.2px; }
+
+  /* Card form */
+  .st-card{
+    border:1px solid rgba(0,0,0,.06);
+    border-radius:1rem;
+    box-shadow:0 12px 36px rgba(24,39,75,.08);
+  }
+
+  /* Labels & inputs */
+  .form-label{ font-weight:600; color:#334155; }
+  .form-control, .form-select{
+    border-radius:.9rem;
+    border:1px solid rgba(0,0,0,.08);
+    box-shadow:0 2px 8px rgba(24,39,75,.04) inset, 0 4px 16px rgba(24,39,75,.04);
+  }
+
+  /* Pills / helpers */
+  .pill{
+    display:inline-flex; align-items:center; gap:.45rem;
+    border-radius:999px; padding:.35rem .7rem;
+    background:#f1f5f9; color:#334155; font-weight:600;
+  }
+
+  /* Preview image */
+  .thumb{
+    width:72px; height:72px; object-fit:cover; border-radius:1rem;
+    box-shadow:0 8px 20px rgba(24,39,75,.15);
+  }
+
+  /* Buttons */
+  .btn-save{
+    border-radius:.9rem;
+    box-shadow:0 8px 22px rgba(59,130,246,.28);
+  }
+  .btn-ghost{
+    border-radius:.9rem; border:1px dashed rgba(0,0,0,.15);
+    background:rgba(255,255,255,.6);
+  }
+
+  /* Status badge preview */
+  .badge-pill{ border-radius:999px; padding:.35rem .7rem; font-weight:700; }
+  .b-ready{ background:#e7f7ee; color:#12824a; }
+  .b-rented{ background:#fff4e5; color:#b35300; }
+  .b-repair{ background:#eef2ff; color:#4f46e5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero p-3 p-md-4 mb-3">
+  <div class="d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-scissors text-primary-emphasis fs-4"></i>
+      <div>
+        <div class="title h4 m-0">{{ 'แก้ไขอุปกรณ์' if is_edit else 'เพิ่มอุปกรณ์' }}</div>
+        <div class="text-muted">รูป + ต้นทุน + อายุการใช้งาน เพื่อคำนวณราคาเข้าคืนทุน</div>
+      </div>
+    </div>
+    <div class="ms-auto">
+      <a href="{{ url_for('equip_list') }}" class="btn btn-ghost">
+        <i class="bi bi-arrow-left me-1"></i> กลับ
+      </a>
+    </div>
+  </div>
+</div>
+
+<form class="st-card p-3 p-md-4" method="post" enctype="multipart/form-data"
+      action="{{ url_for('equip_edit', eid=e.id) if is_edit else url_for('equip_new') }}">
+  <div class="row g-3">
+    <!-- ชื่อ / หมวดหมู่ / วันที่รับเข้า -->
+    <div class="col-md-6">
+      <label class="form-label">ชื่ออุปกรณ์</label>
+      <input name="name" class="form-control" required
+             value="{{ (e.name if is_edit else '') or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">หมวดหมู่</label>
+      <select name="category_id" id="category_id" class="form-select" required>
+        <option value="">— เลือก —</option>
+        {% for c in cats %}
+          <option value="{{ c.id }}"
+                  data-prefix="{{ c.prefix_sku }}"
+                  {{ 'selected' if (is_edit and e.category_id==c.id) else '' }}>
+            {{ c.prefix_sku }} · {{ c.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">วันที่รับเข้า</label>
+      <div class="input-group">
+        <input name="received_date" id="received_date" type="date" class="form-control" required
+               value="{{ (e.received_date|strftime('%Y-%m-%d') if is_edit else '') }}">
+        <span class="input-group-text"><i class="bi bi-calendar"></i></span>
+      </div>
+    </div>
+
+    <!-- ต้นทุน + อายุใช้งาน -->
+    <div class="col-md-3">
+      <label class="form-label">ต้นทุน (บาท)</label>
+      <input name="cost" type="number" step="0.01" min="0" class="form-control"
+             value="{{ (e.cost if is_edit else 0) }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">อายุการใช้งาน (ปี)</label>
+      <input name="life_years" type="number" min="0" class="form-control"
+             value="{{ (e.life_years if is_edit else 0) }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">อายุ (เดือน)</label>
+      <input name="life_months" type="number" min="0" class="form-control"
+             value="{{ (e.life_months if is_edit else 0) }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">อายุ (วัน)</label>
+      <input name="life_days" type="number" min="0" class="form-control"
+             value="{{ (e.life_days if is_edit else 0) }}">
+    </div>
+
+    <!-- สถานะ (แก้ไขเท่านั้น) + SKU แสดงผล -->
+    <div class="col-md-3">
+      <label class="form-label">สถานะ</label>
+      {% if is_edit %}
+      <select name="status" id="status" class="form-select">
+        <option value="READY"  {{ 'selected' if e.status=='READY'  else '' }}>พร้อมให้เช่า</option>
+        <option value="RENTED" {{ 'selected' if e.status=='RENTED' else '' }}>ถูกเช่า</option>
+        <option value="REPAIR" {{ 'selected' if e.status=='REPAIR' else '' }}>รอซ่อม</option>
+      </select>
+      {% else %}
+      <div class="pill"><i class="bi bi-check2-circle text-success"></i> ค่าเริ่มต้น: พร้อมให้เช่า</div>
+      {% endif %}
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">SKU</label>
+      {% if is_edit %}
+      <input class="form-control" value="{{ e.sku }}" readonly>
+      {% else %}
+      <input class="form-control" id="sku_preview" value="จะสร้างอัตโนมัติเมื่อบันทึก" readonly>
+      {% endif %}
+    </div>
+
+    <!-- รูปภาพ -->
+    <div class="col-12">
+      <label class="form-label d-flex align-items-center gap-2">
+        <i class="bi bi-image"></i> รูปภาพอุปกรณ์
+      </label>
+      <div class="d-flex align-items-center gap-3">
+        <input type="file" name="image" id="image" accept=".png,.jpg,.jpeg,.webp" class="form-control" style="max-width:420px">
+        {% if is_edit and e.image_path %}
+          <img class="thumb" id="imgPreview" src="{{ url_for('static', filename=e.image_path) }}" alt="">
+          <div class="text-muted small">ไฟล์ปัจจุบัน: {{ e.image_path }}</div>
+        {% else %}
+          <img class="thumb d-none" id="imgPreview" alt="">
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2 mt-4">
+    <a href="{{ url_for('equip_list') }}" class="btn btn-outline-secondary">
+      กลับ
+    </a>
+    <button class="btn btn-primary btn-save">
+      <i class="bi bi-check2-circle me-1"></i> บันทึก
+    </button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // แสดงตัวอย่างรูป
+  const fileInput = document.getElementById('image');
+  if (fileInput){
+    fileInput.addEventListener('change', (e)=>{
+      const f = e.target.files?.[0];
+      if(!f) return;
+      const url = URL.createObjectURL(f);
+      const img = document.getElementById('imgPreview');
+      img.src = url; img.classList.remove('d-none');
+    });
+  }
+
+  // Preview SKU (ตอนสร้างใหม่) = PREFIX-DDMMYY
+  function ddmmyy(d){
+    const pad = (n)=> String(n).padStart(2,'0');
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return '';
+    return `${pad(dt.getDate())}${pad(dt.getMonth()+1)}${String(dt.getFullYear()).slice(-2)}`
+  }
+  function updateSkuPreview(){
+    const opt = document.querySelector('#category_id option:checked');
+    const prefix = opt?.dataset?.prefix || '';
+    const d = document.getElementById('received_date')?.value || '';
+    const sku = (prefix && d) ? `${prefix}-${ddmmyy(d)}` : 'จะสร้างอัตโนมัติเมื่อบันทึก';
+    const box = document.getElementById('sku_preview');
+    if (box) box.value = sku;
+  }
+  document.getElementById('category_id')?.addEventListener('change', updateSkuPreview);
+  document.getElementById('received_date')?.addEventListener('input', updateSkuPreview);
+  updateSkuPreview();
+</script>
+{% endblock %}

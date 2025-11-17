@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}ใบสั่งซื้อ (PO){% endblock %}
+
+{% block content %}
+{# ---- แม็ปสถานะ: โค้ด -> ชื่อไทย / สี badge ---- #}
+{% set STATUS_LABEL = {'DRAFT':'ฉบับร่าง','APPROVED':'อนุมัติ','ORDERED':'สั่งซื้อแล้ว'} %}
+{% set STATUS_BADGE = {'DRAFT':'secondary','APPROVED':'success','ORDERED':'primary'} %}
+
+<div class="st-card rounded-4 p-3 p-md-4">
+  <!-- แถบไล่สีบนการ์ด -->
+  <div class="st-gradient-bar"></div>
+
+  <!-- Header -->
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-3 mt-3">
+    <!-- กล่องหัวเรื่องแบบ glass + chip จำนวน -->
+    <div class="st-header-glass d-flex align-items-center gap-2">
+      <i class="bi bi-clipboard2-check fs-5 text-primary"></i>
+      <span class="fw-semibold">ใบสั่งซื้อ (PO)</span>
+      <span class="st-chip">{{ pos|length }} รายการ</span>
+    </div>
+
+    <div class="ms-auto d-flex flex-wrap gap-2">
+      <div class="input-group input-group-sm st-input-w">
+        <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+        <input type="search" class="form-control" id="poSearch" placeholder="ค้นหาเลขที่ / ผู้ขาย">
+      </div>
+
+      {# แสดงชื่อไทย แต่ value เป็นโค้ดเดิม เพื่อใช้ filter ได้ #}
+      <select id="statusFilter" class="form-select form-select-sm st-input-w" style="max-width:220px">
+        <option value="">สถานะทั้งหมด</option>
+        <option value="DRAFT">{{ STATUS_LABEL['DRAFT'] }}</option>
+        <option value="APPROVED">{{ STATUS_LABEL['APPROVED'] }}</option>
+        <option value="ORDERED">{{ STATUS_LABEL['ORDERED'] }}</option>
+      </select>
+
+      {% if can('purchases.create') %}
+      <a href="{{ url_for('po_new') }}" class="btn btn-gradient btn-sm">
+        <i class="bi bi-plus-lg me-1"></i> สร้างใบสั่งซื้อ
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-responsive">
+    <table class="table align-middle table-hover st-table">
+      <thead class="small text-muted">
+        <tr>
+          <th style="width:18%">เลขที่</th>
+          <th style="width:12%">วันที่</th>
+          <th>ผู้ขาย</th>
+          <th class="text-end" style="width:15%">มูลค่ารวม</th>
+          <th style="width:12%">สถานะ</th>
+          <th class="text-end" style="width:1%"></th>
+        </tr>
+      </thead>
+      <tbody id="poRows">
+        {% for po in pos %}
+          {% set _code = po.status or 'DRAFT' %}
+          {% set _badge = STATUS_BADGE.get(_code, 'secondary') %}
+          <tr data-search="{{ (po.number or '') ~ ' ' ~ (po.supplier.name if po.supplier else '') | lower }}"
+              data-status="{{ _code }}">
+            <td class="fw-semibold">
+              <a class="link-body-emphasis text-decoration-none" href="{{ url_for('po_view', pid=po.id) }}">
+                <i class="bi bi-hash me-1"></i>{{ po.number }}
+              </a>
+            </td>
+            <td>{{ po.po_date.strftime("%d/%m/%Y") if po.po_date else '-' }}</td>
+            <td class="text-truncate" style="max-width:420px;">
+              <i class="bi bi-building me-1 text-muted"></i>{{ po.supplier.name if po.supplier else '-' }}
+            </td>
+            <td class="text-end">{{ '%.2f'|format(po.amount_total or 0) }}</td>
+            <td>
+              <span class="badge rounded-pill bg-{{ _badge }}">
+                <i class="bi bi-circle-fill me-1 small"></i>{{ STATUS_LABEL.get(_code, _code) }}
+              </span>
+            </td>
+
+            <!-- ปุ่มแอ็กชันแบบไอคอน (นีโอมอร์ฟิก/ไล่สี) -->
+            <td class="text-end">
+              <div class="st-actions">
+                <a class="st-iconbtn st-view" href="{{ url_for('po_view', pid=po.id) }}" title="ดูรายละเอียด">
+                  <i class="bi bi-eye"></i>
+                </a>
+
+                {% if can('purchases.create') %}
+                  {% if _code != 'APPROVED' %}
+                  <form method="post" action="{{ url_for('po_set_status', pid=po.id) }}" class="d-inline">
+                    <input type="hidden" name="status" value="APPROVED">
+                    <button class="st-iconbtn st-approve" title="อนุมัติ">
+                      <i class="bi bi-check2-circle"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+
+                  {% if _code != 'ORDERED' %}
+                  <form method="post" action="{{ url_for('po_set_status', pid=po.id) }}" class="d-inline">
+                    <input type="hidden" name="status" value="ORDERED">
+                    <button class="st-iconbtn st-order" title="สั่งซื้อแล้ว">
+                      <i class="bi bi-bag-check"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox me-2"></i>ยังไม่มีใบสั่งซื้อ
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const q = document.getElementById('poSearch');
+  const f = document.getElementById('statusFilter');
+  const rows = [...document.querySelectorAll('#poRows tr')];
+
+  function applyFilter(){
+    const qq = (q.value || '').trim().toLowerCase();
+    const st = (f.value || '').trim();      // โค้ดสถานะ (DRAFT/APPROVED/ORDERED)
+    rows.forEach(tr => {
+      const okQ = !qq || tr.dataset.search.includes(qq);
+      const okS = !st || tr.dataset.status === st;
+      tr.style.display = (okQ && okS) ? '' : 'none';
+    });
+  }
+  q.addEventListener('input', applyFilter);
+  f.addEventListener('change', applyFilter);
+</script>
+{% endblock %}

@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}สร้างแคมเปญของขวัญใหม่{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero ===== */
+  .gfnew-hero{
+    border-radius:1.5rem;
+    padding:1.3rem 1.6rem;
+    margin-bottom:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(900px 520px at -10% -20%, rgba(251, 191, 36, .24) 0, rgba(251, 191, 36,0) 45%),
+      radial-gradient(900px 520px at 110% 120%, rgba(59,130,246,.20) 0, rgba(59,130,246,0) 55%),
+      linear-gradient(135deg,#ffffff 0%,#f3f4ff 45%,#eff6ff 100%);
+    box-shadow:0 18px 45px rgba(15,23,42,.16);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:1.25rem;
+  }
+  .gfnew-hero-left{
+    display:flex;
+    gap:1rem;
+    align-items:center;
+  }
+  .gfnew-hero-icon{
+    width:52px;
+    height:52px;
+    border-radius:1.4rem;
+    display:grid;
+    place-items:center;
+    background:radial-gradient(circle at 0 0,#fee2e2 0,#f97373 40%,#b91c1c 100%);
+    color:#fff;
+    box-shadow:0 14px 32px rgba(239,68,68,.6);
+    flex-shrink:0;
+  }
+  .gfnew-hero-title{
+    font-weight:700;
+    font-size:1.1rem;
+    letter-spacing:.02em;
+    display:flex;
+    align-items:center;
+    gap:.55rem;
+  }
+  .gfnew-hero-pill{
+    font-size:.72rem;
+    padding:.1rem .7rem;
+    border-radius:999px;
+    background:rgba(15,23,42,.08);
+    color:#4b5563;
+    font-weight:500;
+  }
+  .gfnew-hero-sub{
+    font-size:.84rem;
+    color:#4b5563;
+  }
+
+  /* ===== Main card ===== */
+  .gfnew-card{
+    border-radius:1.4rem;
+    border:none;
+    box-shadow:0 15px 40px rgba(15,23,42,.12);
+    overflow:hidden;
+  }
+  .gfnew-card-header{
+    padding:.85rem 1.25rem;
+    border-bottom:1px solid rgba(148,163,184,.35);
+    background:linear-gradient(135deg,#f9fafb,#eef2ff);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:.75rem;
+  }
+  .gfnew-card-header-title{
+    font-size:.9rem;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:.45rem;
+  }
+  .gfnew-card-header-title i{
+    color:#6366f1;
+  }
+  .gfnew-card-header-sub{
+    font-size:.8rem;
+    color:#6b7280;
+  }
+  .gfnew-card-body{
+    padding:1.3rem 1.25rem 1.1rem;
+  }
+
+  .gfnew-label{
+    font-size:.82rem;
+    font-weight:600;
+    color:#4b5563;
+    margin-bottom:.15rem;
+  }
+  .gfnew-hint{
+    font-size:.8rem;
+    color:#9ca3af;
+  }
+
+  /* ===== Tier table ===== */
+  .gfnew-tier-header{
+    font-size:.88rem;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:.45rem;
+    margin-bottom:.25rem;
+  }
+  .gfnew-tier-header i{
+    color:#f97316;
+  }
+  .gfnew-tier-sub{
+    font-size:.8rem;
+    color:#6b7280;
+    margin-bottom:.75rem;
+  }
+  .gfnew-tier-table thead{
+    font-size:.8rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:#6b7280;
+  }
+  .gfnew-tier-table thead th{
+    border-bottom:1px solid rgba(148,163,184,.45);
+  }
+  .gfnew-tier-table tbody td{
+    vertical-align:middle;
+    font-size:.86rem;
+    border-bottom:1px dashed rgba(209,213,219,.7);
+  }
+  .gfnew-tier-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:32px;
+    height:32px;
+    border-radius:999px;
+    background:#fee2e2;
+    color:#b91c1c;
+    font-weight:700;
+    font-size:.9rem;
+  }
+  .gfnew-tier-row{
+    transition:background .18s ease, transform .18s ease, box-shadow .18s ease;
+  }
+  .gfnew-tier-row:hover{
+    background:linear-gradient(90deg,#f9fafb,#eef2ff);
+    transform:translateY(-1px);
+    box-shadow:0 6px 18px rgba(148,163,184,.4);
+  }
+
+  /* ===== Footer buttons ===== */
+  .gfnew-footer{
+    display:flex;
+    justify-content:flex-end;
+    gap:.5rem;
+    padding:1rem 1.25rem 1.25rem;
+    border-top:1px solid rgba(229,231,235,.9);
+    background:linear-gradient(180deg,#f9fafb,#f3f4f6);
+    border-radius:0 0 1.4rem 1.4rem;
+  }
+  .gfnew-btn-ghost{
+    border-radius:999px;
+    font-size:.86rem;
+    padding:.45rem 1.1rem;
+  }
+  .gfnew-btn-primary{
+    border-radius:999px;
+    font-size:.88rem;
+    padding:.5rem 1.4rem;
+    font-weight:600;
+    border:none;
+    background:linear-gradient(135deg,#4f46e5,#6366f1);
+    color:#fff !important;
+    box-shadow:0 14px 32px rgba(79,70,229,.55);
+    display:inline-flex;
+    align-items:center;
+    gap:.35rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+  {% set c = campaign if campaign is defined else None %}
+  {% set t1 = tiers[0] if tiers is defined and tiers|length > 0 else None %}
+  {% set t2 = tiers[1] if tiers is defined and tiers|length > 1 else None %}
+  {% set t3 = tiers[2] if tiers is defined and tiers|length > 2 else None %}
+
+  <!-- Hero -->
+  <div class="gfnew-hero">
+    <div class="gfnew-hero-left">
+      <div class="gfnew-hero-icon">
+        <i class="bi bi-gift-fill fs-4"></i>
+      </div>
+      <div>
+        <div class="gfnew-hero-title">
+          สร้างแคมเปญของขวัญใหม่
+          <span class="gfnew-hero-pill">
+            ใช้ให้ของขวัญลูกค้าตามเกณฑ์ยอดซื้อ
+          </span>
+        </div>
+        <div class="gfnew-hero-sub">
+          กำหนดช่วงเวลา รอบให้ของขวัญ และ Tier ของลูกค้าได้อย่างยืดหยุ่น
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <form method="post">
+    <!-- ข้อมูลแคมเปญ -->
+    <div class="card gfnew-card mb-3">
+      <div class="gfnew-card-header">
+        <div>
+          <div class="gfnew-card-header-title">
+            <i class="bi bi-card-text"></i>
+            ข้อมูลแคมเปญ
+          </div>
+          <div class="gfnew-card-header-sub">
+            ระบุชื่อแคมเปญ ช่วงวันที่ และรอบการให้ของขวัญ
+          </div>
+        </div>
+      </div>
+
+      <div class="gfnew-card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="gfnew-label">ชื่อแคมเปญ</label>
+            <input type="text" name="name"
+                   class="form-control"
+                   value="{{ request.form.get('name', c.name if c else '') }}"
+                   placeholder="เช่น ของขวัญลูกค้าทุก 4 เดือน">
+          </div>
+          <div class="col-md-6">
+            <label class="gfnew-label">รายละเอียด (ถ้ามี)</label>
+            <input type="text" name="description"
+                   class="form-control"
+                   value="{{ request.form.get('description', c.description if c else '') }}"
+                   placeholder="คำอธิบายสั้น ๆ เกี่ยวกับแคมเปญนี้">
+          </div>
+
+          <div class="col-md-3">
+            <label class="gfnew-label">วันที่เริ่มต้น</label>
+            <input type="date" name="period_start"
+                   class="form-control"
+                   value="{{ request.form.get('period_start', c.period_start.strftime('%Y-%m-%d') if c and c.period_start else '') }}">
+          </div>
+          <div class="col-md-3">
+            <label class="gfnew-label">วันที่สิ้นสุด</label>
+            <input type="date" name="period_end"
+                   class="form-control"
+                   value="{{ request.form.get('period_end', c.period_end.strftime('%Y-%m-%d') if c and c.period_end else '') }}">
+          </div>
+
+          <div class="col-md-3">
+            <label class="gfnew-label">รอบให้ของขวัญทุก (เดือน)</label>
+            <input type="number" min="1" name="cycle_months"
+                   class="form-control"
+                   value="{{ request.form.get('cycle_months', c.cycle_months if c and c.cycle_months else 4) }}">
+            <div class="gfnew-hint mt-1">เช่น 4 = ทุก 4 เดือน</div>
+          </div>
+
+          <div class="col-md-3">
+            <label class="gfnew-label">นับรอบจากเดือนที่</label>
+            <input type="number" min="1" max="12" name="anchor_month"
+                   class="form-control"
+                   value="{{ request.form.get('anchor_month', c.anchor_month if c and c.anchor_month else 1) }}">
+            <div class="gfnew-hint mt-1">ปกติ 1 = มกราคม</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tier -->
+    <div class="card gfnew-card mb-3">
+      <div class="gfnew-card-header">
+        <div>
+          <div class="gfnew-card-header-title">
+            <i class="bi bi-layers-half"></i>
+            กำหนดเกณฑ์ (Tier)
+          </div>
+          <div class="gfnew-card-header-sub">
+            กำหนดระดับเกรดลูกค้าตามยอดซื้อขั้นต่ำในช่วงแคมเปญ
+          </div>
+        </div>
+      </div>
+
+      <div class="gfnew-card-body">
+        <div class="gfnew-tier-header">
+          <i class="bi bi-info-circle"></i>
+          ตัวอย่าง: เกรด A ≥ 50,000 / B ≥ 20,000 / C ≥ 5,000 บาท
+        </div>
+        <div class="gfnew-tier-sub">
+          แถวไหนไม่ใช้ สามารถปล่อยว่างได้ ระบบจะไม่สร้าง Tier แถวนั้น
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle gfnew-tier-table">
+            <thead class="table-light">
+              <tr>
+                <th style="width:70px;">Code</th>
+                <th>ชื่อเกรด</th>
+                <th style="width:260px;">ยอดขั้นต่ำ (บาท)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Tier A -->
+              <tr class="gfnew-tier-row">
+                <td>
+                  <span class="gfnew-tier-chip">A</span>
+                  <input type="hidden" name="tier_code_1" value="A">
+                </td>
+                <td>
+                  <input type="text" class="form-control"
+                         name="tier_name_1"
+                         placeholder="ชื่อเกรด เช่น เกรด A"
+                         value="{{ request.form.get('tier_name_1', t1.name if t1 else '') }}">
+                </td>
+                <td>
+                  <input type="number" min="0" step="1"
+                         class="form-control text-end"
+                         name="tier_min_amount_1"
+                         placeholder="ยอดขั้นต่ำ"
+                         value="{{ request.form.get('tier_min_amount_1', '{:.0f}'.format(t1.min_amount) if t1 and t1.min_amount is not none else '') }}">
+                </td>
+              </tr>
+
+              <!-- Tier B -->
+              <tr class="gfnew-tier-row">
+                <td>
+                  <span class="gfnew-tier-chip" style="background:#e0f2fe;color:#0369a1;">B</span>
+                  <input type="hidden" name="tier_code_2" value="B">
+                </td>
+                <td>
+                  <input type="text" class="form-control"
+                         name="tier_name_2"
+                         placeholder="ชื่อเกรด เช่น เกรด B"
+                         value="{{ request.form.get('tier_name_2', t2.name if t2 else '') }}">
+                </td>
+                <td>
+                  <input type="number" min="0" step="1"
+                         class="form-control text-end"
+                         name="tier_min_amount_2"
+                         placeholder="ยอดขั้นต่ำ"
+                         value="{{ request.form.get('tier_min_amount_2', '{:.0f}'.format(t2.min_amount) if t2 and t2.min_amount is not none else '') }}">
+                </td>
+              </tr>
+
+              <!-- Tier C -->
+              <tr class="gfnew-tier-row">
+                <td>
+                  <span class="gfnew-tier-chip" style="background:#ede9fe;color:#5b21b6;">C</span>
+                  <input type="hidden" name="tier_code_3" value="C">
+                </td>
+                <td>
+                  <input type="text" class="form-control"
+                         name="tier_name_3"
+                         placeholder="ชื่อเกรด เช่น เกรด C"
+                         value="{{ request.form.get('tier_name_3', t3.name if t3 else '') }}">
+                </td>
+                <td>
+                  <input type="number" min="0" step="1"
+                         class="form-control text-end"
+                         name="tier_min_amount_3"
+                         placeholder="ยอดขั้นต่ำ"
+                         value="{{ request.form.get('tier_min_amount_3', '{:.0f}'.format(t3.min_amount) if t3 and t3.min_amount is not none else '') }}">
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Footer buttons -->
+      <div class="gfnew-footer">
+        <a href="{{ url_for('gifts_index') }}"
+           class="btn btn-outline-secondary gfnew-btn-ghost">
+          ยกเลิก
+        </a>
+        <button type="submit" class="gfnew-btn-primary">
+          <i class="bi bi-check2-circle"></i>
+          บันทึกแคมเปญ
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

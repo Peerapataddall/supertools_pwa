@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}สร้างใบสั่งซื้อ{% endblock %}
+{% block content %}
+
+<div class="st-card">
+  <!-- Toolbar -->
+  <div class="st-toolbar">
+    <h1 class="h5 m-0 d-flex align-items-center gap-2">
+      <i class="bi bi-plus-square"></i> สร้างใบสั่งซื้อ
+    </h1>
+
+    <div class="d-none d-md-flex align-items-center gap-3">
+      <!-- ประเภทภาษีแบบ segmented -->
+      <div class="seg">
+        <div class="form-check">
+          <input type="radio" name="tax_type" id="taxInc" value="inc" checked>
+          <label for="taxInc"><i class="bi bi-receipt"></i> รวม VAT</label>
+        </div>
+        <div class="form-check">
+          <input type="radio" name="tax_type" id="taxEx" value="ex">
+          <label for="taxEx"><i class="bi bi-receipt-cutoff"></i> ไม่รวม VAT</label>
+        </div>
+        <div class="form-check">
+          <input type="radio" name="tax_type" id="taxNone" value="none">
+          <label for="taxNone"><i class="bi bi-slash-circle"></i> ไม่คิดภาษี</label>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="small text-muted">VAT (%)</span>
+        <input type="number" class="form-control form-control-sm" style="width:100px"
+               id="vatRate" name="vat_rate" value="7">
+      </div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <form method="post" id="poForm" class="p-3 p-md-4">
+    <div class="row g-3 align-items-end">
+      <div class="col-12 col-lg-7">
+        <label class="form-label">ผู้ขาย (Supplier)</label>
+        <div class="input-group">
+          <select class="form-select" name="supplier_id" id="supplierSelect" required>
+            {% for s in suppliers %}
+              <option value="{{ s.id }}" {% if selected_id and selected_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalSupplier">
+            <i class="bi bi-building-add me-1"></i> เพิ่มซัพพลายเออร์
+          </button>
+        </div>
+      </div>
+
+      <!-- ซ่อน (สำหรับจอเล็ก: คุมภาษีด้านบนอยู่แล้ว) -->
+      <div class="col-12 d-md-none">
+        <div class="d-flex align-items-center gap-3">
+          <div class="seg flex-grow-1">
+            <div class="form-check">
+              <input type="radio" name="tax_type" id="taxInc_m" value="inc" checked>
+              <label for="taxInc_m">รวม VAT</label>
+            </div>
+            <div class="form-check">
+              <input type="radio" name="tax_type" id="taxEx_m" value="ex">
+              <label for="taxEx_m">ไม่รวม VAT</label>
+            </div>
+            <div class="form-check">
+              <input type="radio" name="tax_type" id="taxNone_m" value="none">
+              <label for="taxNone_m">ไม่คิดภาษี</label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="small text-muted">VAT (%)</span>
+            <input type="number" step="0.01" class="form-control" style="width:90px"
+                   id="vatRate_m" value="7">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-semibold">รายการ</div>
+      <button class="btn btn-sm btn-outline-primary" type="button" id="addRow">
+        <i class="bi bi-plus-lg me-1"></i> เพิ่มแถว
+      </button>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-12 col-lg-8">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle st-fancy" id="itemsTable">
+            <thead>
+              <tr>
+                <th style="width:12%">SKU</th>
+                <th>ชื่อรายการ</th>
+                <th style="width:10%">จำนวน</th>
+                <th style="width:10%">หน่วย</th>
+                <th style="width:12%">ราคาต่อหน่วย</th>
+                <th style="width:10%">ส่วนลด (%)</th>
+                <th class="text-end" style="width:12%">รวม</th>
+                <th style="width:1%"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Summary ด้านขวา -->
+      <div class="col-12 col-lg-4">
+        <div class="st-summary st-card">
+          <div class="st-kpi">
+            <div class="t text-muted">มูลค่าก่อนส่วนลด</div>
+            <div class="v text-mono" id="sumSub">0.00</div>
+          </div>
+          <div class="st-kpi">
+            <div class="t text-muted">ส่วนลดรวม</div>
+            <div class="v text-mono" id="sumDisc">0.00</div>
+          </div>
+          <div class="st-kpi">
+            <div class="t text-muted">มูลค่าไม่รวมภาษี</div>
+            <div class="v text-mono" id="sumNetEx">0.00</div>
+          </div>
+          <div class="st-kpi">
+            <div class="t text-muted">ภาษีมูลค่าเพิ่ม (<span id="vatPercentText">7</span>%)</div>
+            <div class="v text-mono" id="sumVat">0.00</div>
+          </div>
+          <hr class="my-2">
+          <div class="st-kpi" style="background:var(--st-bg-soft);">
+            <div class="t fw-semibold">รวมสุทธิ</div>
+            <div class="v fs-5" id="sumGrand">0.00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 d-flex gap-2">
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-check2-circle me-1"></i> บันทึก
+      </button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('po_list') }}">ยกเลิก</a>
+    </div>
+
+    <!-- Hidden values (คงเดิม) -->
+    <input type="hidden" name="calc_subtotal" id="hidSub">
+    <input type="hidden" name="calc_discount" id="hidDisc">
+    <input type="hidden" name="calc_net_ex_vat" id="hidNetEx">
+    <input type="hidden" name="calc_vat" id="hidVat">
+    <input type="hidden" name="calc_grand" id="hidGrand">
+  </form>
+</div>
+
+<!-- Modal: เพิ่มซัพพลายเออร์ (เดิม) -->
+<div class="modal fade" id="modalSupplier" tabindex="-1" aria-labelledby="modalSupplierLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('api_suppliers_create') }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalSupplierLabel"><i class="bi bi-building-add me-2"></i>เพิ่มซัพพลายเออร์</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">ชื่อบริษัท/ร้าน <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">เลขที่ผู้เสียภาษี</label>
+              <input type="text" class="form-control" name="tax_id">
+            </div>
+            <div class="col-12">
+              <label class="form-label">ที่อยู่</label>
+              <textarea class="form-control" name="address" rows="2"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">แขวง/ตำบล</label>
+              <input type="text" class="form-control" name="district">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">เขต/อำเภอ</label>
+              <input type="text" class="form-control" name="amphoe">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">จังหวัด</label>
+              <input type="text" class="form-control" name="province">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">รหัสไปรษณีย์</label>
+              <input type="text" class="form-control" name="postcode">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">โทรศัพท์</label>
+              <input type="text" class="form-control" name="phone">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit"><i class="bi bi-save me-1"></i> บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+const tbody   = document.querySelector('#itemsTable tbody');
+const addRowBtn = document.getElementById('addRow');
+
+const vatRateInput = document.getElementById('vatRate');
+// sync กับ mobile field ถ้ามี
+const vatRateMobile = document.getElementById('vatRate_m');
+if (vatRateMobile){
+  vatRateMobile.addEventListener('input', ()=>{ vatRateInput.value = vatRateMobile.value; recalc(); });
+}
+
+const vatPercentText = document.getElementById('vatPercentText');
+const radios = document.querySelectorAll('input[name="tax_type"]');
+
+function getVatRate(){
+  const v = parseFloat(vatRateInput.value || 0);
+  return isNaN(v) ? 0 : v;
+}
+function getTaxType(){
+  return document.querySelector('input[name="tax_type"]:checked').value; // inc | ex | none
+}
+
+function recalc(){
+  let sub=0, disc=0, tot=0;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const qty  = parseFloat(tr.querySelector('[name="item_qty[]"]').value || 0);
+    const cost = parseFloat(tr.querySelector('[name="item_cost[]"]').value || 0);
+    const dpc  = parseFloat(tr.querySelector('[name="item_disc[]"]').value || 0);
+    const lsub = qty*cost;
+    const ldisc= lsub*(dpc/100);
+    const ltot = lsub-ldisc;
+    sub += lsub; disc += ldisc; tot += ltot;
+    tr.querySelector('.lineTotal').textContent = ltot.toFixed(2);
+  });
+
+  const vatRate = getVatRate();
+  const type = getTaxType();
+
+  let netEx = 0, vat = 0, grand = 0;
+
+  if(type === 'none'){
+    netEx = tot; vat = 0; grand = tot;
+  }else if(type === 'ex'){
+    netEx = tot; vat = netEx * (vatRate/100); grand = netEx + vat;
+  }else{ // inc
+    grand = tot; vat = grand * (vatRate / (100 + vatRate)); netEx = grand - vat;
+  }
+
+  document.getElementById('sumSub').textContent   = sub.toFixed(2);
+  document.getElementById('sumDisc').textContent  = disc.toFixed(2);
+  document.getElementById('sumNetEx').textContent = netEx.toFixed(2);
+  document.getElementById('sumVat').textContent   = vat.toFixed(2);
+  document.getElementById('sumGrand').textContent = grand.toFixed(2);
+  vatPercentText.textContent = (isNaN(vatRate)?0:vatRate).toString();
+
+  document.getElementById('hidSub').value   = sub.toFixed(2);
+  document.getElementById('hidDisc').value  = disc.toFixed(2);
+  document.getElementById('hidNetEx').value = netEx.toFixed(2);
+  document.getElementById('hidVat').value   = vat.toFixed(2);
+  document.getElementById('hidGrand').value = grand.toFixed(2);
+}
+
+function makeRow(){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="form-control form-control-sm" name="item_sku[]" placeholder="SKU"></td>
+    <td><input class="form-control form-control-sm" name="item_name[]" placeholder="ชื่อรายการ" required></td>
+    <td><input class="form-control form-control-sm text-end" name="item_qty[]" type="number" step="0.01" value="1" oninput="recalc()"></td>
+    <td><input class="form-control form-control-sm" name="item_unit[]" value="ชิ้น"></td>
+    <td><input class="form-control form-control-sm text-end" name="item_cost[]" type="number" step="0.01" value="0" oninput="recalc()"></td>
+    <td><input class="form-control form-control-sm text-end" name="item_disc[]" type="number" step="0.01" value="0" oninput="recalc()"></td>
+    <td class="text-end lineTotal">0.00</td>
+    <td><button class="btn btn-sm btn-ghost" type="button" onclick="this.closest('tr').remove(); recalc();"><i class="bi bi-x-lg"></i></button></td>
+  `;
+  tbody.appendChild(tr);
+  recalc();
+}
+
+addRowBtn.addEventListener('click', makeRow);
+vatRateInput.addEventListener('input', recalc);
+radios.forEach(r => r.addEventListener('change', recalc));
+
+makeRow(); // แถวแรก
+</script>
+{% endblock %}
+{% endblock %}

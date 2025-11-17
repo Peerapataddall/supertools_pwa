@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}หมวดหมู่อุปกรณ์{% endblock %}
+
+{% block head %}
+<style>
+  :root{
+    --card-r:16px;
+    --shadow:0 12px 30px rgba(16,24,40,.08);
+  }
+  .page-hd{
+    display:flex; align-items:center; gap:.75rem;
+    padding:10px 0 2px;
+  }
+  .page-hd .title{
+    font-weight:700; font-size:clamp(18px,2.2vw,24px);
+  }
+  .page-hd .sub{ color:#667085; font-size:.95rem }
+  .st-card{
+    border:0; border-radius:var(--card-r);
+    background:linear-gradient(180deg,#ffffff,#f8fbff);
+    box-shadow:var(--shadow);
+  }
+  .st-card-hd{
+    padding:12px 16px; border-bottom:1px solid rgba(0,0,0,.06);
+    background:linear-gradient(90deg,#f2f6ff,#ffffff);
+    border-top-left-radius:var(--card-r); border-top-right-radius:var(--card-r);
+    display:flex; align-items:center; gap:.5rem; color:#344054; font-weight:600;
+  }
+  .st-card-bd{ padding:14px 16px }
+  .table-modern{
+    --row-radius:12px;
+  }
+  .table-modern thead th{
+    color:#475467; font-weight:600; border:0; padding:10px 12px;
+  }
+  .table-modern tbody tr{
+    transition:transform .12s ease, box-shadow .12s ease, background-color .12s ease;
+  }
+  .table-modern tbody tr:hover{
+    transform: translateY(-1px);
+    box-shadow:0 6px 16px rgba(16,24,40,.05);
+    background:#fbfdff;
+  }
+  .table-modern td{ border-top:0; padding:12px; vertical-align:middle }
+  .prefix-badge{
+    display:inline-flex; align-items:center; gap:.4rem;
+    background:linear-gradient(180deg,#eef4ff,#e7efff);
+    color:#1849a9; font-weight:700; letter-spacing:.2px;
+    padding:.35rem .6rem; border-radius:999px; font-size:.9rem;
+  }
+  .search-wrap{
+    position:relative;
+  }
+  .search-wrap .form-control{
+    padding-left:38px; border-radius:12px; border:1px solid #e5e7eb;
+  }
+  .search-wrap .bi{
+    position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#98a2b3;
+  }
+  .btn-add{
+    border-radius:12px; box-shadow:0 8px 20px rgba(62,101,255,.18);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-hd mb-3">
+  <i class="bi bi-tags fs-5 text-primary"></i>
+  <div>
+    <div class="title">หมวดหมู่อุปกรณ์</div>
+    <div class="sub">ใช้กำหนด Prefix SKU เพื่อสร้างรหัสอุปกรณ์</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('cat_new') }}" class="btn btn-primary btn-add">
+      <i class="bi bi-plus-lg me-1"></i> เพิ่มหมวดหมู่
+    </a>
+  </div>
+</div>
+
+<div class="st-card">
+  <div class="st-card-hd">
+    <i class="bi bi-list-stars"></i> รายการหมวดหมู่
+    <div class="ms-auto" style="min-width:260px;">
+      <div class="search-wrap">
+        <i class="bi bi-search"></i>
+        <input id="filterInput" type="text" class="form-control form-control-sm" placeholder="ค้นหา: prefix หรือชื่อหมวดหมู่">
+      </div>
+    </div>
+  </div>
+  <div class="st-card-bd">
+    <div class="table-responsive">
+      <table class="table table-modern align-middle">
+        <thead>
+          <tr class="text-nowrap">
+            <th style="width:220px;">Prefix</th>
+            <th>ชื่อหมวดหมู่</th>
+          </tr>
+        </thead>
+        <tbody id="catTbody">
+          {% for c in cats %}
+          <tr data-key="{{ (c.prefix_sku ~ ' ' ~ c.name)|lower }}">
+            <td><span class="prefix-badge"><i class="bi bi-upc-scan"></i> {{ c.prefix_sku }}</span></td>
+            <td class="fw-semibold">{{ c.name }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2" class="text-center text-muted py-4">
+            <i class="bi bi-inboxes me-1"></i> ยังไม่มีหมวดหมู่
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ฟิลเตอร์ตารางอย่างง่าย
+  const q = document.getElementById('filterInput');
+  const rows = [...document.querySelectorAll('#catTbody tr')];
+  q?.addEventListener('input', () => {
+    const v = (q.value || '').trim().toLowerCase();
+    rows.forEach(r => {
+      const show = !v || (r.dataset.key || '').includes(v);
+      r.style.display = show ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

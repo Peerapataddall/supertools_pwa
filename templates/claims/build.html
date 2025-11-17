@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% set ep = ep or "claim_new" %}
+{% block title %}สร้างใบเคลม (ขั้นที่ 2){% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero / Gradient ===== */
+  .cl-hero{
+    background:
+      radial-gradient(1200px 600px at -10% -20%, rgba(131,105,83,.25) 0%, rgba(131,105,83,0) 60%),
+      linear-gradient(135deg, #f6f7fb 0%, #eef2ff 100%);
+    border-bottom: 1px solid rgba(0,0,0,.06);
+  }
+  .cl-hero .title{
+    display:flex; align-items:center; gap:.65rem; font-weight:700; letter-spacing:.3px;
+  }
+  .cl-hero .title i{
+    background:#fff; color:#836953; width:42px; height:42px; display:grid; place-items:center;
+    border-radius:12px; box-shadow:0 6px 20px rgba(131,105,83,.18);
+  }
+
+  /* ===== Glass card ===== */
+  .glass{
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border:1px solid rgba(0,0,0,.06);
+    border-radius: 1rem;
+    box-shadow: 0 10px 30px rgba(20,20,40,.06);
+  }
+
+  /* Buttons */
+  .btn-gradient{
+    background: linear-gradient(135deg, #7c5a3f 0%, #9b7b5f 60%, #c8a88e 100%);
+    border: none; color:#fff;
+    box-shadow: 0 8px 16px rgba(131,105,83,.25);
+  }
+  .btn-gradient:hover{ filter: brightness(.98); }
+  .btn-ghost{ border:1px solid rgba(0,0,0,.12); }
+
+  /* Table modern */
+  .table-modern thead th{
+    background: linear-gradient(180deg, #fafbff 0%, #f2f4ff 100%);
+    border-bottom:1px solid rgba(0,0,0,.06);
+    color:#334155; font-weight:600;
+  }
+  .table-modern tbody tr{
+    transition: background-color .15s ease, box-shadow .15s ease, transform .06s ease;
+    cursor: pointer;
+  }
+  .table-modern tbody tr:hover{ background:#f9fafb; }
+  .table-modern td, .table-modern th{ vertical-align: middle; }
+  .row-picked{ background:#fff8eb !important; box-shadow: inset 0 0 0 2px rgba(131,105,83,.25); }
+
+  /* Tiny */
+  .hint{ color:#64748b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ===== Hero ===== -->
+<div class="cl-hero py-3 py-md-4">
+  <div class="container">
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <div class="title fs-4">
+          <i class="bi bi-shield-exclamation"></i>
+          สร้างใบเคลม (ขั้นที่ 2)
+        </div>
+        <span class="badge bg-light text-dark border">อ้างอิง {{ qu.number }}</span>
+      </div>
+      <div class="hint small">
+        เลือกรายการที่จะเคลม แล้วกำหนด “จำนวน” และ “อุปกรณ์ทดแทน” (ถ้ามี)
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container my-3">
+  <form method="post" action="{{ url_for('claim_build', quote_id=qu.id) }}" class="glass p-3 p-md-4">
+    <!-- Table -->
+    <div class="table-responsive">
+      <table class="table table-modern table-hover align-middle">
+        <thead>
+          <tr>
+            <th style="width:46px"></th>
+            <th>รายการ</th>
+            <th class="text-end" style="width:8rem">จำนวน</th>
+            <th style="width:16rem">อุปกรณ์ทดแทน</th>
+          </tr>
+        </thead>
+        <tbody id="claim-items">
+          {% for it in qu.items %}
+          <tr data-row="{{ it.id }}">
+            <td>
+              <input class="form-check-input" type="checkbox" name="claim_item_{{ it.id }}" data-check="{{ it.id }}">
+            </td>
+            <td>
+              <div class="fw-semibold">{{ it.name }}</div>
+              <div class="text-muted small">
+                <i class="bi bi-calendar2-week me-1"></i> ระยะเช่า: {{ it.rent_duration }} {{ it.rent_unit|unit_th }}
+                · <i class="bi bi-cash-coin me-1"></i> ราคาต่อหน่วย: {{ '%.2f'|format(it.unit_price or 0) }}
+              </div>
+            </td>
+            <td>
+              <input type="number" min="0" step="1"
+                     class="form-control form-control-sm text-end"
+                     name="qty_{{ it.id }}" value="1" data-qty="{{ it.id }}" disabled>
+            </td>
+            <td>
+              <select name="repl_{{ it.id }}" class="form-select form-select-sm" data-repl="{{ it.id }}" disabled>
+                <option value="">-- ไม่ส่งทดแทน --</option>
+                {% for e in ready_equips %}
+                  <option value="{{ e.id }}">[{{ e.sku }}] {{ e.name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Remark -->
+    <div class="mb-3">
+      <label class="form-label fw-semibold"><i class="bi bi-journal-text me-1"></i> หมายเหตุ</label>
+      <textarea name="remark" class="form-control" rows="3" placeholder="รายละเอียดอาการ / สาเหตุ / หมายเหตุเพิ่มเติม"></textarea>
+    </div>
+
+    <!-- Actions -->
+    <div class="d-flex gap-2">
+      <button class="btn btn-gradient" type="submit">
+        <i class="bi bi-check2-circle me-1"></i> บันทึกใบเคลม
+      </button>
+      <a class="btn btn-ghost" href="{{ url_for('qu_view', qid=qu.id) }}">
+        ยกเลิก
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // คลิกทั้งแถว = toggle checkbox, และเปิด/ปิด qty + select
+  (function(){
+    const rows = document.querySelectorAll('#claim-items tr[data-row]');
+    rows.forEach(tr=>{
+      const id = tr.getAttribute('data-row');
+      const cb = tr.querySelector(`[data-check="${id}"]`);
+      const qty = tr.querySelector(`[data-qty="${id}"]`);
+      const repl = tr.querySelector(`[data-repl="${id}"]`);
+
+      // toggle ui state
+      function refresh(){
+        const on = cb.checked;
+        qty.disabled = !on;
+        repl.disabled = !on;
+        tr.classList.toggle('row-picked', on);
+      }
+      // row click (ไม่ให้คลิกซ้อน input)
+      tr.addEventListener('click', (ev)=>{
+        if (ev.target.closest('input,select,label')) return;
+        cb.checked = !cb.checked;
+        refresh();
+      });
+      cb.addEventListener('change', refresh);
+      // เริ่มต้นปิดไว้ก่อน
+      refresh();
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}{{ 'แก้ไขลูกค้า' if is_edit else 'เพิ่มลูกค้า' }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Soft brand & effects ===== */
+  .fx-hero{
+    background: radial-gradient(120% 140% at 20% -10%, #eaf2ff 0%, #f4f8ff 35%, #ffffff 80%);
+    border: 1px solid #e7eeff;
+    box-shadow:
+      0 30px 60px rgba(47,111,235,.10),
+      0 6px 18px rgba(47,111,235,.08);
+    border-radius: 18px;
+  }
+  .icon-pill{
+    width: 48px; height: 48px;
+    display: inline-grid; place-items:center;
+    border-radius: 14px;
+    color:#2f6feb;
+    background: radial-gradient(130% 130% at 30% 20%, #dbe8ff 0%, #eef4ff 70%, #fff 100%);
+    border: 1px solid #d6e3ff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 8px 20px rgba(47,111,235,.18);
+  }
+
+  /* ===== Card & footer ===== */
+  .fx-card{
+    border:1px solid #edf1fb;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.06), 0 2px 6px rgba(0,0,0,.04);
+  }
+  .fx-footer{
+    background:linear-gradient(180deg,#fff,#f7faff);
+    border-top:1px solid #ecf1ff;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+  }
+
+  /* ===== Inputs with icons ===== */
+  .input-wrap{
+    position: relative;
+  }
+  .input-wrap .bi{
+    position:absolute; left:.9rem; top:50%; transform:translateY(-50%);
+    opacity:.6;
+  }
+  .input-wrap .form-control{
+    padding-left: 2.2rem;
+    border-radius: 12px;
+    border:1px solid #e3e9f9;
+    background: linear-gradient(180deg,#fff,#fbfdff);
+    transition: box-shadow .2s, border-color .2s, transform .08s;
+  }
+  .input-wrap .form-control:focus{
+    border-color:#9fc1ff;
+    box-shadow: 0 0 0 .18rem rgba(47,111,235,.15), 0 10px 26px rgba(47,111,235,.10);
+  }
+
+  /* ===== Section chips ===== */
+  .chip{
+    display:inline-flex; align-items:center; gap:.5rem;
+    padding:.35rem .7rem; border-radius:999px; font-weight:600; font-size:.85rem;
+    color:#2852c7; background:linear-gradient(180deg,#eaf2ff,#f4f8ff);
+    border:1px solid #dbe6ff;
+  }
+
+  /* Buttons */
+  .btn-glow{
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(47,111,235,.18);
+    transition: transform .08s ease, box-shadow .2s ease;
+  }
+  .btn-glow:hover{ transform: translateY(-1px); }
+  .btn-outline-soft{
+    --bs-btn-color:#2f6feb; --bs-btn-border-color:#bfd2ff;
+    --bs-btn-hover-bg:#eaf2ff; --bs-btn-hover-border-color:#9fc1ff;
+    border-radius:12px;
+  }
+
+  /* Small helper */
+  .hint{ color:#6c89d9; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="fx-hero p-3 p-md-4 mb-3">
+  <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div class="d-flex align-items-center gap-3">
+      <span class="icon-pill"><i class="bi bi-person-badge"></i></span>
+      <div>
+        <div class="h5 m-0 fw-semibold">{{ 'แก้ไขลูกค้า' if is_edit else 'เพิ่มลูกค้า' }}</div>
+        <div class="small text-muted">กรอกข้อมูลให้ครบถ้วนเพื่อใช้ในเอกสารขาย</div>
+      </div>
+    </div>
+    <a href="{{ url_for('customers_list') }}" class="btn btn-outline-soft">
+      <i class="bi bi-arrow-left me-1"></i> กลับรายการ
+    </a>
+  </div>
+</div>
+
+<!-- Form -->
+<form method="post" class="fx-card">
+  <div class="card-body p-3 p-md-4">
+    <div class="mb-2">
+      <span class="chip"><i class="bi bi-person-lines-fill"></i> ข้อมูลลูกค้า</span>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">ชื่อลูกค้า <span class="text-danger">*</span></label>
+        <div class="input-wrap">
+          <i class="bi bi-building"></i>
+          <input name="name" class="form-control" required value="{{ c.name if c else '' }}">
+        </div>
+        <div class="small hint mt-1"><i class="bi bi-info-circle"></i> ใช้ชื่อบริษัท/ชื่อลูกค้าให้ตรงกับเอกสารภาษี</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">เบอร์โทรศัพท์</label>
+        <div class="input-wrap">
+          <i class="bi bi-telephone"></i>
+          <input name="phone" class="form-control" value="{{ c.phone if c else '' }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">เลขประจำตัวผู้เสียภาษี</label>
+        <div class="input-wrap">
+          <i class="bi bi-hash"></i>
+          <input name="tax_id" class="form-control" value="{{ c.tax_id if c else '' }}">
+        </div>
+      </div>
+
+      <div class="col-12 mt-2">
+        <span class="chip"><i class="bi bi-geo-alt"></i> ที่อยู่สำหรับเอกสาร</span>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">ที่อยู่ (บรรทัดหลัก)</label>
+        <div class="input-wrap">
+          <i class="bi bi-house-door"></i>
+          <input name="address" class="form-control" value="{{ c.address if c else '' }}">
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">แขวง/ตำบล</label>
+        <div class="input-wrap">
+          <i class="bi bi-pin-map"></i>
+          <input name="district" class="form-control" value="{{ c.district if c else '' }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">เขต/อำเภอ</label>
+        <div class="input-wrap">
+          <i class="bi bi-signpost"></i>
+          <input name="amphoe" class="form-control" value="{{ c.amphoe if c else '' }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">จังหวัด</label>
+        <div class="input-wrap">
+          <i class="bi bi-globe-asia-australia"></i>
+          <input name="province" class="form-control" value="{{ c.province if c else '' }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">รหัสไปรษณีย์</label>
+        <div class="input-wrap">
+          <i class="bi bi-mailbox"></i>
+          <input name="postcode" class="form-control" value="{{ c.postcode if c else '' }}">
+        </div>
+      </div>
+
+      <div class="col-12 mt-2">
+        <span class="chip"><i class="bi bi-person"></i> ผู้ติดต่อ</span>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">ชื่อผู้ติดต่อ</label>
+        <div class="input-wrap">
+          <i class="bi bi-person-circle"></i>
+          <input name="contact_name" class="form-control" value="{{ c.contact_name if c else '' }}">
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">เบอร์โทรผู้ติดต่อ</label>
+        <div class="input-wrap">
+          <i class="bi bi-phone"></i>
+          <input name="contact_phone" class="form-control" value="{{ c.contact_phone if c else '' }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fx-footer d-flex justify-content-between align-items-center p-3 p-md-4">
+    <div class="text-muted small"><i class="bi bi-asterisk"></i> เครื่องหมาย * จำเป็นต้องกรอก</div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('customers_list') }}" class="btn btn-outline-soft">
+        <i class="bi bi-chevron-left me-1"></i> กลับ
+      </a>
+      <button class="btn btn-primary btn-glow">
+        <i class="bi bi-check2-circle me-1"></i> บันทึก
+      </button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Tooltip (เผื่ออนาคตเพิ่ม title ให้ไอคอน)
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el=>{
+    new bootstrap.Tooltip(el);
+  });
+</script>
+{% endblock %}

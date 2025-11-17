@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}ผู้ใช้ · Supertools{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h5 m-0"><i class="bi bi-people me-2"></i>ผู้ใช้</h1>
+    <a class="btn btn-primary" href="{{ url_for('users_new') }}">
+      <i class="bi bi-person-plus me-1"></i> เพิ่มผู้ใช้
+    </a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>ชื่อผู้ใช้</th>
+          <th>ชื่อ-นามสกุล</th>
+          <th>ตำแหน่ง (Role)</th>
+          <th>สิทธิ์ (Permissions)</th>
+          <th>สถานะ</th>
+          <th class="text-end">จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if users %}
+          {% for u in users %}
+          <tr>
+            <td class="fw-semibold">{{ u.username }}</td>
+            <td>{{ u.full_name or '-' }}</td>
+            <td>
+              {% if u.roles %}
+                <span class="small text-muted">{{ u.roles|map(attribute='name')|join(', ') }}</span>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.perms %}
+                <div class="small text-muted">{{ u.perms|map(attribute='code')|join(', ') }}</div>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.is_active %}
+                <span class="badge text-bg-success">ใช้งาน</span>
+              {% else %}
+                <span class="badge text-bg-secondary">ปิด</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('users_edit', uid=u.id) }}">
+                <i class="bi bi-pencil-square"></i> แก้ไข
+              </a>
+              {% if u.username != 'admin' %}
+              <form class="d-inline-block ms-1" method="post"
+                    action="{{ url_for('users_delete', uid=u.id) }}"
+                    onsubmit="return confirm('ลบผู้ใช้นี้?');">
+                <button class="btn btn-sm btn-outline-danger" title="ลบผู้ใช้">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              ยังไม่มีผู้ใช้ในระบบ
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

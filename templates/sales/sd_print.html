@@ -1,0 +1,233 @@
+{# templates/sales/sd_print.html #}
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>{{ {'BL':'ใบวางบิล','IV':'ใบกำกับภาษี','RC':'ใบเสร็จรับเงิน'}.get(d.doc_type, d.doc_type) }} {{ d.number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    @page { size: A4; margin: 12mm 10mm 14mm; }
+    *{box-sizing:border-box}
+    body{
+      font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif;
+      font-size:12px; color:#1f2937; background:#fff;
+    }
+    .row{display:flex;gap:12px}
+    .col{flex:1 1 0}
+    .box{background:#fff;border:1px solid #e6ebf5;border-radius:10px;padding:10px}
+    .header{
+      display:flex;align-items:center;justify-content:space-between;
+      border:1px solid #e6ebf5;border-radius:12px;padding:10px 12px;margin-bottom:10px;
+      background:linear-gradient(180deg,#f7fbff,#ffffff 70%)
+    }
+    .brand{display:flex;gap:10px;align-items:center}
+    .brand img{width:56px;height:56px;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb}
+    .brand .name{font-weight:700}
+    .doc-title{text-align:right;line-height:1.2}
+    .doc-title .name{font-weight:800;font-size:16px}
+    .chip{display:inline-flex;align-items:center;gap:6px;font-weight:700;border:2px solid #60a5fa;border-radius:10px;padding:2px 8px;color:#2563eb}
+    .chip-paid{border-color:#22c55e;color:#16a34a}
+    .chip-issued{border-color:#6366f1;color:#4f46e5}
+    .muted{color:#6b7280}
+    .kv{display:flex;gap:6px;margin:.2rem 0}
+    .kv .k{min-width:170px;color:#6b7280}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle}
+    thead th{background:#f3f7ff;border-bottom:1px solid #e6ebf5;font-weight:700;color:#1f2937}
+    .text-end{text-align:right}
+    .signs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:26px}
+    .sign{text-align:center;color:#64748b}
+    .sign .line{height:1px;background:#cbd5e1;margin:28px 0 6px}
+    .totals{width:280px;margin-left:auto}
+    .totals .box{border-radius:12px}
+    .total-grand{font-weight:800}
+    img.item-thumb{width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb}
+    .avoid-break{page-break-inside:avoid}
+    @media print{
+      .chip{border-color:#94befc;color:#2563eb}
+      img, tr{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+  {# ---------- Safe URL helpers (โลโก้/รูปสินค้า) ---------- #}
+  {% set _company_logo_raw = (company and company.logo_path) if company and company.logo_path else 'images/logo-supertool.png' %}
+  {% if '://' in _company_logo_raw or _company_logo_raw.startswith('data:') %}
+    {% set company_logo_url = _company_logo_raw %}
+  {% else %}
+    {% set _lp = _company_logo_raw.lstrip('/') %}
+    {% if _lp.startswith('static/') %}{% set _lp = _lp[7:] %}{% endif %}
+    {% set company_logo_url = url_for('static', filename=_lp) %}
+  {% endif %}
+
+  {# ---------- Header ---------- #}
+  <div class="header">
+    <div class="brand">
+      <img src="{{ company_logo_url }}" alt="">
+      <div>
+        <div class="name">{{ company and company.name or 'บริษัทของคุณ' }}</div>
+        <div class="muted" style="font-size:11px">
+          {{ company and company.address or 'ที่อยู่บริษัท (แก้ใน Company)' }}<br>
+          เลขผู้เสียภาษี: {{ company and company.tax_id or '—' }} &nbsp; โทร: {{ company and company.phone or '—' }}
+        </div>
+      </div>
+    </div>
+    <div class="doc-title">
+      <div class="name">{{ {'BL':'ใบวางบิล','IV':'ใบกำกับภาษี','RC':'ใบเสร็จรับเงิน'}.get(d.doc_type, d.doc_type) }}</div>
+      <div class="muted" style="font-size:11px">
+        เลขที่เอกสาร: {{ d.number }}<br>วันที่: {{ d.date|strftime('%d/%m/%Y') }}
+      </div>
+      {% if d.doc_type=='BL' and (d.status or '').upper()=='PAID' %}
+        <div class="chip chip-paid" style="margin-top:6px">ชำระเงินแล้ว</div>
+      {% elif d.doc_type in ['IV','RC'] and (d.status or '').upper()=='ISSUED' %}
+        <div class="chip chip-issued" style="margin-top:6px">{{ 'ออกใบกำกับภาษีแล้ว' if d.doc_type=='IV' else 'ออกใบเสร็จแล้ว' }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---------- Info blocks ---------- #}
+  <div class="row" style="margin-bottom:10px">
+    <div class="col">
+      <div class="box">
+        <div class="muted" style="font-weight:600">ลูกค้า</div>
+        <div style="font-weight:700">{{ d.customer and d.customer.name or '—' }}</div>
+        {% if d.customer and d.customer.tax_id %}<div>เลขผู้เสียภาษี: {{ d.customer.tax_id }}</div>{% endif %}
+        {% if d.customer and d.customer.address %}<div>{{ d.customer.address }}</div>{% endif %}
+        {% if d.customer and d.customer.phone %}<div>โทร: {{ d.customer.phone }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="muted" style="font-weight:600">รายละเอียด</div>
+
+        <div class="kv"><div class="k">เงื่อนไข:</div><div>{{ d.remark or '—' }}</div></div>
+        <div class="kv"><div class="k">อ้างอิงเลขที่ PO ลูกค้า:</div><div>{{ d.po_customer or '—' }}</div></div>
+
+        {# ใบกำกับภาษี: อ้างอิงใบวางบิล #}
+        {% if d.doc_type=='IV' %}
+          <div class="kv"><div class="k">อ้างอิงเลขที่ใบวางบิล:</div><div>{{ (bl_ref or rc_ref_bl) and (bl_ref or rc_ref_bl).number or '—' }}</div></div>
+        {% endif %}
+
+        {# ใบเสร็จรับเงิน: อ้างอิง BL/IV #}
+        {% if d.doc_type=='RC' %}
+          <div class="kv"><div class="k">อ้างอิงเลขที่ใบวางบิล:</div><div>{{ (rc_ref_bl or bl_ref) and (rc_ref_bl or bl_ref).number or '—' }}</div></div>
+          <div class="kv"><div class="k">อ้างอิงเลขที่ใบกำกับภาษี:</div><div>{{ (rc_ref_iv or iv_ref) and (rc_ref_iv or iv_ref).number or '—' }}</div></div>
+        {% endif %}
+
+        <div class="kv">
+          <div class="k">อ้างอิงใบเสนอราคาเลขที่:</div>
+          <div>{{ (d.parent and d.parent.number) or (d.reference_qu_number if d is defined and d.reference_qu_number is not none else '—') }}</div>
+        </div>
+
+        <div class="kv"><div class="k">เครดิตชำระเงิน:</div><div>{{ d.credit_days or 0 }} วัน</div></div>
+
+        <div class="kv"><div class="k">สถานะ:</div>
+          <div>
+            {% if d.doc_type=='BL' %}
+              {{ d.status|sale_status_th }}
+            {% elif d.doc_type=='IV' %}
+              {{ 'ออกใบกำกับภาษีแล้ว' if (d.status or '').upper()=='ISSUED' else 'ยังไม่ออกใบกำกับภาษี' }}
+            {% elif d.doc_type=='RC' %}
+              {{ 'ออกใบเสร็จรับเงินแล้ว' if (d.status or '').upper()=='ISSUED' else 'ยังไม่ออกใบเสร็จรับเงิน' }}
+            {% else %}
+              {{ d.status }}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------- Items ---------- #}
+  <div class="box" style="margin-bottom:12px">
+    <table>
+      <thead>
+      <tr>
+        <th style="width:8%">รูป</th>
+        <th>รายการ</th>
+        <th class="text-end" style="width:10%">จำนวน</th>
+        <th style="width:16%">หน่วย/ระยะ</th>
+        <th class="text-end" style="width:15%">ราคาต่อหน่วย</th>
+        <th class="text-end" style="width:10%">ส่วนลด (%)</th>
+        <th class="text-end" style="width:16%">รวม</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for it in d.items %}
+        {# 1) ใช้ URL จาก img_map (พร้อมใช้) 2) ใช้ path จาก SalesItem/Equipment 3) ไม่มีรูป = เว้นว่าง #}
+        {% set raw_img = it.image_path or (it.equipment and it.equipment.image_path) %}
+        {% set mapped = img_map.get(it.id) if img_map else None %}
+
+        {% if mapped %}
+          {% set img_url = mapped %}
+        {% elif raw_img %}
+          {% if '://' in raw_img or raw_img.startswith('data:') %}
+            {% set img_url = raw_img %}
+          {% else %}
+            {% set _rel = raw_img.lstrip('/') %}
+            {% if _rel.startswith('static/') %}{% set _rel = _rel[7:] %}{% endif %}
+            {% set img_url = url_for('static', filename=_rel) %}
+          {% endif %}
+        {% else %}
+          {% set img_url = None %}
+        {% endif %}
+
+        <tr class="avoid-break">
+          <td>
+            {% if img_url %}
+              <img class="item-thumb" src="{{ img_url }}" alt="">
+            {% endif %}
+          </td>
+          <td><div style="font-weight:600">{{ it.name }}</div></td>
+          <td class="text-end">{{ '%.0f'|format(it.qty or 0) }}</td>
+          <td>{{ it.rent_unit|unit_th }} × {{ it.rent_duration or 1 }}</td>
+          <td class="text-end">{{ '{:,.2f}'.format(it.unit_price or 0) }}</td>
+          <td class="text-end">{{ '{:,.2f}'.format(it.discount_pct or 0) }}</td>
+          <td class="text-end">{{ '{:,.2f}'.format(it.line_total or 0) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ---------- Totals ---------- #}
+  <div class="totals">
+    <div class="box">
+      <div class="row" style="justify-content:space-between"><div>ยอดรวมก่อนภาษี</div><div>{{ '{:,.2f}'.format(d.amount_subtotal or 0) }}</div></div>
+      <div class="row" style="justify-content:space-between"><div>ภาษีมูลค่าเพิ่ม ({{ d.vat_pct if d.vat_pct is defined else 7 }}%)</div><div>{{ '{:,.2f}'.format(d.amount_vat or 0) }}</div></div>
+      <div class="row" style="justify-content:space-between;font-weight:700;border-top:1px solid #e6ebf5;margin-top:6px;padding-top:6px">
+        <div>ยอดรวมสุทธิ</div><div>{{ '{:,.2f}'.format(d.amount_total or 0) }}</div>
+      </div>
+      <div class="row" style="justify-content:space-between">
+        <div>หัก ณ ที่จ่าย ({{ d.wht_pct or 0 }}%)</div>
+        <div>-{{ '{:,.2f}'.format(d.amount_wht or 0) }}</div>
+      </div>
+      <div class="row" style="justify-content:space-between;font-weight:800">
+        <div>ยอดหลังหัก ณ ที่จ่าย</div>
+        <div class="total-grand">{{ '{:,.2f}'.format(d.amount_grand or 0) }}</div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------- Signatures ---------- #}
+  {% if d.doc_type == 'BL' %}
+    <div class="signs" style="grid-template-columns:1fr 1fr">
+      <div class="sign"><div class="line"></div>ผู้รับวางบิล &nbsp;&nbsp; วันที่ ____/____/____</div>
+      <div class="sign"><div class="line"></div>ผู้วางบิล &nbsp;&nbsp; วันที่ ____/____/____</div>
+    </div>
+  {% elif d.doc_type in ['IV','RC'] %}
+    <div class="signs" style="grid-template-columns:1fr 1fr">
+      <div class="sign"><div class="line"></div>ผู้รับเงิน &nbsp;&nbsp; วันที่ ____/____/____</div>
+      <div class="sign"><div class="line"></div>ผู้จ่ายเงิน &nbsp;&nbsp; วันที่ ____/____/____</div>
+    </div>
+  {% else %}
+    <div class="signs">
+      <div class="sign"><div class="line"></div>ผู้เสนอราคา</div>
+      <div class="sign"><div class="line"></div>ผู้อนุมัติ</div>
+      <div class="sign"><div class="line"></div>ผู้สั่งซื้อ</div>
+    </div>
+  {% endif %}
+</body>
+</html>

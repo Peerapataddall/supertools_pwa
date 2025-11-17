@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}จัดสายรถ{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h5 mb-1">
+        <i class="bi bi-truck-front text-primary me-2"></i>
+        จัดสายรถ
+      </h1>
+      <div class="text-muted small">ดู / จัดรถให้ใบส่งสินค้าตามวัน</div>
+    </div>
+
+    <form class="d-flex align-items-center gap-2" method="get">
+      <label class="small text-muted mb-0">วันที่จัดส่ง</label>
+      <input type="date" class="form-control" name="date"
+             value="{{ target_date.strftime('%Y-%m-%d') }}">
+      <button class="btn btn-outline-primary">
+        <i class="bi bi-search me-1"></i> แสดง
+      </button>
+    </form>
+  </div>
+
+  {# ---------- macro แสดงสถานะ + เหตุผลยกเลิก (ใช้ได้ทั้งสองตาราง) ---------- #}
+  {% macro status_block(d) -%}
+    {% set st = (d.status or '')|upper %}
+    {# label ภาษาไทย: ใช้ d.status_th ถ้ามี, ถ้าไม่มี map เอง #}
+    {% if d.status_th is defined and d.status_th %}
+      {% set label = d.status_th %}
+    {% else %}
+      {% if st == 'PENDING' %}
+        {% set label = 'รอจัดส่ง' %}
+      {% elif st == 'ONGOING' %}
+        {% set label = 'กำลังจัดส่ง' %}
+      {% elif st == 'DONE' %}
+        {% set label = 'จัดส่งสำเร็จ' %}
+      {% elif st in ['CANCELLED', 'CANCELED'] %}
+        {% set label = 'ยกเลิกการส่ง' %}
+      {% else %}
+        {% set label = st %}
+      {% endif %}
+    {% endif %}
+
+    <span class="badge bg-outline-primary">
+      {{ label }}
+    </span>
+
+    {# ถ้ายกเลิกให้แสดงเหตุผล/รายละเอียดต่อท้ายใต้ badge #}
+    {% if st in ['CANCELLED','CANCELED'] and (d.cancel_reason or d.cancel_note) %}
+      <div class="small mt-1 text-danger">
+        {% if d.cancel_reason %}
+          <div>เหตุผลยกเลิก: {{ d.cancel_reason }}</div>
+        {% endif %}
+        {% if d.cancel_note %}
+          <div>รายละเอียด: {{ d.cancel_note }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+  {%- endmacro %}
+
+  {# กล่องใบที่ยังไม่จัดรถ #}
+  <div class="card st-softcard border-0 mb-4">
+    <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">
+        <i class="bi bi-truck me-2 text-danger"></i>ยังไม่จัดรถ
+      </div>
+      <div class="small text-muted">
+        {{ unassigned_docs|length }} ใบส่ง
+      </div>
+    </div>
+    <div class="card-body p-0">
+      {% if unassigned_docs %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:14%">เลขที่ใบส่ง</th>
+                <th>ลูกค้า / ปลายทาง</th>
+                <th style="width:18%">สถานะ</th>
+                <th style="width:22%">รถ / คนขับ</th>
+                <th style="width:12%"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in unassigned_docs %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('deliveries.view_doc', did=d.id) }}">
+                    {{ d.number }}
+                  </a>
+                </td>
+                <td>
+                  <div class="fw-semibold">
+                    {{ d.ship_to_name or d.ship_to_address or '—' }}
+                  </div>
+                  {% if d.ship_to_address %}
+                    <div class="small text-muted">
+                      {{ d.ship_to_address }}
+                    </div>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ status_block(d) }}
+                </td>
+                <td>
+                  <form class="row gx-1 gy-1 align-items-center" method="post"
+                        action="{{ url_for('deliveries.assign_delivery', did=d.id) }}">
+                    <input type="hidden" name="delivery_date"
+                           value="{{ target_date.strftime('%Y-%m-%d') }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+
+                    <div class="col-6">
+                      <select class="form-select form-select-sm" name="vehicle_id">
+                        <option value="">— เลือกรถ —</option>
+                        {% for v in vehicles %}
+                          <option value="{{ v.id }}"
+                            {{ 'selected' if d.vehicle_id == v.id }}>
+                            {{ v.name }}{% if v.plate_no %} ({{ v.plate_no }}){% endif %}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-6">
+                      <select class="form-select form-select-sm" name="driver_id">
+                        <option value="">— เลือกคนขับ —</option>
+                        {% for dr in drivers %}
+                          <option value="{{ dr.id }}"
+                            {{ 'selected' if d.driver_id == dr.id }}>
+                            {{ dr.code }} - {{ dr.full_name }}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </form>
+                </td>
+                <td class="text-end">
+                  <button type="submit" formmethod="post"
+                          formaction="{{ url_for('deliveries.assign_delivery', did=d.id) }}"
+                          class="btn btn-sm btn-primary"
+                          onclick="this.closest('tr').querySelector('form').submit(); return false;">
+                    บันทึก
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-3 text-center text-muted small">
+          ไม่มีใบส่งสินค้าที่ยังไม่จัดรถในวันนี้
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# กล่องของรถแต่ละคัน #}
+  <div class="row g-3">
+    {% for v in vehicles %}
+      {% set docs = docs_by_vehicle.get(v.id, []) %}
+      <div class="col-12 col-lg-6">
+        <div class="card st-softcard border-0 h-100">
+          <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">
+                <i class="bi bi-truck-front me-2 text-primary"></i>{{ v.name }}
+              </div>
+              {% if v.plate_no %}
+                <div class="small text-muted">ทะเบียน: {{ v.plate_no }}</div>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              {{ docs|length }} ใบส่ง
+            </div>
+          </div>
+          <div class="card-body p-0">
+            {% if docs %}
+              <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width:14%">เลขที่ใบส่ง</th>
+                      <th>ลูกค้า / ปลายทาง</th>
+                      <th style="width:18%">สถานะ</th>
+                      <th style="width:26%">คนขับ / ปรับสายรถ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for d in docs %}
+                    <tr>
+                      <td>
+                        <a href="{{ url_for('deliveries.view_doc', did=d.id) }}">
+                          {{ d.number }}
+                        </a>
+                      </td>
+                      <td>
+                        <div class="fw-semibold">
+                          {{ d.ship_to_name or d.ship_to_address or '—' }}
+                        </div>
+                        {% if d.ship_to_address %}
+                          <div class="small text-muted">
+                            {{ d.ship_to_address }}
+                          </div>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {{ status_block(d) }}
+                      </td>
+                      <td>
+                        <form class="row gx-1 gy-1 align-items-center" method="post"
+                              action="{{ url_for('deliveries.assign_delivery', did=d.id) }}">
+                          <input type="hidden" name="delivery_date"
+                                 value="{{ target_date.strftime('%Y-%m-%d') }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+
+                          <div class="col-6">
+                            <select class="form-select form-select-sm" name="vehicle_id">
+                              <option value="">— เลือกรถ —</option>
+                              {% for vv in vehicles %}
+                                <option value="{{ vv.id }}"
+                                  {{ 'selected' if d.vehicle_id == vv.id }}>
+                                  {{ vv.name }}{% if vv.plate_no %} ({{ vv.plate_no }}){% endif %}
+                                </option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          <div class="col-6">
+                            <select class="form-select form-select-sm" name="driver_id">
+                              <option value="">— เลือกคนขับ —</option>
+                              {% for dr in drivers %}
+                                <option value="{{ dr.id }}"
+                                  {{ 'selected' if d.driver_id == dr.id }}>
+                                  {{ dr.code }} - {{ dr.full_name }}
+                                </option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="p-3 text-center text-muted small">
+                ยังไม่มีงานจัดส่งให้รถคันนี้ในวันนี้
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

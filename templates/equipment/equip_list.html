@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}อุปกรณ์ · Supertools{% endblock %}
+
+{% block head %}
+<style>
+  /* พื้นหลังและการ์ดหัวเรื่อง */
+  .st-hero{
+    background: radial-gradient(1200px 220px at 20% -40%, rgba(120,160,255,.20), transparent),
+                radial-gradient(900px 260px at 90% -60%, rgba(142,255,214,.18), transparent),
+                linear-gradient(180deg, #f7fbff, #ffffff 60%);
+    border: 1px solid rgba(0,0,0,.04);
+    box-shadow: 0 8px 30px rgba(24,39,75,.05), 0 1px 1px rgba(0,0,0,.04);
+  }
+  .st-hero .title{
+    font-weight: 700; letter-spacing:.2px;
+  }
+  .st-kbd{
+    display:inline-flex; align-items:center; gap:.35rem;
+    font-size:.875rem; color:#6b7280;
+  }
+
+  /* ช่องค้นหาแบบมีไอคอน */
+  .st-search{
+    position:relative;
+  }
+  .st-search .bi-search{
+    position:absolute; left:.75rem; top:50%; transform:translateY(-50%);
+    opacity:.6;
+  }
+  .st-search input{
+    padding-left:2.2rem;
+    border-radius: .85rem;
+    border: 1px solid rgba(0,0,0,.08);
+    box-shadow: 0 2px 8px rgba(24,39,75,.04) inset, 0 4px 16px rgba(24,39,75,.04);
+  }
+
+  /* ปุ่มท็อปขวา */
+  .st-action-btn{
+    border-radius: .9rem;
+    box-shadow: 0 6px 18px rgba(56, 189, 248, .25);
+  }
+  .st-ghost{
+    border-radius: .9rem;
+    border:1px dashed rgba(0,0,0,.15);
+    background:rgba(255,255,255,.65);
+  }
+
+  /* ตาราง */
+  .st-card{
+    border:1px solid rgba(0,0,0,.06);
+    border-radius: 1rem;
+    box-shadow: 0 10px 30px rgba(24,39,75,.06);
+  }
+  .table thead th{
+    background: linear-gradient(180deg, #f7f9fc, #f1f5f9);
+    border-bottom-color: rgba(0,0,0,.06) !important;
+    font-weight:600; color:#334155;
+  }
+  .table tbody tr{
+    transition: .15s ease;
+  }
+  .table tbody tr:hover{
+    background: linear-gradient(180deg, #ffffff, #f8fbff);
+    box-shadow: inset 0 0 0 9999px rgba(99,102,241,.05);
+  }
+
+  /* รูป */
+  .equip-thumb{
+    width:48px; height:48px; object-fit:cover; border-radius:12px;
+    box-shadow: 0 4px 10px rgba(24,39,75,.18);
+  }
+
+  /* ป้ายสถานะ */
+  .badge-pill{
+    border-radius: 999px; padding:.35rem .7rem; font-weight:600;
+    box-shadow: 0 6px 16px rgba(0,0,0,.06);
+  }
+  .badge-ready   { background:#e7f7ee; color:#0f8f4a; }
+  .badge-rented  { background:#fff4e5; color:#b35300; }
+  .badge-repair  { background:#eef2ff; color:#4f46e5; }
+
+  /* ไอคอนการทำงาน */
+  .act{
+    width:34px; height:34px; display:inline-grid; place-items:center;
+    border-radius:.65rem; border:1px solid rgba(0,0,0,.08);
+    background:#fff;
+    box-shadow: 0 6px 14px rgba(24,39,75,.08);
+    transition:.15s ease;
+  }
+  .act:hover{ transform: translateY(-1px); }
+  .act-view{ color:#0ea5e9; }
+  .act-edit{ color:#10b981; }
+  .act-del { color:#ef4444; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="st-hero rounded-4 p-3 p-md-4 mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-scissors text-primary-emphasis fs-4"></i>
+      <div>
+        <div class="title h4 m-0">อุปกรณ์</div>
+        <div class="st-kbd">ค้นหาตาม SKU/ชื่อ · สถานะเป็นภาษาไทย</div>
+      </div>
+    </div>
+
+    <div class="ms-auto d-flex flex-wrap gap-2">
+      <a href="{{ url_for('cat_list') }}" class="btn st-ghost">
+        <i class="bi bi-tags me-1"></i> หมวดหมู่
+      </a>
+      {% if can('equipment.manage') %}
+      <a href="{{ url_for('equip_new') }}" class="btn btn-primary st-action-btn">
+        <i class="bi bi-plus-lg me-1"></i> เพิ่มอุปกรณ์
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form class="row g-2 mt-3" method="get" action="{{ url_for('equip_list') }}">
+    <div class="col-12 col-md-7">
+      <div class="st-search">
+        <i class="bi bi-search"></i>
+        <input name="q" value="{{ q }}" type="search" class="form-control form-control-lg"
+               placeholder="ค้นหา: SKU หรือชื่ออุปกรณ์">
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <select class="form-select form-select-lg" name="status" onchange="this.form.submit()">
+        <option value="" {{ ''==status and 'selected' or '' }}>ทุกสถานะ</option>
+        <option value="READY"  {{ status=='READY'  and 'selected' or '' }}>พร้อมให้เช่า</option>
+        <option value="RENTED" {{ status=='RENTED' and 'selected' or '' }}>ถูกเช่า</option>
+        <option value="REPAIR" {{ status=='REPAIR' and 'selected' or '' }}>รอซ่อม</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-outline-secondary btn-lg" type="submit">
+        ค้นหา
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="st-card overflow-hidden">
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:72px"></th>
+          <th class="text-uppercase small">SKU</th>
+          <th class="text-uppercase small">ชื่ออุปกรณ์</th>
+          <th class="text-uppercase small">สถานะ</th>
+          <th class="text-uppercase small">หมวดหมู่</th>
+          <th class="text-uppercase small">รับเข้า</th>
+          <th class="text-uppercase small text-center" style="width:160px">การทำงาน</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="ps-3">
+            {% if r.image_path %}
+              <img class="equip-thumb" src="{{ url_for('static', filename=r.image_path) }}" alt="">
+            {% else %}
+              <div class="equip-thumb d-inline-grid place-items-center bg-light">
+                <i class="bi bi-image text-muted"></i>
+              </div>
+            {% endif %}
+          </td>
+          <td>
+            <a class="fw-semibold text-decoration-none" href="{{ url_for('equip_view', eid=r.id) }}">
+              {{ r.sku }}
+            </a>
+          </td>
+          <td class="fw-medium">{{ r.name }}</td>
+          <td>
+            {% if r.status=='READY' %}
+              <span class="badge badge-pill badge-ready">พร้อมให้เช่า</span>
+            {% elif r.status=='RENTED' %}
+              <span class="badge badge-pill badge-rented">ถูกเช่า</span>
+            {% else %}
+              <span class="badge badge-pill badge-repair">รอซ่อม</span>
+            {% endif %}
+          </td>
+          <td>{{ r.category.name }}</td>
+          <td>{{ r.received_date|strftime('%d/%m/%Y') }}</td>
+          <td class="text-center">
+            <div class="d-inline-flex gap-2">
+              <a class="act act-view"  href="{{ url_for('equip_view', eid=r.id) }}" title="ดูรายละเอียด"><i class="bi bi-eye"></i></a>
+              {% if can('equipment.manage') %}
+              <a class="act act-edit"  href="{{ url_for('equip_edit', eid=r.id) }}" title="แก้ไข"><i class="bi bi-pencil-square"></i></a>
+              <form method="post" action="{{ url_for('equip_delete', eid=r.id) }}" onsubmit="return confirm('ลบอุปกรณ์นี้?');" class="d-inline">
+                <button class="act act-del" type="submit" title="ลบ"><i class="bi bi-trash3"></i></button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="p-5 text-center">
+      <div class="display-6 mb-2">ยังไม่มีอุปกรณ์</div>
+      <p class="text-muted mb-4">เริ่มต้นด้วยการเพิ่มหมวดหมู่และอุปกรณ์ชิ้นแรกของคุณ</p>
+      <div class="d-flex gap-2 justify-content-center">
+        <a href="{{ url_for('cat_list') }}" class="btn btn-outline-secondary">
+          <i class="bi bi-tags me-1"></i> ไปที่หมวดหมู่
+        </a>
+        {% if can('equipment.manage') %}
+        <a href="{{ url_for('equip_new') }}" class="btn btn-primary">
+          <i class="bi bi-plus-lg me-1"></i> เพิ่มอุปกรณ์
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

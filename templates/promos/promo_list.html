@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}โปรโมชั่น{% endblock %}
+
+{% block head %}
+<style>
+  .st-card{border:0;border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);
+    box-shadow:0 12px 30px rgba(16,24,40,.08);}
+  .st-card-hd{padding:14px 18px;border-bottom:1px solid rgba(0,0,0,.06);
+    background:linear-gradient(90deg,#eef4ff,#ffffff);border-top-left-radius:18px;border-top-right-radius:18px;}
+  .badge-soft{background:#eff4ff;color:#2f5bd3}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="h5 m-0"><i class="bi bi-stars me-2"></i>โปรโมชั่น</div>
+  <div class="d-flex gap-2">
+    <form class="d-flex" method="get" action="{{ url_for('promos_list') }}">
+      <input class="form-control form-control-sm" name="q" value="{{ q or '' }}" placeholder="ค้นหาโปร...">
+    </form>
+    {% if can('promos.manage') %}
+      <a class="btn btn-primary btn-sm" href="{{ url_for('promo_new') }}"><i class="bi bi-plus-lg me-1"></i> เพิ่มโปร</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="st-card">
+  <div class="st-card-hd"><b>รายการโปรโมชั่น</b></div>
+  <div class="p-3">
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead class="text-nowrap">
+          <tr>
+            <th>ชื่อโปร</th>
+            <th>สถานะ</th>
+            <th>ช่วงเวลา</th>
+            <th>ขั้นต่ำ</th>
+            <th>ลดจาก</th>
+            <th>ส่วนลด</th>
+            <th style="width:120px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in promos %}
+          <tr>
+            <td class="fw-semibold">{{ p.name }}</td>
+            <td>
+              {% if p.active %}<span class="badge text-bg-success">เปิด</span>
+              {% else %}<span class="badge text-bg-secondary">ปิด</span>{% endif %}
+            </td>
+            <td>
+              {{ p.start_date|strftime('%d/%m/%Y') if p.start_date else '-' }}
+              –
+              {{ p.end_date|strftime('%d/%m/%Y') if p.end_date else '-' }}
+            </td>
+            <td>
+              {{ p.min_items }} ชิ้น,
+              ขั้นต่ำ {{ p.min_duration }}
+              {{ 'วัน' if p.rental_unit=='DAY' else ('เดือน' if p.rental_unit=='MONTH' else 'ปี') }}
+            </td>
+            <td>ชิ้นราคาถูกสุด {{ p.cheapest_units_to_discount }} ชิ้น</td>
+            <td>
+              {% if p.discount_type=='PCT' %}
+                {{ '{:,.2f}'.format(p.discount_value or 0) }}%
+              {% else %}
+                {{ '{:,.2f}'.format(p.discount_value or 0) }} บาท
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if can('promos.manage') %}
+              <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('promo_edit', pid=p.id) }}"><i class="bi bi-pencil"></i></a>
+              <form method="post" action="{{ url_for('promo_delete', pid=p.id) }}" class="d-inline"
+                    onsubmit="return confirm('ลบโปรนี้?');">
+                <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted">ยังไม่มีโปรโมชั่น</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

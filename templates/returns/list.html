@@ -1,0 +1,262 @@
+{# templates/returns/list.html #}
+{% extends "base.html" %}
+{% block title %}ใบคืนสินค้า{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== HERO / TOP BAR ===== */
+  .rt-list-hero{
+    border-radius:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(1100px 520px at -10% -20%, rgba(59,130,246,.16) 0%, rgba(59,130,246,0) 55%),
+      radial-gradient(900px 520px at 110% 120%, rgba(16,185,129,.14) 0%, rgba(16,185,129,0) 55%),
+      linear-gradient(135deg,#f9fafb 0%,#eef2ff 45%,#e0f2fe 100%);
+    box-shadow:0 20px 45px rgba(15,23,42,.15);
+    padding:1.4rem 1.7rem;
+    margin-bottom:1.5rem;
+  }
+  .rt-list-title{
+    display:flex; align-items:center; gap:.7rem;
+    font-weight:700; letter-spacing:.3px;
+  }
+  .rt-list-title-icon{
+    width:44px; height:44px; border-radius:1.2rem;
+    display:grid; place-items:center;
+    background:#0f172a;
+    background:linear-gradient(135deg,#22c55e,#0ea5e9);
+    color:#fff;
+    box-shadow:0 12px 25px rgba(14,165,233,.55);
+  }
+  .rt-list-sub{
+    font-size:.86rem; color:rgba(15,23,42,.75);
+  }
+
+  .rt-list-actions{
+    display:flex; flex-direction:column; gap:.5rem;
+  }
+  @media (min-width:768px){
+    .rt-list-actions{ flex-direction:row; align-items:center; }
+  }
+
+  .rt-search-wrap{
+    position:relative; flex:1;
+  }
+  .rt-search-wrap .form-control{
+    border-radius:999px;
+    padding-left:2.4rem;
+    box-shadow:0 10px 25px rgba(15,23,42,.08);
+    border-color:rgba(148,163,184,.5);
+  }
+  .rt-search-icon{
+    position:absolute; left:.85rem; top:50%;
+    transform:translateY(-50%);
+    color:#6b7280; font-size:.95rem;
+  }
+
+  .btn-rt-primary{
+    border-radius:999px;
+    padding:.45rem 1.15rem;
+    font-weight:600;
+    display:inline-flex; align-items:center; gap:.4rem;
+    background:linear-gradient(135deg,#2563eb,#4f46e5);
+    border:none; color:#fff;
+    box-shadow:0 14px 30px rgba(37,99,235,.5);
+  }
+  .btn-rt-primary:hover{
+    filter:brightness(1.05);
+    box-shadow:0 18px 40px rgba(30,64,175,.65);
+  }
+
+  /* ===== TABLE CARD ===== */
+  .rt-card{
+    border-radius:1.1rem;
+    border:1px solid rgba(148,163,184,.25);
+    box-shadow:0 18px 40px rgba(15,23,42,.08);
+    overflow:hidden;
+  }
+  .rt-card-header{
+    padding:.85rem 1.15rem;
+    border-bottom:1px solid rgba(226,232,240,.9);
+    background:linear-gradient(90deg,rgba(248,250,252,1) 0%,rgba(239,246,255,1) 55%,rgba(219,234,254,1) 100%);
+  }
+  .rt-card-header .title{
+    font-weight:600; display:flex; align-items:center; gap:.4rem;
+  }
+
+  .table-rt-list thead th{
+    font-size:.8rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    border-bottom:1px solid rgba(226,232,240,1);
+    background:rgba(248,250,252,.9);
+  }
+  .table-rt-list tbody tr{
+    transition:all .16s ease;
+  }
+  .table-rt-list tbody tr:hover{
+    background:linear-gradient(90deg,rgba(239,246,255,.9),rgba(219,234,254,.95));
+    box-shadow:inset 3px 0 0 #2563eb;
+    transform:translateY(-1px);
+  }
+  .rt-doc-link{
+    font-weight:600; color:#2563eb; text-decoration:none;
+    display:inline-flex; align-items:center; gap:.3rem;
+  }
+  .rt-doc-link i{ font-size:.95rem; }
+  .rt-doc-link:hover{ text-decoration:underline; }
+
+  .rt-badge-pill{
+    display:inline-flex; align-items:center; gap:.25rem;
+    padding:.15rem .6rem;
+    border-radius:999px;
+    font-size:.78rem;
+    background:#eff6ff; color:#1d4ed8;
+    border:1px solid rgba(191,219,254,1);
+  }
+
+  .rt-empty{
+    padding:2.5rem 1rem;
+    color:#9ca3af;
+  }
+  .rt-empty i{
+    font-size:1.7rem; margin-bottom:.3rem;
+  }
+
+  .rt-view-btn{
+    border-radius:999px;
+    width:32px; height:32px;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid rgba(148,163,184,.45);
+    background:#fff;
+  }
+  .rt-view-btn:hover{
+    background:#eff6ff; border-color:#2563eb; color:#2563eb;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <!-- HERO / TOP -->
+  <section class="rt-list-hero">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+      <div>
+        <div class="rt-list-title mb-1">
+          <div class="rt-list-title-icon">
+            <i class="bi bi-arrow-return-left"></i>
+          </div>
+          <div>
+            <div class="text-uppercase small text-muted mb-1">เอกสารขาย</div>
+            <div class="h5 mb-0">ใบคืนสินค้า</div>
+          </div>
+        </div>
+        <div class="rt-list-sub">
+          รวมรายการใบคืนสินค้าทั้งหมด ที่ลูกค้านำอุปกรณ์มาคืนตามใบเสนอราคา
+        </div>
+      </div>
+
+      <div class="rt-list-actions w-100 w-md-auto">
+        <form method="get"
+              class="rt-search-wrap">
+          <i class="bi bi-search rt-search-icon"></i>
+          <input type="text"
+                 name="q"
+                 class="form-control form-control-sm"
+                 placeholder="ค้นหา เลขที่คืน / ลูกค้า / ใบเสนอราคา"
+                 value="{{ request.args.get('q','') }}">
+        </form>
+
+        <a href="{{ url_for('returns_new') }}"
+           class="btn btn-rt-primary">
+          <i class="bi bi-plus-circle-fill"></i>
+          <span>สร้างใบคืนสินค้า</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIST CARD -->
+  <div class="rt-card">
+    <div class="rt-card-header d-flex justify-content-between align-items-center">
+      <div class="title">
+        <i class="bi bi-arrow-repeat"></i>
+        <span>รายการใบคืนสินค้า</span>
+      </div>
+      <div class="small text-muted d-none d-md-block">
+        แสดงเลขที่คืน วันที่คืน ลูกค้า ใบเสนอราคาอ้างอิง และจำนวนรายการ
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 table-rt-list">
+        <thead>
+          <tr>
+            <th style="width:60px;">#</th>
+            <th style="width:160px;">เลขที่ใบคืน</th>
+            <th style="width:140px;">วันที่คืน</th>
+            <th>ชื่อลูกค้า</th>
+            <th style="width:220px;">ใบเสนอราคาอ้างอิง</th>
+            <th style="width:110px;" class="text-end">จำนวนรายการ</th>
+            <th style="width:50px;" class="text-center"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set rows = docs or returns or rets or [] %}
+          {% if rows %}
+            {% for d in rows %}
+              <tr>
+                <td class="text-muted small">{{ loop.index }}</td>
+                <td>
+                  <a href="{{ url_for('returns_view', rid=d.id) }}" class="rt-doc-link">
+                    <i class="bi bi-file-earmark-arrow-down"></i>
+                    <span>{{ d.number }}</span>
+                  </a>
+                </td>
+                <td>
+                  {{ d.date and d.date.strftime("%d/%m/%Y") or "-" }}
+                </td>
+                <td>
+                  {{ d.customer and d.customer.name or "-" }}
+                </td>
+                <td>
+                  {% if d.quote %}
+                    <span class="rt-badge-pill">
+                      <i class="bi bi-file-earmark-text"></i>
+                      {{ d.quote.number }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted small">-</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {{ d.items|length if d.items is defined else 0 }}
+                </td>
+                <td class="text-center">
+                  <a href="{{ url_for('returns_view', rid=d.id) }}"
+                     class="rt-view-btn"
+                     title="ดูรายละเอียด">
+                    <i class="bi bi-eye"></i>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" class="text-center rt-empty">
+                <i class="bi bi-inbox-fill d-block"></i>
+                <div>ยังไม่มีใบคืนสินค้าในระบบ</div>
+                <div class="small mt-1">
+                  กดปุ่ม <strong>สร้างใบคืนสินค้า</strong> เพื่อเริ่มสร้างจากใบเสนอราคา
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

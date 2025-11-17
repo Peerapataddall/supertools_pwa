@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% block title %}แคมเปญของขวัญ: {{ campaign.name }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero / Header ===== */
+  .gfc-hero{
+    border-radius:1.5rem;
+    padding:1.4rem 1.6rem;
+    margin-bottom:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(900px 520px at -10% -20%, rgba(251, 191, 36, .24) 0, rgba(251, 191, 36,0) 45%),
+      radial-gradient(900px 520px at 110% 120%, rgba(59,130,246,.20) 0, rgba(59,130,246,0) 55%),
+      linear-gradient(135deg,#ffffff 0%,#f3f4ff 45%,#eff6ff 100%);
+    box-shadow:0 18px 45px rgba(15,23,42,.16);
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:1.25rem;
+  }
+  .gfc-hero-left{
+    display:flex;
+    gap:1rem;
+    align-items:flex-start;
+  }
+  .gfc-hero-icon{
+    width:50px;
+    height:50px;
+    border-radius:1.4rem;
+    display:grid;
+    place-items:center;
+    background:radial-gradient(circle at 0 0,#fee2e2 0,#f97373 40%,#b91c1c 100%);
+    color:#fff;
+    box-shadow:0 14px 32px rgba(239,68,68,.6);
+    flex-shrink:0;
+  }
+  .gfc-hero-title{
+    font-weight:700;
+    font-size:1.1rem;
+    letter-spacing:.02em;
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+  }
+  .gfc-hero-pill{
+    font-size:.72rem;
+    padding:.1rem .7rem;
+    border-radius:999px;
+    background:rgba(15,23,42,.08);
+    color:#4b5563;
+    font-weight:500;
+  }
+  .gfc-hero-meta{
+    font-size:.84rem;
+    color:#4b5563;
+    margin-top:.2rem;
+  }
+  .gfc-hero-meta span{
+    font-weight:600;
+    color:#111827;
+  }
+  .gfc-hero-actions{
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+  }
+  .gfc-btn-ghost{
+    border-radius:999px;
+    font-size:.85rem;
+    padding:.45rem .95rem;
+  }
+  .gfc-btn-gradient{
+    border-radius:999px;
+    border:none;
+    padding:.55rem 1.25rem;
+    font-size:.85rem;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:.4rem;
+    background:linear-gradient(135deg,#4f46e5,#6366f1);
+    color:#fff !important;
+    box-shadow:0 12px 26px rgba(79,70,229,.45);
+  }
+
+  /* ===== Summary cards ===== */
+  .gfc-stat-card{
+    border-radius:1.1rem;
+    border:none;
+    box-shadow:0 10px 30px rgba(15,23,42,.08);
+    overflow:hidden;
+    position:relative;
+  }
+  .gfc-stat-card::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:radial-gradient(circle at 0 0,rgba(34,197,94,.18) 0,rgba(34,197,94,0) 55%);
+    opacity:.8;
+    pointer-events:none;
+  }
+  .gfc-stat-card.pink::before{
+    background:radial-gradient(circle at 0 0,rgba(244,114,182,.22) 0,rgba(244,114,182,0) 55%);
+  }
+  .gfc-stat-card.indigo::before{
+    background:radial-gradient(circle at 0 0,rgba(129,140,248,.22) 0,rgba(129,140,248,0) 55%);
+  }
+  .gfc-stat-body{
+    position:relative;
+    padding:.9rem 1rem;
+  }
+  .gfc-stat-label{
+    font-size:.75rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:#6b7280;
+    font-weight:600;
+    margin-bottom:.3rem;
+    display:flex;
+    align-items:center;
+    gap:.35rem;
+  }
+  .gfc-stat-label i{ font-size:.9rem; }
+  .gfc-stat-value{
+    font-size:1.35rem;
+    font-weight:700;
+    color:#111827;
+  }
+  .gfc-stat-sub{
+    font-size:.8rem;
+    color:#6b7280;
+    margin-top:.1rem;
+  }
+
+  /* ===== Table & badges ===== */
+  .gfc-section-title{
+    font-size:.92rem;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+    margin-bottom:.2rem;
+  }
+  .gfc-section-title i{ color:#f97316; }
+  .gfc-section-sub{
+    font-size:.8rem;
+    color:#6b7280;
+    margin-bottom:.7rem;
+  }
+  .gfc-table-card{
+    border-radius:1.2rem;
+    border:none;
+    box-shadow:0 12px 36px rgba(15,23,42,.08);
+  }
+  .gfc-table thead{
+    font-size:.8rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .gfc-table thead th{
+    border-bottom:1px solid rgba(148,163,184,.45);
+    color:#6b7280;
+  }
+  .gfc-table tbody td{
+    vertical-align:middle;
+    font-size:.86rem;
+  }
+  .gfc-chip-tier{
+    border-radius:999px;
+    padding:.15rem .65rem;
+    font-size:.78rem;
+    font-weight:500;
+    background:#eef2ff;
+    color:#4338ca;
+  }
+  .gfc-chip-status{
+    border-radius:999px;
+    padding:.18rem .75rem;
+    font-size:.78rem;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:.35rem;
+  }
+  .gfc-chip-status span{
+    width:.45rem;
+    height:.45rem;
+    border-radius:999px;
+  }
+  .gfc-chip-status.given{
+    background:#dcfce7;
+    color:#166534;
+  }
+  .gfc-chip-status.given span{
+    background:#16a34a;
+  }
+  .gfc-chip-status.pending{
+    background:#fef3c7;
+    color:#92400e;
+  }
+  .gfc-chip-status.pending span{
+    background:#f59e0b;
+  }
+  .gfc-date-pill{
+    font-size:.8rem;
+    color:#6b7280;
+    border-radius:999px;
+    padding:.12rem .75rem;
+    background:#f3f4f6;
+  }
+  .gfc-btn-toggle{
+    border-radius:999px;
+    font-size:.8rem;
+    padding:.35rem .8rem;
+  }
+
+  .gfc-empty{
+    padding:1.4rem 1rem .6rem;
+    font-size:.85rem;
+    color:#6b7280;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+
+  <!-- Hero header -->
+  <div class="gfc-hero">
+    <div class="gfc-hero-left">
+      <div class="gfc-hero-icon">
+        <i class="bi bi-gift-fill fs-4"></i>
+      </div>
+      <div>
+        <div class="gfc-hero-title">
+          แคมเปญของขวัญ: {{ campaign.name }}
+          <span class="gfc-hero-pill">
+            รอบทุก {{ campaign.cycle_months or 0 }} เดือน · {{ campaign.tiers|length }} Tier
+          </span>
+        </div>
+        <div class="gfc-hero-meta">
+          ช่วงวันที่ <span>{{ campaign.period_start.strftime('%d/%m/%Y') }}</span>
+          – <span>{{ campaign.period_end.strftime('%d/%m/%Y') }}</span>
+        </div>
+        {% if campaign.description %}
+        <div class="text-muted small mt-1">
+          {{ campaign.description }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="gfc-hero-actions">
+      <a href="{{ url_for('gifts_index') }}"
+         class="btn btn-outline-secondary btn-sm gfc-btn-ghost">
+        <i class="bi bi-arrow-left me-1"></i>
+        ย้อนกลับ
+      </a>
+      {% if can('gifts.manage') %}
+      <form method="post"
+            action="{{ url_for('gifts_campaign_recalc', cid=campaign.id) }}">
+        <button type="submit"
+                class="gfc-btn-gradient btn btn-sm"
+                onclick="return confirm('คำนวณลูกค้าที่ผ่านเกณฑ์ใหม่จากยอดขายในช่วงนี้ใช่หรือไม่?');">
+          <i class="bi bi-arrow-repeat"></i>
+          คำนวณใหม่จากยอดขาย
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="card gfc-stat-card">
+        <div class="gfc-stat-body">
+          <div class="gfc-stat-label">
+            <i class="bi bi-people-fill text-success"></i>
+            ลูกค้าที่ผ่านเกณฑ์ในแคมเปญนี้
+          </div>
+          <div class="gfc-stat-value">{{ total_qualified or 0 }}</div>
+          <div class="gfc-stat-sub">
+            ทั้งหมดที่มียอดซื้อถึงเกณฑ์ของ Tier ต่าง ๆ
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card gfc-stat-card pink">
+        <div class="gfc-stat-body">
+          <div class="gfc-stat-label">
+            <i class="bi bi-gift text-pink-500"></i>
+            ลูกค้าที่ได้รับของขวัญแล้ว
+          </div>
+          <div class="gfc-stat-value text-success">{{ total_given or 0 }}</div>
+          <div class="gfc-stat-sub">
+            บันทึกสถานะว่า “ให้ของขวัญแล้ว” เรียบร้อย
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card gfc-stat-card indigo">
+        <div class="gfc-stat-body">
+          <div class="gfc-stat-label">
+            <i class="bi bi-layers-fill text-indigo-500"></i>
+            จำนวน Tier ในแคมเปญนี้
+          </div>
+          <div class="gfc-stat-value">{{ campaign.tiers|length }}</div>
+          <div class="gfc-stat-sub">
+            ใช้คำนวณสิทธิ์ของขวัญตามยอดซื้อของลูกค้า
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card gfc-table-card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <div class="gfc-section-title">
+            <i class="bi bi-card-checklist"></i>
+            รายชื่อลูกค้าที่ผ่านเกณฑ์
+          </div>
+          <div class="gfc-section-sub">
+            ตรวจสอบสถานะและวันที่ให้ของขวัญสำหรับลูกค้าแต่ละราย
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle gfc-table">
+          <thead class="table-light">
+            <tr>
+              <th>ลูกค้า</th>
+              <th>ยอดรวม (บาท)</th>
+              <th>เกรด</th>
+              <th>สถานะ</th>
+              <th>ให้ของขวัญเมื่อ</th>
+              {% if can('gifts.manage') %}
+              <th class="text-end">จัดการ</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in campaign.results %}
+            <tr>
+              <td>
+                {{ r.customer.name if r.customer else '(ไม่ระบุ)' }}
+              </td>
+              <td>
+                {{ "{:,.2f}".format(r.total_amount or 0) }}
+              </td>
+              <td>
+                <span class="gfc-chip-tier">
+                  {{ r.tier_code }} - {{ r.tier_name }}
+                </span>
+              </td>
+              <td>
+                {% if r.status == 'GIVEN' %}
+                  <span class="gfc-chip-status given">
+                    <span></span> ให้ของขวัญแล้ว
+                  </span>
+                {% else %}
+                  <span class="gfc-chip-status pending">
+                    <span></span> ยังไม่ให้ของขวัญ
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.last_given_at %}
+                  <span class="gfc-date-pill">
+                    {{ r.last_given_at.strftime('%d/%m/%Y') }}
+                  </span>
+                {% else %}
+                  <span class="text-muted small">-</span>
+                {% endif %}
+              </td>
+
+              {% if can('gifts.manage') %}
+              <td class="text-end">
+                <form method="post"
+                      action="{{ url_for('gifts_toggle_result', rid=r.id) }}">
+                  {% if r.status == 'GIVEN' %}
+                  <button type="submit"
+                          class="btn btn-sm btn-outline-secondary gfc-btn-toggle">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>
+                    เปลี่ยนเป็นยังไม่ให้
+                  </button>
+                  {% else %}
+                  <button type="submit"
+                          class="btn btn-sm btn-success gfc-btn-toggle">
+                    <i class="bi bi-check2-circle me-1"></i>
+                    บันทึกว่าให้แล้ว
+                  </button>
+                  {% endif %}
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if not campaign.results %}
+      <div class="gfc-empty">
+        ยังไม่มีลูกค้าที่ผ่านเกณฑ์ในแคมเปญนี้<br>
+        {% if can('gifts.manage') %}
+        ลองกดปุ่ม <strong>คำนวณใหม่จากยอดขาย</strong> ด้านบนเพื่อดึงข้อมูลล่าสุด
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

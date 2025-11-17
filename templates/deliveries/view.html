@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% set d = doc %}
+
+{% block title %}ใบส่งสินค้า {{ d.number }}{% endblock %}
+
+{% block head %}
+<style>
+  .dl-header{
+    border-radius:1.25rem;
+    border:1px solid rgba(15,23,42,.08);
+    background: radial-gradient(circle at 0% 0%, #ffffff 0%, #e5e7eb 55%, #dbeafe 100%);
+    box-shadow:0 22px 40px rgba(15,23,42,.09);
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+  }
+  .dl-chip{
+    display:inline-flex; align-items:center; gap:.35rem;
+    border-radius:999px; padding:.25rem .7rem;
+    font-size:.8rem; font-weight:600;
+    border:1px solid transparent;
+  }
+  .dl-chip-pending{ background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .dl-chip-progress{ background:#ede9fe; color:#4c1d95; border-color:#ddd6fe; }
+  .dl-chip-done{ background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .dl-chip-cancel{ background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+
+  .dl-section{
+    border-radius:1rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:#ffffff;
+    box-shadow:0 12px 26px rgba(15,23,42,.06);
+  }
+
+  .dl-label{ font-size:.85rem; text-transform:uppercase; color:#6b7280; letter-spacing:.04em; }
+  .dl-value{ font-weight:600; color:#111827; }
+
+  .dl-cancel-reason{
+    border-radius:.75rem;
+    border:1px dashed rgba(185,28,28,.4);
+    background:#fef2f2;
+  }
+
+  .dl-photo-grid{
+    display:flex; flex-wrap:wrap; gap:.5rem;
+  }
+  .dl-photo-grid img{
+    max-height:80px; border-radius:.5rem; border:1px solid rgba(148,163,184,.6);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{# แปลง Enum -> string ให้เรียบร้อยก่อนใช้ทุกที่ #}
+{% if d.status is not none and d.status is not string and d.status.name is defined %}
+  {% set cur_status = d.status.name|upper %}
+{% else %}
+  {% set cur_status = (d.status or 'PENDING')|upper %}
+{% endif %}
+
+{% set st = cur_status %}
+{% set src_type = (d.source_type or '')|upper if d.source_type is defined else '' %}
+{% set is_claim = src_type in ['CLAIM','CLM'] %}
+{% set customer = d.customer if d.customer is defined else None %}
+
+{# map เหตุผลยกเลิกเป็นข้อความไทย #}
+{% set reason_map = {
+  'CHANGE_LOCATION': 'ลูกค้าเปลี่ยนสถานที่',
+  'CHANGE_DATE': 'ลูกค้าเปลี่ยนวัน',
+  'CHANGE_AREA': 'ลูกค้าเปลี่ยนพื้นที่จัดส่ง',
+  'ACCIDENT': 'รถเกิดอุบัติเหตุ',
+  'OTHER': 'อื่น ๆ'
+} %}
+
+{% macro status_chip(s) -%}
+  {% set s = (s or '')|upper %}
+  {% if s in ['PENDING','WAITING','NEW','QUEUED'] %}
+    {% set label = 'รอจัดส่ง' %}
+    {% set cls = 'dl-chip-pending' %}
+    {% set icon = 'bi-clock-history' %}
+  {% elif s in ['ONGOING','IN_PROGRESS','DELIVERING','PROCESSING'] %}
+    {% set label = 'กำลังจัดส่ง' %}
+    {% set cls = 'dl-chip-progress' %}
+    {% set icon = 'bi-truck-front' %}
+  {% elif s in ['DONE','DELIVERED','SUCCESS'] %}
+    {% set label = 'จัดส่งสำเร็จ' %}
+    {% set cls = 'dl-chip-done' %}
+    {% set icon = 'bi-check-circle' %}
+  {% elif s in ['CANCELLED','CANCELED'] %}
+    {% set label = 'ยกเลิกการส่ง' %}
+    {% set cls = 'dl-chip-cancel' %}
+    {% set icon = 'bi-x-circle' %}
+  {% else %}
+    {% set label = s or '-' %}
+    {% set cls = 'dl-chip-pending' %}
+    {% set icon = 'bi-info-circle' %}
+  {% endif %}
+  <span class="dl-chip {{ cls }}"><i class="bi {{ icon }}"></i> {{ label }}</span>
+{%- endmacro %}
+
+<div class="dl-header d-flex flex-wrap justify-content-between align-items-center">
+  <div>
+    <div class="d-flex align-items-center gap-2">
+      <h1 class="h5 mb-0">
+        <i class="bi bi-truck-front text-primary"></i>
+        ใบส่งสินค้า {{ d.number }}
+      </h1>
+      {{ status_chip(st) }}
+    </div>
+    <div class="small text-muted">
+      วันที่นัดจัดส่ง:
+      {% set dt = d.delivery_date if d.delivery_date is defined and d.delivery_date else (d.date if d.date is defined else None) %}
+      <strong>{{ dt and dt.strftime('%d/%m/%Y') or '—' }}</strong>
+      {% if is_claim %}
+        · <span class="text-warning"><i class="bi bi-shield-check"></i> ส่งอุปกรณ์เคลม</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2 mt-2 mt-md-0">
+    <a href="{{ url_for('deliveries.print_doc', did=d.id) }}" class="btn btn-outline-primary btn-sm" target="_blank">
+      <i class="bi bi-printer"></i> พิมพ์ใบส่ง
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="dl-section p-3 p-md-4 mb-3">
+      <div class="mb-3">
+        <div class="dl-label">ลูกค้า</div>
+        <div class="dl-value">
+          {{ customer and customer.name or (d.ship_to_name if d.ship_to_name is defined else '—') }}
+        </div>
+        {% if customer and customer.tax_id %}
+          <div class="small text-muted">เลขประจำตัวผู้เสียภาษี: {{ customer.tax_id }}</div>
+        {% endif %}
+      </div>
+      <div class="mb-3">
+        <div class="dl-label">สถานที่จัดส่ง</div>
+        <div class="dl-value">
+          {{ d.ship_to_name if d.ship_to_name is defined and d.ship_to_name else '—' }}
+        </div>
+        <div class="small text-muted">
+          {{ d.ship_to_address if d.ship_to_address is defined and d.ship_to_address else '' }}
+        </div>
+        {% if d.ship_to_phone is defined and d.ship_to_phone %}
+          <div class="small text-muted mt-1">
+            <i class="bi bi-telephone"></i> {{ d.ship_to_phone }}
+          </div>
+        {% endif %}
+      </div>
+      <div class="mb-2">
+        <div class="dl-label">อ้างอิงเอกสาร</div>
+        <div class="small text-muted">
+          {% if src_type in ['QUOTATION','QU','QUOTE'] and d.quote is defined and d.quote %}
+            ใบเสนอราคา: <a href="{{ url_for('qu_view', qid=d.quote.id) }}">{{ d.quote.number }}</a>
+          {% elif src_type in ['CLAIM','CLM'] and d.claim is defined and d.claim %}
+            ใบเคลม: <a href="{{ url_for('claim_view', claim_id=d.claim.id) }}">{{ d.claim.number }}</a>
+          {% else %}
+            —
+          {% endif %}
+        </div>
+      </div>
+      {% if d.internal_note is defined and d.internal_note %}
+      <div class="mt-3">
+        <div class="dl-label">หมายเหตุภายใน</div>
+        <div class="small text-muted">{{ d.internal_note }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if can('transport.manage') %}
+    <div class="dl-section p-3 p-md-4">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-arrow-repeat"></i> จัดการสถานะใบส่ง</h6>
+
+      {# ฟอร์มเปลี่ยนสถานะหลัก #}
+      <form method="post" action="{{ url_for('deliveries.update_status', did=d.id) }}" class="mb-3">
+        {{ csrf_field() if csrf_field is defined }}
+        <div class="mb-2">
+          <label class="form-label">เปลี่ยนสถานะเป็น</label>
+
+          {# ใช้ชื่อฟิลด์ 'status' ให้ตรงกับ route #}
+          <select name="status" class="form-select">
+            <option value="PENDING"   {{ 'selected' if st == 'PENDING' }}>รอจัดส่ง</option>
+            <option value="ONGOING"   {{ 'selected' if st == 'ONGOING' }}>กำลังจัดส่ง</option>
+            <option value="DONE"      {{ 'selected' if st == 'DONE' }}>จัดส่งสำเร็จ</option>
+            <option value="CANCELLED" {{ 'selected' if st == 'CANCELLED' }}>ยกเลิก</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">หมายเหตุ</label>
+          <textarea name="status_note" rows="2" class="form-control"
+                    placeholder="บันทึกเหตุผลหรือรายละเอียดการเปลี่ยนสถานะ (ถ้ามี)"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-save"></i> บันทึกสถานะ
+        </button>
+      </form>
+
+      {% if st not in ['CANCELLED','CANCELED'] %}
+      <hr>
+      <h6 class="fw-semibold mb-2 text-danger"><i class="bi bi-x-octagon"></i> ยกเลิกการส่ง</h6>
+      <form method="post" action="{{ url_for('deliveries.update_status', did=d.id) }}" class="dl-cancel-reason p-2">
+        {{ csrf_field() if csrf_field is defined }}
+        <input type="hidden" name="status" value="CANCELLED">
+        <div class="mb-2">
+          <label class="form-label small mb-1">เหตุผลการยกเลิก</label>
+          <select name="cancel_reason" class="form-select form-select-sm" required>
+            <option value="">-- เลือกเหตุผล --</option>
+            <option value="CHANGE_LOCATION">1. ลูกค้าเปลี่ยนสถานที่</option>
+            <option value="CHANGE_DATE">2. ลูกค้าเปลี่ยนวัน</option>
+            <option value="CHANGE_AREA">3. ลูกค้าเปลี่ยนพื้นที่จัดส่ง</option>
+            <option value="ACCIDENT">4. รถเกิดอุบัติเหตุ</option>
+            <option value="OTHER">5. อื่นๆ โปรดระบุ</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <textarea name="cancel_note" rows="2" class="form-control form-control-sm"
+                    placeholder="อธิบายรายละเอียดเพิ่มเติม (โดยเฉพาะกรณีเลือก 'อื่นๆ')"></textarea>
+        </div>
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-x-circle"></i> ยืนยันยกเลิกการส่ง
+        </button>
+      </form>
+      {% endif %}
+
+      {% if st in ['CANCELLED','CANCELED'] %}
+      <hr>
+      <h6 class="fw-semibold mb-2"><i class="bi bi-calendar2-plus"></i> นัดจัดส่งใหม่</h6>
+      <form method="post" action="{{ url_for('deliveries.reschedule', did=d.id) }}">
+        {{ csrf_field() if csrf_field is defined }}
+        <div class="mb-2">
+          <label class="form-label small mb-1">วันที่จัดส่งใหม่</label>
+          <input type="date" name="new_delivery_date" class="form-control form-control-sm" required>
+        </div>
+        <button type="submit" class="btn btn-success btn-sm">
+          <i class="bi bi-check-circle"></i> บันทึกวันจัดส่งใหม่
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-7">
+    <div class="dl-section p-3 p-md-4 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-semibold mb-0"><i class="bi bi-box-seam"></i> รายการอุปกรณ์ที่จัดส่ง</h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width:60px;">#</th>
+              <th>อุปกรณ์</th>
+              <th style="width:100px;">จำนวน</th>
+              <th style="width:140px;">หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if d.items %}
+            {% for it in d.items %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>
+                <div class="fw-semibold">
+                  {{ it.product_name
+                     or it.equipment_name
+                     or it.description
+                     or '-' }}
+                </div>
+                {% if it.source_item_id %}
+                  <div class="small text-muted">
+                    อ้างอิงรายการ #{{ it.source_item_id }}
+                  </div>
+                {% endif %}
+              </td>
+              <td>
+                {{ it.qty or 0 }} {{ it.unit or '' }}
+              </td>
+              <td class="small text-muted">
+                {{ it.note or '—' }}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-3">
+                ไม่มีรายการอุปกรณ์ในใบส่งนี้
+              </td>
+            </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# รูปก่อนส่ง #}
+    <div class="dl-section p-3 p-md-4 mb-3">
+      <h6 class="fw-semibold mb-2"><i class="bi bi-camera"></i> รูปก่อนส่ง</h6>
+      <form method="post"
+            action="{{ url_for('deliveries.upload_before_photos', did=d.id) }}"
+            enctype="multipart/form-data"
+            class="mb-2">
+        {{ csrf_field() if csrf_field is defined }}
+        <input type="file" name="photos" multiple accept="image/*"
+               class="form-control form-control-sm mb-2">
+        <div class="small text-muted mb-2">
+          ต้องมีอย่างน้อย 3 รูป และไม่เกิน 10 รูป ก่อนเปลี่ยนสถานะเป็น <strong>กำลังจัดส่ง</strong>
+        </div>
+        <button type="submit" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-upload"></i> อัปโหลดรูปก่อนส่ง
+        </button>
+      </form>
+
+      {% if d.photos_before %}
+      <div class="dl-photo-grid">
+        {% for p in d.photos_before %}
+          <a href="{{ url_for('static', filename='uploads/delivery/' ~ p.filename) }}"
+             target="_blank">
+            <img src="{{ url_for('static', filename='uploads/delivery/' ~ p.filename) }}"
+                 alt="before {{ loop.index }}">
+          </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="small text-muted">ยังไม่มีรูปก่อนส่ง</div>
+      {% endif %}
+    </div>
+
+    {# รูปหลังส่ง #}
+    <div class="dl-section p-3 p-md-4 mb-3">
+      <h6 class="fw-semibold mb-2"><i class="bi bi-camera-fill"></i> รูปหลังส่ง</h6>
+      <form method="post"
+            action="{{ url_for('deliveries.upload_after_photos', did=d.id) }}"
+            enctype="multipart/form-data"
+            class="mb-2">
+        {{ csrf_field() if csrf_field is defined }}
+        <input type="file" name="photos" multiple accept="image/*"
+               class="form-control form-control-sm mb-2">
+        <div class="small text-muted mb-2">
+          ต้องมีอย่างน้อย 3 รูป และไม่เกิน 10 รูป ก่อนเปลี่ยนสถานะเป็น <strong>จัดส่งสำเร็จ</strong>
+        </div>
+        <button type="submit" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-upload"></i> อัปโหลดรูปหลังส่ง
+        </button>
+      </form>
+
+      {% if d.photos_after %}
+      <div class="dl-photo-grid">
+        {% for p in d.photos_after %}
+          <a href="{{ url_for('static', filename='uploads/delivery/' ~ p.filename) }}"
+             target="_blank">
+            <img src="{{ url_for('static', filename='uploads/delivery/' ~ p.filename) }}"
+                 alt="after {{ loop.index }}">
+          </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="small text-muted">ยังไม่มีรูปหลังส่ง</div>
+      {% endif %}
+    </div>
+
+    {# กล่องข้อมูลการยกเลิก #}
+    {% set cancel_code = d.cancel_reason_code if d.cancel_reason_code is defined else None %}
+    {% set cancel_text = reason_map[cancel_code] if cancel_code in reason_map else cancel_code %}
+    {% set has_cancel_info = st in ['CANCELLED','CANCELED'] and (cancel_text or d.cancel_note or d.internal_note) %}
+
+    {% if has_cancel_info %}
+    <div class="alert alert-warning">
+      <div class="fw-semibold mb-1">
+        <i class="bi bi-info-circle"></i> ข้อมูลการยกเลิก
+      </div>
+
+      {% if cancel_text %}
+        <div class="small mb-1">
+          เหตุผล: {{ cancel_text }}
+        </div>
+      {% endif %}
+
+      {% if d.cancel_note %}
+        <div class="small mb-1">
+          รายละเอียดเพิ่มเติม: {{ d.cancel_note }}
+        </div>
+      {% elif d.internal_note %}
+        <div class="small mb-1">
+          รายละเอียดเพิ่มเติม: {{ d.internal_note }}
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

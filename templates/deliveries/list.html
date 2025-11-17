@@ -1,0 +1,234 @@
+{# templates/deliveries/list.html #}
+{% extends "base.html" %}
+{% block title %}ใบส่งสินค้า{% endblock %}
+
+{% block head %}
+<style>
+  .dl-hero{
+    background:
+      radial-gradient(1200px 400px at -10% -40%, rgba(131,105,83,.22), transparent),
+      radial-gradient(900px 360px at 110% -60%, rgba(59,130,246,.16), transparent),
+      linear-gradient(135deg,#f8fafc,#eef2ff);
+    border-radius: 1.25rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(15,23,42,.06);
+    box-shadow: 0 16px 40px rgba(15,23,42,.08);
+  }
+  .dl-hero-title{
+    display:flex; align-items:center; gap:.6rem; font-weight:700;
+  }
+  .dl-hero-title i{
+    background:#fff; width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center; color:#836953;
+    box-shadow:0 10px 24px rgba(131,105,83,.25);
+  }
+
+  .dl-card{
+    border-radius: 1rem;
+    border:1px solid rgba(15,23,42,.06);
+    background: radial-gradient(circle at 0% 0%, #ffffff 0%, #f1f5f9 55%, #e5edf9 100%);
+    box-shadow: 0 20px 45px rgba(15,23,42,.08);
+  }
+
+  .table-modern thead th{
+    background: linear-gradient(180deg,#f9fafb,#e5e7eb);
+    border-bottom:1px solid rgba(15,23,42,.08);
+    font-weight:600; color:#111827;
+  }
+  .table-modern tbody tr{
+    transition: background-color .15s ease, transform .05s ease;
+  }
+  .table-modern tbody tr:hover{
+    background:rgba(59,130,246,.04);
+  }
+
+  .dl-chip{
+    display:inline-flex; align-items:center; gap:.35rem;
+    border-radius:999px; padding:.25rem .65rem;
+    font-size:.8rem; font-weight:600;
+    border:1px solid transparent;
+  }
+  .dl-chip-pending{ background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .dl-chip-progress{ background:#ede9fe; color:#4c1d95; border-color:#ddd6fe; }
+  .dl-chip-done{ background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .dl-chip-cancel{ background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+
+  .btn-icon{ display:inline-flex; align-items:center; gap:.35rem; }
+  .text-muted-2{ color:#6b7280!important; }
+
+  .filter-pill{
+    border-radius:999px;
+    padding-left:2.3rem;
+  }
+  .filter-icon{
+    position:absolute; left:.85rem; top:50%; transform:translateY(-50%);
+    color:#9ca3af;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{# Helper: แปลง status -> chip สี + label ไทย #}
+{% macro status_chip(s) -%}
+  {% set s = (s or '')|upper %}
+  {% if s in ['PENDING','WAITING','NEW','QUEUED'] %}
+    {% set label = 'รอจัดส่ง' %}
+    {% set cls = 'dl-chip-pending' %}
+    {% set icon = 'bi-clock-history' %}
+  {% elif s in ['IN_PROGRESS','DELIVERING','PROCESSING'] %}
+    {% set label = 'กำลังจัดส่ง' %}
+    {% set cls = 'dl-chip-progress' %}
+    {% set icon = 'bi-truck-front' %}
+  {% elif s in ['DONE','DELIVERED','SUCCESS'] %}
+    {% set label = 'จัดส่งสำเร็จ' %}
+    {% set cls = 'dl-chip-done' %}
+    {% set icon = 'bi-check-circle' %}
+  {% elif s in ['CANCELLED','CANCELED'] %}
+    {% set label = 'ยกเลิกการส่ง' %}
+    {% set cls = 'dl-chip-cancel' %}
+    {% set icon = 'bi-x-circle' %}
+  {% else %}
+    {% set label = s or '-' %}
+    {% set cls = 'dl-chip-pending' %}
+    {% set icon = 'bi-info-circle' %}
+  {% endif %}
+  <span class="dl-chip {{ cls }}"><i class="bi {{ icon }}"></i> {{ label }}</span>
+{%- endmacro %}
+
+{% set total = rows|length if rows is defined else 0 %}
+
+<div class="dl-hero d-flex flex-wrap justify-content-between align-items-center">
+  <div class="d-flex flex-column gap-1">
+    <div class="dl-hero-title">
+      <i class="bi bi-truck-front"></i>
+      <div>
+        <div class="fs-5">ใบส่งสินค้า</div>
+        <div class="text-muted-2 small">ดูประวัติการจัดส่งทั้งหมด ทั้งงานปกติและงานเคลม</div>
+      </div>
+    </div>
+    <div class="small text-muted-2">
+      ทั้งหมด <strong>{{ total }}</strong> รายการ
+    </div>
+  </div>
+
+  <div class="d-flex flex-column flex-md-row gap-2 align-items-stretch align-items-md-center">
+    <div class="position-relative">
+      <i class="bi bi-search filter-icon"></i>
+      <input id="dl-q" type="text" class="form-control filter-pill"
+             placeholder="ค้นหา: เลขที่ใบส่ง / ลูกค้า / สถานะ">
+    </div>
+  </div>
+</div>
+
+<div class="dl-card p-3 p-md-4">
+  <div class="table-responsive">
+    <table class="table table-modern table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="min-width:160px">เลขที่ใบส่ง</th>
+          <th style="min-width:120px">วันที่ส่ง</th>
+          <th>ลูกค้า / ปลายทาง</th>
+          <th style="min-width:140px">ประเภท</th>
+          <th style="min-width:160px">สถานะ</th>
+          <th class="text-end" style="min-width:220px"></th>
+        </tr>
+      </thead>
+      <tbody id="dl-rows">
+        {% for d in rows %}
+          {% set st = (d.status or '')|upper %}
+          {% set src_type = (d.source_type or '')|upper if d.source_type is defined else '' %}
+          {% set is_claim = src_type in ['CLAIM','CLM'] %}
+          {% set src_number = (
+            d.source_number
+            if d.source_number is defined
+            else (
+              d.claim.number if d.claim is defined and d.claim
+              else (d.quote.number if d.quote is defined and d.quote else '')
+            )
+          ) %}
+          {% set cust_name = (
+            d.customer.name if d.customer is defined and d.customer and d.customer.name is defined
+            else (d.ship_to_name if d.ship_to_name is defined else '')
+          ) %}
+          {% set addr = (d.ship_to_address if d.ship_to_address is defined else '') %}
+          <tr data-search="{{ (d.number ~ ' ' ~ cust_name ~ ' ' ~ src_number ~ ' ' ~ st)|lower }}">
+            <td class="fw-semibold text-primary">
+              <i class="bi bi-hash"></i> {{ d.number or '-' }}
+            </td>
+            <td>
+              {% set dt = d.delivery_date if d.delivery_date is defined and d.delivery_date else
+                           (d.date if d.date is defined else None) %}
+              {{ dt and dt.strftime('%d/%m/%Y') or '—' }}
+            </td>
+            <td style="max-width:380px;">
+              <div class="fw-semibold text-dark">{{ cust_name or '—' }}</div>
+              {% if addr %}
+                <div class="small text-muted-2 text-truncate">{{ addr }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if is_claim %}
+                <span class="badge rounded-pill text-bg-warning-subtle text-warning-emphasis">
+                  <i class="bi bi-shield-check"></i> ส่งอุปกรณ์เคลม
+                </span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-info-subtle text-info-emphasis">
+                  <i class="bi bi-box-seam"></i> ส่งสินค้าปกติ
+                </span>
+              {% endif %}
+              {% if src_number %}
+                <div class="small text-muted-2">
+                  อ้างอิง: {{ src_number }}
+                </div>
+              {% endif %}
+            </td>
+            <td>
+              {{ status_chip(st) }}
+            </td>
+            <td class="text-end">
+              <div class="btn-group">
+                <a class="btn btn-sm btn-outline-secondary btn-icon"
+                   href="{{ url_for('deliveries.view_doc', did=d.id) }}">
+                  <i class="bi bi-eye"></i><span class="d-none d-md-inline"> เปิด</span>
+                </a>
+                <a class="btn btn-sm btn-outline-primary btn-icon"
+                   href="{{ url_for('deliveries.print_doc', did=d.id) }}" target="_blank">
+                  <i class="bi bi-printer"></i><span class="d-none d-lg-inline"> พิมพ์</span>
+                </a>
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5">
+              <div class="d-inline-flex flex-column align-items-center gap-2">
+                <div class="display-6">🚚</div>
+                <div class="fw-semibold">ยังไม่มีใบส่งสินค้า</div>
+                <div class="text-muted small">สร้างใบส่งจากใบเสนอราคา หรือใบเคลม เพื่อเริ่มต้น</div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function(){
+    const i = document.getElementById('dl-q');
+    const rows = document.querySelectorAll('#dl-rows tr');
+    if (!i || !rows.length) return;
+    i.addEventListener('input', function(){
+      const q = (this.value || '').toLowerCase().trim();
+      rows.forEach(tr => {
+        const hay = (tr.getAttribute('data-search') || '').toLowerCase();
+        tr.style.display = hay.indexOf(q) !== -1 ? '' : 'none';
+      });
+    });
+  })();
+</script>
+{% endblock %}

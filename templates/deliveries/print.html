@@ -1,0 +1,279 @@
+{# templates/deliveries/print.html #}
+<!doctype html>
+<html lang="th">
+<head>
+  {% set d = doc %}
+  <meta charset="utf-8">
+  <title>ใบส่งสินค้า {{ d.number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 12mm 10mm 14mm; }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; padding:0;
+      font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif;
+      font-size:12px; color:#111827;
+      background:#ffffff;
+    }
+    .doc{ width:100%; }
+    .row{ display:flex; gap:12px; }
+    .col{ flex:1; }
+    .col-auto{ flex:0 0 auto; }
+
+    .text-right{ text-align:right; }
+    .text-center{ text-align:center; }
+    .small{ font-size:11px; }
+    .fw-600{ font-weight:600; }
+    .fw-700{ font-weight:700; }
+
+    .border{ border:1px solid #e5e7eb; }
+    .rounded{ border-radius:8px; }
+    .mb-1{ margin-bottom:4px; }
+    .mb-2{ margin-bottom:8px; }
+    .mb-3{ margin-bottom:12px; }
+    .mb-4{ margin-bottom:16px; }
+    .pt-1{ padding-top:4px; }
+    .pb-1{ padding-bottom:4px; }
+    .p-2{ padding:8px; }
+    .p-3{ padding:12px; }
+
+    .h-line{ border-bottom:1px solid #e5e7eb; margin:4px 0 8px; }
+
+    .tbl{ width:100%; border-collapse:collapse; }
+    .tbl th, .tbl td{
+      border:1px solid #e5e7eb;
+      padding:4px 6px;
+    }
+    .tbl th{ background:#f3f4f6; font-weight:600; }
+
+    .title-main{
+      font-size:18px; font-weight:700; letter-spacing:.5px;
+    }
+    .badge-claim{
+      display:inline-block; padding:1px 6px;
+      border-radius:999px; font-size:10px;
+      background:#fef3c7; color:#b45309;
+      border:1px solid #fde68a;
+      margin-left:6px;
+    }
+
+    @media print{
+      body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }
+  </style>
+</head>
+<body>
+  {# ==== บายดิ้งตัวแปร + helper โลโก้ ==== #}
+  {% set company = company or None %}
+  {% set customer = d.customer if d.customer is defined else None %}
+
+  {# หา URL โลโก้ (ถ้าไม่มีให้ใช้ images/logo-supertool.png ใน static) #}
+  {% set _company_logo_raw = (company and company.logo_path) if company and company.logo_path else 'images/logo-supertool.png' %}
+  {% if '://' in _company_logo_raw or _company_logo_raw.startswith('data:') %}
+    {% set company_logo_url = _company_logo_raw %}
+  {% else %}
+    {% set _lp = _company_logo_raw.lstrip('/') %}
+    {% if _lp.startswith('static/') %}{% set _lp = _lp[7:] %}{% endif %}
+    {% set company_logo_url = url_for('static', filename=_lp) %}
+  {% endif %}
+
+  {% set st = (d.status or '')|upper %}
+  {% set src_type = (d.source_type or '')|upper if d.source_type is defined else '' %}
+  {% set is_claim = src_type in ['CLAIM','CLM'] %}
+
+  <div class="doc">
+
+    <!-- Header -->
+    <div class="row mb-3">
+      <div class="col">
+        {% if company %}
+          {% if company_logo_url %}
+            <div class="mb-2">
+              <img src="{{ company_logo_url }}" alt="โลโก้" style="height:40px;">
+            </div>
+          {% endif %}
+          <div class="fw-700">{{ company.name }}</div>
+          {% if company.address %}
+            <div class="small">{{ company.address }}</div>
+          {% endif %}
+          {% if company.phone or company.tax_id %}
+            <div class="small">
+              {% if company.phone %}โทร: {{ company.phone }}{% endif %}
+              {% if company.tax_id %} · เลขประจำตัวผู้เสียภาษี: {{ company.tax_id }}{% endif %}
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+      <div class="col text-right">
+        <div class="title-main">
+          ใบส่งสินค้า
+          {% if is_claim %}
+            <span class="badge-claim">เคลม</span>
+          {% endif %}
+        </div>
+        <div class="small">เลขที่ใบส่ง: <span class="fw-600">{{ d.number }}</span></div>
+        {% set dt = d.delivery_date if d.delivery_date is defined and d.delivery_date else (d.date if d.date is defined else None) %}
+        <div class="small">วันที่จัดส่ง: {{ dt and dt.strftime('%d/%m/%Y') or '—' }}</div>
+      </div>
+    </div>
+
+    <!-- Customer / ship info -->
+    <div class="row mb-3">
+      <div class="col border rounded p-2">
+        <div class="fw-600 mb-1">ข้อมูลลูกค้า</div>
+        <div class="small">
+          ชื่อ:
+          {{
+            (customer and customer.name)
+            or (d.customer_name if d.customer_name is defined and d.customer_name else
+                d.ship_to_name   if d.ship_to_name   is defined and d.ship_to_name   else '—')
+          }}
+        </div>
+        {% if customer and customer.address %}
+          <div class="small">ที่อยู่: {{ customer.address }}</div>
+        {% elif d.customer_address is defined and d.customer_address %}
+          <div class="small">ที่อยู่: {{ d.customer_address }}</div>
+        {% elif d.ship_to_address is defined and d.ship_to_address %}
+          <div class="small">ที่อยู่: {{ d.ship_to_address }}</div>
+        {% endif %}
+        {% if customer and customer.tax_id %}
+          <div class="small">เลขประจำตัวผู้เสียภาษี: {{ customer.tax_id }}</div>
+        {% elif d.customer_tax_id is defined and d.customer_tax_id %}
+          <div class="small">เลขประจำตัวผู้เสียภาษี: {{ d.customer_tax_id }}</div>
+        {% endif %}
+      </div>
+      <div class="col border rounded p-2">
+        <div class="fw-600 mb-1">สถานที่จัดส่ง</div>
+        <div class="small">
+          ผู้รับ / หน้างาน: {{ d.ship_to_name if d.ship_to_name is defined and d.ship_to_name else '—' }}
+        </div>
+        <div class="small">
+          ที่อยู่จัดส่ง:
+          {{ d.ship_to_address if d.ship_to_address is defined and d.ship_to_address else '—' }}
+        </div>
+        {% if d.ship_to_phone is defined and d.ship_to_phone %}
+        <div class="small">
+          เบอร์ติดต่อ: {{ d.ship_to_phone }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+            <!-- Reference -->
+    <div class="row mb-3">
+      <div class="col border rounded p-2">
+        <div class="fw-600 mb-1">เอกสารอ้างอิง</div>
+
+        {# กรณีใบส่ง “เคลม” มี claim เสมอ #}
+        {% if claim %}
+          <div class="small">
+            อ้างอิง PO ลูกค้าเลขที่:
+            {{ (quote and quote.po_customer) or '—' }}
+          </div>
+          <div class="small">
+            อ้างอิงใบเสนอราคาเลขที่:
+            {{ quote and quote.number or '—' }}
+          </div>
+          <div class="small">
+            อ้างอิงใบส่งสินค้าเดิมเลขที่:
+            {{ original_dl and original_dl.number or '—' }}
+          </div>
+          <div class="small">
+            อ้างอิงเลขที่ใบเคลม:
+            {{ claim.number }}
+          </div>
+
+        {# กรณีใบส่งปกติ มาจากใบเสนอราคาอย่างเดียว #}
+        {% elif quote %}
+          <div class="small">
+            อ้างอิง PO ลูกค้าเลขที่:
+            {{ quote.po_customer or '—' }}
+          </div>
+          <div class="small">
+            อ้างอิงใบเสนอราคาเลขที่:
+            {{ quote.number }}
+          </div>
+
+        {# ไม่มีอะไรอ้างอิง #}
+        {% else %}
+          <div class="small">—</div>
+        {% endif %}
+
+        {% if d.internal_note %}
+          <div class="small mb-1"></div>
+          <div class="small">หมายเหตุภายใน: {{ d.internal_note }}</div>
+        {% endif %}
+      </div>
+      <div class="col"></div>
+    </div>
+
+
+
+    <!-- Items -->
+    <table class="tbl mb-4">
+      <thead>
+        <tr>
+          <th style="width:40px;">ลำดับ</th>
+          <th>รายละเอียดอุปกรณ์</th>
+          <th style="width:90px;">จำนวน</th>
+          <th style="width:140px;">หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if d.items %}
+          {% for it in d.items %}
+          <tr>
+            <td class="text-center">{{ loop.index }}</td>
+            <td>
+              <div class="fw-600">
+                {{ it.product_name
+                   or it.equipment_name
+                   or it.description
+                   or '-' }}
+              </div>
+              {% if it.source_item_id %}
+                <div class="small text-muted">
+                  อ้างอิงรายการ #{{ it.source_item_id }}
+                </div>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {{ it.qty or 0 }} {{ it.unit or '' }}
+            </td>
+            <td class="small">
+              {{ it.note or '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="text-center small">ไม่มีรายการอุปกรณ์</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <!-- Signatures -->
+    <div class="row">
+      <div class="col border rounded p-3">
+        <div class="text-center mb-4">
+          ลงชื่อ..................................................<br>
+          <span class="small">ผู้จัดส่ง</span>
+        </div>
+      </div>
+      <div class="col border rounded p-3">
+        <div class="text-center mb-4">
+          ลงชื่อ..................................................<br>
+          <span class="small">ผู้รับของ</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    window.print && window.print();
+  </script>
+</body>
+</html>

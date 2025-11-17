@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}อะไหล่{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h5 m-0">
+      <i class="bi bi-gear-wide-connected"></i> อะไหล่
+    </h1>
+    {% if can('repairs.manage') %}
+    <a href="{{ url_for('spare_new') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i> เพิ่ม
+    </a>
+    {% endif %}
+  </div>
+
+  <form class="row gy-2 gx-2 mb-3" method="get">
+    <div class="col-auto">
+      <input type="text" class="form-control form-control-sm" name="q"
+             placeholder="ค้นหา (รหัส / ชื่อ)" value="{{ q or '' }}">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-outline-secondary btn-sm">ค้นหา</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width:160px">รหัส</th>
+          <th>ชื่อ</th>
+          <th class="text-end" style="width:140px">ราคาต่อหน่วย</th>
+          <th class="text-end" style="width:120px">คงคลัง</th>
+          <th style="width:110px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows or [] %}
+        <tr>
+          <td class="fw-semibold">
+            {{ r.code or r.sku or r.part_no or ('P-' ~ (r.id or '')) }}
+          </td>
+          <td>{{ r.name or '-' }}</td>
+          <td class="text-end">
+            {{ '%.2f'|format((r.unit_cost or r.cost or r.price or 0) | float) }}
+          </td>
+          <td class="text-end">
+            {{ '%.2f'|format((r.stock_qty or r.stock or r.qty_on_hand or r.onhand or 0) | float) }}
+          </td>
+          <td class="text-end">
+            {% if can('repairs.manage') %}
+            <a href="{{ url_for('spare_edit', sid=r.id) }}"
+               class="btn btn-outline-secondary btn-sm">
+              แก้ไข
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-4">ไม่มีข้อมูล</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

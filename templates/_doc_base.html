@@ -1,0 +1,140 @@
+{# templates/_doc_base.html #}
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc_title or 'เอกสาร' }} {{ doc_number }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    @page { size: A4; margin: 16mm 14mm 16mm; }
+    *{ box-sizing:border-box; }
+    body{
+      font-family: "Prompt", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", "Noto Sans", sans-serif;
+      color:#111827; font-size:12px;
+    }
+    .row{ display:flex; gap:12px; }
+    .col{ flex:1 1 0; }
+    .card{
+      border:1px solid #e5e7eb; border-radius:10px;
+      padding:10px; background:#fff;
+    }
+    .muted{ color:#6b7280; }
+    .hstack{ display:flex; align-items:center; gap:8px; }
+    .title{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 0 12px; margin-bottom:10px; border-bottom:2px solid #e5e7eb;
+    }
+    .title h1{ margin:0; font-size:18px; }
+    .chip{ border:1px solid #e5e7eb; border-radius:8px; padding:2px 8px; font-weight:600; }
+    table{ width:100%; border-collapse:separate; border-spacing:0; }
+    th, td{ padding:8px 10px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+    thead th{ background:#f3f4f6; font-weight:600; color:#374151; }
+    tfoot td{ border:0; padding:4px 0; }
+    .text-end{ text-align:right; }
+    .small{ font-size:11px; }
+    .logo{ width:56px; height:56px; object-fit:cover; border-radius:12px; border:1px solid #e5e7eb; }
+
+    /* ลายเซ็น */
+    .signs{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-top:28px; }
+    .sign{text-align:center; color:#6b7280;}
+    .sign .line{ height:1px; background:#cbd5e1; margin:26px 0 6px; }
+
+    @media print{
+      .no-print{ display:none !important; }
+      .page-break{ page-break-before: always; }
+    }
+  </style>
+
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+  <div class="title">
+    <div class="hstack">
+      <img class="logo" src="{{ url_for('static', filename='images/logo-supertool.png') }}" alt="">
+      <div>
+        <div style="font-weight:700">บริษัทของคุณ</div>
+        <div class="small muted">ที่อยู่ / โทรศัพท์ (แก้ได้ใน template นี้ถ้าต้องการ)</div>
+      </div>
+    </div>
+    <div class="hstack">
+      {% block header_right_badge %}{% endblock %}
+    </div>
+  </div>
+
+  <div class="row" style="margin-bottom:10px;">
+    <div class="col">
+      <div class="card">
+        {% block box_left %}
+        <div class="muted">ลูกค้า</div>
+        <div class="fw-semibold">{{ partner_name or "-" }}</div>
+        {% endblock %}
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        {% block box_right %}
+        <div class="row">
+          <div class="col">
+            <div class="muted small">เลขที่เอกสาร</div>
+            <div class="fw-semibold">{{ doc_number }}</div>
+          </div>
+          <div class="col">
+            <div class="muted small">วันที่</div>
+            <div class="fw-semibold">{{ doc_date and doc_date.strftime('%d/%m/%Y') }}</div>
+          </div>
+        </div>
+        {% endblock %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:12px;">
+    <div class="table-responsive">
+      <table>
+        <thead>
+          {% block table_head %}
+          <tr>
+            <th>รายการ</th>
+            <th class="text-end" style="width:12%">จำนวน</th>
+            <th style="width:18%">หน่วย/ระยะ</th>
+            <th class="text-end" style="width:16%">ราคาต่อหน่วย</th>
+            <th class="text-end" style="width:10%">ส่วนลด (%)</th>
+            <th class="text-end" style="width:16%">รวม</th>
+          </tr>
+          {% endblock %}
+        </thead>
+        <tbody>
+          {% block table_body %}{% endblock %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      {% block note_block %}{% endblock %}
+    </div>
+    <div class="col">
+      <div class="card">
+        {% block summary_rows %}
+        <div class="hstack" style="justify-content:space-between"><div>ยอดรวมก่อนภาษี</div><div>0.00</div></div>
+        <div class="hstack" style="justify-content:space-between"><div>ภาษีมูลค่าเพิ่ม (7%)</div><div>0.00</div></div>
+        <div class="hstack" style="justify-content:space-between; font-weight:600; border-top:1px solid #e5e7eb; margin-top:6px; padding-top:6px;">
+          <div>ยอดรวมสุทธิ</div><div>0.00</div>
+        </div>
+        {% endblock %}
+      </div>
+    </div>
+  </div>
+
+  <div class="signs">
+    <div class="sign"><div class="line"></div>ผู้เสนอราคา</div>
+    <div class="sign"><div class="line"></div>ผู้อนุมัติ</div>
+    <div class="sign"><div class="line"></div>ผู้สั่งซื้อ</div>
+  </div>
+
+  {% block top_right_overlay %}{% endblock %}
+</body>
+</html>

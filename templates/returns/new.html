@@ -1,0 +1,171 @@
+{# templates/returns/new.html #}
+{% extends "base.html" %}
+{% block title %}สร้างใบคืนสินค้า{% endblock %}
+
+{% block head %}
+<style>
+  .rt-hero{
+    border-radius:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(1200px 600px at -10% -10%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(135deg,#f6f7fb 0%,#e5e7eb 40%,#dbeafe 100%);
+    box-shadow:0 18px 40px rgba(15,23,42,.12);
+    padding:1.25rem 1.5rem;
+    margin-bottom:1.25rem;
+  }
+  .rt-hero-title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:700; letter-spacing:.3px;
+  }
+  .rt-hero-title i{
+    width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center;
+    background:#fff; color:#836953;
+    box-shadow:0 8px 18px rgba(148,163,184,.45);
+  }
+  .rt-chip-qu{
+    display:inline-flex; align-items:center; gap:.25rem;
+    border-radius:999px; padding:.15rem .55rem;
+    font-size:.78rem; font-weight:600;
+    background:#eff6ff; color:#1d4ed8;
+    border:1px solid rgba(59,130,246,.16);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <!-- HERO -->
+  <section class="rt-hero mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+      <div>
+        <div class="rt-hero-title mb-1">
+          <i class="bi bi-box-arrow-in-down-left"></i>
+          <div>
+            <div class="text-uppercase small text-muted mb-1">เอกสารขาย</div>
+            <h1 class="h5 mb-0">สร้างใบคืนสินค้า</h1>
+          </div>
+        </div>
+        <p class="small text-muted mb-0">
+          เลือกลูกค้าเพื่อค้นหาใบเสนอราคาที่ต้องการคืนอุปกรณ์เข้าระบบ
+        </p>
+      </div>
+
+      <div class="text-end small text-muted">
+        <i class="bi bi-info-circle me-1"></i>
+        ระบบจะรองรับการเปลี่ยนสถานะอุปกรณ์ &amp; บันทึก Log ในขั้นถัดไป
+      </div>
+    </div>
+  </section>
+
+  <!-- CARD เลือกลูกค้า + แสดง QU -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+
+      <!-- เลือกลูกค้า -->
+      <form method="get" class="row g-3 align-items-end mb-3">
+        <div class="col-md-5 col-lg-4">
+          <label class="form-label">เลือกลูกค้า</label>
+          <select name="customer_id" class="form-select">
+            <option value="">-- เลือกลูกค้า --</option>
+            {% for c in customers %}
+              <option value="{{ c.id }}"
+                      {% if selected_customer_id == c.id %}selected{% endif %}>
+                {{ c.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-auto">
+          <button type="submit"
+                  class="btn btn-primary d-flex align-items-center gap-1">
+            <i class="bi bi-search"></i>
+            <span>แสดงใบเสนอราคาของลูกค้า</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- ตารางใบเสนอราคา -->
+      {% if selected_customer_id %}
+        <hr class="my-3">
+
+        {% if quotes %}
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:150px;">เลขที่ใบเสนอราคา</th>
+                  <th style="width:110px;">วันที่</th>
+                  <th>ชื่อลูกค้า</th>
+                  <th class="text-center" style="width:130px;">สถานะ</th>
+                  <th class="text-end" style="width:160px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for qu in quotes %}
+                  <tr>
+                    <td class="text-nowrap fw-semibold">
+                      {{ qu.number }}
+                    </td>
+                    <td class="text-nowrap">
+                      {{ qu.date.strftime("%d/%m/%Y") if qu.date }}
+                    </td>
+                    <td>
+                      {% if qu.customer %}
+                        <div class="fw-semibold">{{ qu.customer.name }}</div>
+                        {% if qu.customer.phone %}
+                          <div class="small text-muted">
+                            <i class="bi bi-telephone me-1"></i>{{ qu.customer.phone }}
+                          </div>
+                        {% endif %}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-center">
+                      {# แปลงสถานะเป็นภาษาไทย #}
+                      {% set th_status_map = {
+                        'DRAFT': 'ร่าง',
+                        'PENDING': 'รออนุมัติ',
+                        'APPROVED': 'อนุมัติแล้ว',
+                        'CANCELLED': 'ยกเลิก'
+                      } %}
+                      <span class="badge rounded-pill text-bg-success">
+                        {{ th_status_map.get(qu.status, qu.status or '-') }}
+                      </span>
+                    </td>
+                    <td class="text-end text-nowrap">
+                      <a href="{{ url_for('returns_build', quote_id=qu.id) }}"
+                         class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-arrow-right-circle"></i>
+                        <span>สร้างใบคืนสินค้า</span>
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+            ยังไม่มีใบเสนอราคา (สถานะอนุมัติแล้ว และยังไม่เคยสร้างใบคืนสินค้า)
+            สำหรับลูกค้ารายนี้
+          </div>
+        {% endif %}
+
+      {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-arrow-down-circle fs-4 d-block mb-1"></i>
+          กรุณาเลือกลูกค้าก่อน แล้วกดปุ่ม “แสดงใบเสนอราคาของลูกค้า”
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

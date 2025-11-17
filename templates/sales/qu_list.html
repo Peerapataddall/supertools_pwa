@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title or 'ใบเสนอราคา' }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ---------- Hero / Header ---------- */
+  .st-hero {
+    background:
+      radial-gradient(1400px 220px at 10% -60%, rgba(99,102,241,.16), transparent),
+      radial-gradient(900px 260px at 90% -70%, rgba(16,185,129,.16), transparent),
+      linear-gradient(180deg,#f7fbff,#ffffff 60%);
+    border:1px solid rgba(0,0,0,.04);
+    box-shadow:0 10px 30px rgba(24,39,75,.06);
+    border-radius:1.25rem;
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+  }
+  .st-hero h1{
+    display:flex; align-items:center; gap:.5rem;
+    margin:0; font-weight:700;
+  }
+  .st-hero .sub{
+    font-size:.9rem; color:#64748b;
+  }
+
+  /* ---------- Card ---------- */
+  .st-card {
+    border:0; border-radius:1rem;
+    background: radial-gradient(circle at 0% 0%, rgba(255,255,255,1) 0%, rgba(236,245,255,.9) 55%, rgba(230,242,255,.6) 100%);
+    box-shadow: 0 20px 40px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
+    border:1px solid rgba(0,0,0,.04);
+  }
+  .st-card .table{ margin:0; }
+  .st-card thead th{
+    background: linear-gradient(180deg,#f1f5f9,#e9eef7);
+    border-bottom:1px solid rgba(0,0,0,.06)!important;
+    color:#374151; font-weight:600;
+  }
+  .st-card tbody td{ vertical-align: middle; }
+
+  /* ---------- Search ---------- */
+  .st-search{ position:relative; max-width: 420px; }
+  .st-search .bi-search{
+    position:absolute; left:.75rem; top:50%;
+    transform:translateY(-50%); opacity:.6;
+  }
+  .st-search input{
+    padding-left:2.2rem; border-radius:999px;
+    border:1px solid rgba(0,0,0,.08);
+    box-shadow:0 2px 8px rgba(24,39,75,.04) inset, 0 4px 16px rgba(24,39,75,.04);
+  }
+
+  /* ---------- Buttons ---------- */
+  .st-btn{
+    display:inline-flex; align-items:center; gap:.4rem;
+    border-radius:.8rem; font-weight:600;
+    box-shadow:0 6px 16px rgba(29,161,242,.15);
+  }
+  .btn-icon{ display:inline-flex; align-items:center; gap:.35rem; }
+
+  /* ---------- Status chips ---------- */
+  .st-chip{
+    display:inline-flex; align-items:center; gap:.45rem;
+    border-radius:999px; padding:.25rem .6rem;
+    font-weight:600; font-size:.8rem; border:1px solid;
+  }
+  .chip-draft{   background:#f3f4f6;  color:#374151; border-color:#e5e7eb; }
+  .chip-approve{ background:#ecfdf5;  color:#065f46; border-color:#a7f3d0; }
+  .chip-cancel{  background:#fef2f2;  color:#991b1b; border-color:#fecaca; }
+  .chip-reject{  background:#fff7ed;  color:#9a3412; border-color:#fed7aa; }
+  .chip-unpaid{  background:#fff7ed;  color:#92400e; border-color:#fed7aa; }
+  .chip-paid{    background:#eefdf3;  color:#065f46; border-color:#bbf7d0; }
+  .chip-uniss{   background:#eff6ff;  color:#1e3a8a; border-color:#bfdbfe; }
+  .chip-iss{     background:#eef2ff;  color:#3730a3; border-color:#c7d2fe; }
+
+  /* ---------- Row hover ---------- */
+  .table-hover tbody tr:hover{
+    background:linear-gradient(180deg, rgba(59,130,246,.06), transparent);
+  }
+
+  /* ---------- Empty ---------- */
+  .st-empty{
+    padding:2rem; text-align:center; color:#64748b;
+  }
+
+  /* ---------- Delivery helpers ---------- */
+  .text-muted-2{ color:#6b7280 !important; }
+  .st-delivery-cell{
+    display:flex; flex-direction:column;
+    align-items:flex-end; gap:.25rem;
+  }
+  .st-delivery-actions{
+    display:flex; flex-wrap:wrap;
+    justify-content:flex-end; gap:.35rem;
+  }
+  .st-badge-delivery{
+    border-radius:999px;
+    background:#ecfdf3;
+    color:#166534;
+    padding:.15rem .55rem;
+    font-size:.75rem;
+    font-weight:600;
+    border:1px solid #bbf7d0;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ===== Helpers ===== #}
+{% macro status_chip(s) -%}
+  {% set s = (s or 'DRAFT')|upper %}
+  {% if s in ['DRAFT','APPROVED','CANCELLED','REJECTED'] %}
+    {% set smap = {
+      'DRAFT': ('ร่าง','chip-draft','bi-pencil'),
+      'APPROVED': ('อนุมัติแล้ว','chip-approve','bi-check-circle'),
+      'CANCELLED': ('ยกเลิก','chip-cancel','bi-x-circle'),
+      'REJECTED': ('ปฏิเสธ','chip-reject','bi-exclamation-circle')
+    } %}
+  {% elif s in ['UNPAID','PAID'] %}
+    {% set smap = {
+      'UNPAID': ('ยังไม่ชำระเงิน','chip-unpaid','bi-hourglass-split'),
+      'PAID': ('ชำระเงินแล้ว','chip-paid','bi-cash-stack')
+    } %}
+  {% elif s in ['UNISSUED','ISSUED'] %}
+    {% set smap = {
+      'UNISSUED': ('ยังไม่ออกเอกสาร','chip-uniss','bi-file-earmark'),
+      'ISSUED': ('ออกเอกสารแล้ว','chip-iss','bi-file-earmark-check')
+    } %}
+  {% else %}
+    {% set smap = { s: (s, 'chip-draft', 'bi-info-circle') } %}
+  {% endif %}
+  {% set label, klass, icon = smap.get(s, (s, 'chip-draft', 'bi-info-circle')) %}
+  <span class="st-chip {{ klass }}"><i class="bi {{ icon }}"></i> {{ label }}</span>
+{%- endmacro %}
+
+{% set PT = page_title or 'ใบเสนอราคา' %}
+{% set sub = {
+  'ใบเสนอราคา': 'รายการใบเสนอราคาทั้งหมดในระบบของคุณ',
+  'ใบวางบิล': 'บิลที่รอชำระ/ชำระแล้ว',
+  'ใบกำกับภาษี': 'เอกสารภาษีที่รอออก/ออกแล้ว',
+  'ใบเสร็จรับเงิน': 'ใบเสร็จที่รอออก/ออกแล้ว'
+}[PT] %}
+
+<div class="st-hero d-flex flex-wrap justify-content-between align-items-center">
+  <div>
+    <h1 class="h5">
+      <i class="bi bi-receipt-cutoff text-primary"></i> {{ PT }}
+    </h1>
+    <div class="sub">{{ sub }}</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <form class="st-search" method="get">
+      <i class="bi bi-search"></i>
+      <input type="text" class="form-control" name="q" value="{{ q or '' }}" placeholder="ค้นหาลูกค้า...">
+    </form>
+    {% if can('sales.manage') and (show_new is not defined or show_new) %}
+      <a class="btn btn-primary btn-sm st-btn" href="{{ url_for('qu_new') }}">
+        <i class="bi bi-plus-lg"></i> สร้างใบเสนอราคา
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="st-card table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th style="min-width:160px">เลขที่</th>
+        <th style="min-width:120px">วันที่</th>
+        <th>ลูกค้า</th>
+        <th style="min-width:160px">สถานะ</th>
+        <th class="text-end" style="min-width:140px">ยอดสุทธิ</th>
+        <th class="text-end" style="width:260px"></th>
+      </tr>
+    </thead>
+    <tbody>
+
+      {% for d in rows %}
+        {# ใช้ deliveries_map จาก view เพื่อเช็คว่ามีใบส่งสินค้าหรือยัง #}
+        {% set dl = deliveries_map.get(d.id) if deliveries_map is defined else None %}
+        {% set delivered = dl is not none %}
+
+        <tr>
+          <td class="fw-semibold text-primary">
+            <i class="bi bi-hash"></i> {{ d.number }}
+          </td>
+          <td>{{ d.date|strftime('%d/%m/%Y') }}</td>
+          <td class="fw-semibold text-dark">
+            <i class="bi bi-building"></i> {{ d.customer and d.customer.name or '—' }}
+          </td>
+          <td>{{ status_chip(d.status) }}</td>
+          <td class="text-end">
+            {{ '{:,.2f}'.format(d.amount_grand or 0) }}
+          </td>
+          <td class="text-end">
+            <div class="st-delivery-cell">
+
+              <div class="st-delivery-actions">
+                {# เปิดเอกสารใบเสนอราคา #}
+                <a class="btn btn-sm btn-outline-primary btn-icon"
+                   href="{{ url_for('qu_view', qid=d.id) }}">
+                  <i class="bi bi-eye"></i>
+                  <span class="d-none d-md-inline">เปิด</span>
+                </a>
+
+                {% if can('transport.manage') %}
+                  {% if not delivered %}
+                    {# ยังไม่มีใบส่ง → ปุ่มสีเขียวสร้างใบส่ง #}
+                    <a class="btn btn-sm btn-success btn-icon"
+                       href="{{ url_for('deliveries.create_from_quotation', qid=d.id) }}">
+                      <i class="bi bi-truck-front"></i>
+                      <span class="d-none d-lg-inline">สร้างใบส่งสินค้า</span>
+                    </a>
+                  {% else %}
+                    {# มีใบส่งแล้ว → ปุ่มเทาเปิดใบส่ง #}
+                    <a class="btn btn-sm btn-outline-secondary btn-icon"
+                       href="{{ url_for('deliveries.view_doc', did=dl.id) }}">
+                      <i class="bi bi-truck-front"></i>
+                      <span class="d-none d-lg-inline">เปิดใบส่ง</span>
+                    </a>
+                  {% endif %}
+                {% endif %}
+              </div>
+
+              {% if delivered and dl %}
+                <div class="d-flex align-items-center gap-1 text-muted-2 small">
+                  <span class="st-badge-delivery">
+                    <i class="bi bi-check-circle-fill me-1"></i> สร้างใบส่งสินค้าแล้ว
+                  </span>
+                  <span class="d-none d-lg-inline">
+                    ใบส่ง: 
+                    <a href="{{ url_for('deliveries.view_doc', did=dl.id) }}"
+                       class="link-success text-decoration-none">
+                      {{ dl.number }}
+                    </a>
+                  </span>
+                </div>
+              {% endif %}
+
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="6" class="st-empty">
+            <div class="mb-2"><i class="bi bi-inboxes"></i></div>
+            {% if PT == 'ใบเสนอราคา' %}
+              ยังไม่มีใบเสนอราคา — กด “สร้างใบเสนอราคา” เพื่อเริ่มต้น
+            {% else %}
+              ยังไม่มีข้อมูล{{ PT }}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}ใบเคลม {{ c.number }}{% endblock %}
+
+{% block head %}
+<style>
+  .cl-hero{
+    background:
+      radial-gradient(1200px 600px at -10% -20%, rgba(131,105,83,.25) 0%, rgba(131,105,83,0) 60%),
+      linear-gradient(135deg, #f6f7fb 0%, #eef2ff 100%);
+    border-bottom: 1px solid rgba(0,0,0,.06);
+  }
+  .cl-hero .title{ display:flex; align-items:center; gap:.65rem; font-weight:700; letter-spacing:.3px; }
+  .cl-hero .title i{
+    background:#fff; color:#836953; width:42px; height:42px; display:grid; place-items:center;
+    border-radius:12px; box-shadow:0 6px 20px rgba(131,105,83,.18);
+  }
+  .glass{
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border:1px solid rgba(0,0,0,.06); border-radius: 1rem; box-shadow: 0 10px 30px rgba(20,20,40,.06);
+  }
+  .btn-gradient{ background: linear-gradient(135deg, #7c5a3f 0%, #9b7b5f 60%, #c8a88e 100%); border: none; color:#fff; box-shadow: 0 8px 16px rgba(131,105,83,.25); }
+  .btn-gradient:hover{ filter: brightness(.98); }
+  .btn-ghost{ border:1px solid rgba(0,0,0,.12); }
+  .table-modern thead th{
+    background: linear-gradient(180deg, #fafbff 0%, #f2f4ff 100%);
+    border-bottom:1px solid rgba(0,0,0,.06); color:#334155; font-weight:600;
+  }
+  .table-modern tbody tr{ transition: background-color .15s ease; }
+  .table-modern tbody tr:hover{ background:#f9fafb; }
+  .table-modern td, .table-modern th{ vertical-align: middle; }
+  .badge-soft{ --bg:#e5e7eb; --fg:#111827; background:var(--bg); color:var(--fg); padding:.35rem .6rem; border-radius:999px; font-weight:700; }
+  .badge-submitted{ --bg:#fff3cd; --fg:#7a5f1a; }
+  .badge-approved{ --bg:#dcfce7; --fg:#166534; }
+  .badge-replaced{ --bg:#e0e7ff; --fg:#3730a3; }
+  .badge-closed{ --bg:#e5e7eb; --fg:#374151; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% set STATUS_TH = {
+  'SUBMITTED':'ส่งคำขอแล้ว',
+  'APPROVED':'อนุมัติ',
+  'REPLACED':'ส่งทดแทนแล้ว',
+  'REPLACEMENT':'ส่งทดแทนแล้ว',
+  'CLOSED':'ปิดงาน',
+  'DONE':'ปิดงาน'
+} %}
+
+<div class="cl-hero py-3 py-md-4">
+  <div class="container">
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <div class="title fs-4">
+          <i class="bi bi-clipboard2-pulse"></i>
+          ใบเคลม {{ c.number }}
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-ghost" href="{{ url_for('claims_list') }}">
+          <i class="bi bi-arrow-left"></i> กลับรายการ
+        </a>
+
+        {# ===== ปุ่มเปิดงานซ่อม / ไปที่งานซ่อม ===== #}
+        {% if c.repair_job_id %}
+          <a class="btn btn-outline-secondary" href="{{ url_for('repairs.view_', jid=c.repair_job_id) }}">
+            <i class="bi bi-tools me-1"></i> ไปที่งานซ่อม #{{ c.repair_job_id }}
+          </a>
+        {% elif can('maintenance.create') or (current_user.is_admin or current_user.is_superuser) %}
+          {% set _items = c.items|list %}
+          {% if _items|length == 0 %}
+            <button class="btn btn-secondary disabled" title="ต้องมีรายการเคลมอย่างน้อย 1 รายการ">
+              <i class="bi bi-wrench-adjustable me-1"></i> เปิดงานซ่อมจากใบเคลม
+            </button>
+          {% elif _items|length == 1 %}
+            <form method="post"
+                  action="{{ url_for('repairs.open_from_claim', cid=c.id, item_id=_items[0].id) }}"
+                  class="d-inline">
+              <button class="btn btn-primary">
+                <i class="bi bi-wrench-adjustable me-1"></i> เปิดงานซ่อมจากใบเคลม
+              </button>
+            </form>
+          {% else %}
+            <div class="btn-group">
+              <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-wrench-adjustable me-1"></i> เปิดงานซ่อมจากใบเคลม
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                {% for it in _items %}
+                  <li>
+                    <form method="post"
+                          action="{{ url_for('repairs.open_from_claim', cid=c.id, item_id=it.id) }}">
+                      <button type="submit" class="dropdown-item">
+                        {{ it.sales_item.name }} — จำนวน {{ '%.2f'|format(it.qty_claim or 0) }}
+                      </button>
+                    </form>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        {% endif %}
+
+        <a href="{{ url_for('claims_print', cid=c.id) }}" target="_blank" class="btn btn-gradient">
+          <i class="bi bi-printer"></i> พิมพ์
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container my-3">
+  <div class="row g-3">
+    <div class="col-12">
+      <div class="glass p-3 p-md-4">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="mb-1"><span class="text-secondary">วันที่:</span> {{ c.date.strftime('%d/%m/%Y') }}</div>
+            <div class="mb-1"><span class="text-secondary">ลูกค้า:</span> {{ c.customer.name }}</div>
+            <div class="mb-1">
+              <span class="text-secondary">สถานะเคลม:</span>
+              {% set s = (c.status or '')|upper %}
+              {% if s == 'SUBMITTED' %}
+                <span class="badge-soft badge-submitted">{{ STATUS_TH.get(s, s) }}</span>
+              {% elif s == 'APPROVED' %}
+                <span class="badge-soft badge-approved">{{ STATUS_TH.get(s, s) }}</span>
+              {% elif s in ['REPLACED','REPLACEMENT'] %}
+                <span class="badge-soft badge-replaced">{{ STATUS_TH.get(s, s) }}</span>
+              {% elif s in ['CLOSED','DONE'] %}
+                <span class="badge-soft badge-closed">{{ STATUS_TH.get(s, s) }}</span>
+              {% else %}
+                <span class="badge-soft">{{ STATUS_TH.get(s, s) }}</span>
+              {% endif %}
+            </div>
+            <div class="mb-1"><span class="text-secondary">ใบเสนอราคาอ้างอิง:</span> {{ c.quote.number }}</div>
+            {% if c.remark %}
+            <div class="mt-2"><span class="text-secondary">หมายเหตุ:</span> {{ c.remark }}</div>
+            {% endif %}
+          </div>
+
+          {% if c.repair_job_id %}
+          <div class="col-md-6">
+            <div class="p-3 rounded border" style="background:#f8fafc">
+              <div class="fw-semibold mb-1">
+                <i class="bi bi-tools me-1"></i> งานซ่อมที่เชื่อมกับใบเคลมนี้
+              </div>
+              <div class="mb-1">
+                หมายเลขงานซ่อม:
+                <a href="{{ url_for('repairs.view_', jid=c.repair_job_id) }}" class="link-primary">
+                  #{{ c.repair_job_id }}
+                </a>
+              </div>
+              {% if c.repair_job %}
+              <div class="small text-secondary">เลขที่เอกสาร: {{ c.repair_job.number }}</div>
+              <div class="small text-secondary">สถานะงานซ่อม: {{ c.repair_job.status_th or c.repair_job.status }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="glass p-0">
+        <div class="px-3 px-md-4 py-2 border-bottom" style="background:linear-gradient(180deg,#fafbff 0%,#f2f4ff 100%)">
+          <span class="fw-semibold"><i class="bi bi-list-check me-1"></i> รายการที่เคลม</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-modern table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th style="width:60px" class="text-center">#</th>
+                <th>รายการ</th>
+                <th class="text-end" style="width:140px">จำนวนเคลม</th>
+                <th style="width:280px">อุปกรณ์ทดแทน</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in c.items %}
+              <tr>
+                <td class="text-center">{{ loop.index }}</td>
+                <td><div class="fw-semibold">{{ it.sales_item.name }}</div></td>
+                <td class="text-end">{{ '%.2f'|format(it.qty_claim or 0) }}</td>
+                <td>
+                  {% if it.replacement_equipment %}
+                    <span class="badge bg-primary">{{ it.replacement_equipment.sku }}</span>
+                    {{ it.replacement_equipment.name }}
+                  {% else %}
+                    <span class="text-muted">— ไม่ส่งทดแทน —</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-5">
+                  <div class="d-inline-flex flex-column align-items-center gap-2">
+                    <div class="display-6">🧾</div>
+                    <div class="fw-semibold">ไม่มีรายการ</div>
+                    <div class="small">ใบเคลมนี้ยังไม่มีรายการที่บันทึก</div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

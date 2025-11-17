@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% block title %}ของขวัญลูกค้า{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero / Background ===== */
+  .gf-hero {
+    border-radius: 1.5rem;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(900px 500px at -10% -20%, rgba(251, 191, 36, .22) 0, rgba(251, 191, 36, 0) 45%),
+      radial-gradient(900px 500px at 110% 120%, rgba(59,130,246,.18) 0, rgba(59,130,246,0) 50%),
+      linear-gradient(135deg,#ffffff 0%,#f3f4ff 45%,#eff6ff 100%);
+    box-shadow: 0 18px 45px rgba(15,23,42,.16);
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:1.25rem;
+  }
+  .gf-hero-left {
+    display:flex;
+    gap:1rem;
+    align-items:flex-start;
+  }
+  .gf-hero-icon {
+    width:48px;
+    height:48px;
+    border-radius:1.25rem;
+    display:grid;
+    place-items:center;
+    background: radial-gradient(circle at 0 0,#fee2e2 0,#f97373 40%,#b91c1c 100%);
+    color:#fff;
+    box-shadow:0 12px 30px rgba(239,68,68,.55);
+    flex-shrink:0;
+  }
+  .gf-hero-title {
+    font-weight:700;
+    letter-spacing:.02em;
+    font-size:1.1rem;
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+  }
+  .gf-hero-pill {
+    font-size:.72rem;
+    padding:.1rem .6rem;
+    border-radius:999px;
+    background:rgba(15,23,42,.06);
+    color:#4b5563;
+    font-weight:500;
+  }
+  .gf-hero-desc {
+    font-size:.85rem;
+    color:#4b5563;
+    margin-top:.15rem;
+  }
+  .gf-hero-actions {
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+  }
+  .gf-btn-gradient {
+    border-radius:999px;
+    border:none;
+    padding:.55rem 1.25rem;
+    font-size:.85rem;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:.4rem;
+    background:linear-gradient(135deg,#f97316,#ec4899);
+    color:#fff !important;
+    box-shadow:0 12px 26px rgba(236,72,153,.45);
+  }
+  .gf-btn-gradient i {
+    font-size:1rem;
+  }
+  .gf-btn-outline {
+    border-radius:999px;
+    font-size:.85rem;
+    padding:.5rem 1rem;
+  }
+
+  /* ===== Stat cards ===== */
+  .gf-stats-row {
+    margin-bottom:1.6rem;
+  }
+  .gf-stat-card {
+    border-radius:1.1rem;
+    border:none;
+    box-shadow:0 10px 30px rgba(15,23,42,.08);
+    overflow:hidden;
+    position:relative;
+  }
+  .gf-stat-card::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:radial-gradient(circle at 0 0,rgba(34,197,94,.16) 0,rgba(34,197,94,0) 55%);
+    opacity:.7;
+    pointer-events:none;
+  }
+  .gf-stat-body {
+    position:relative;
+    padding:.85rem 1rem;
+  }
+  .gf-stat-label {
+    font-size:.75rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:#6b7280;
+    font-weight:600;
+    margin-bottom:.3rem;
+    display:flex;
+    align-items:center;
+    gap:.35rem;
+  }
+  .gf-stat-label i {
+    font-size:.9rem;
+  }
+  .gf-stat-value {
+    font-size:1.35rem;
+    font-weight:700;
+    color:#111827;
+  }
+  .gf-stat-sub {
+    font-size:.8rem;
+    color:#6b7280;
+    margin-top:.15rem;
+  }
+
+  .gf-stat-card.pink::before{
+    background:radial-gradient(circle at 0 0,rgba(244,114,182,.22) 0,rgba(244,114,182,0) 55%);
+  }
+  .gf-stat-card.indigo::before{
+    background:radial-gradient(circle at 0 0,rgba(129,140,248,.22) 0,rgba(129,140,248,0) 55%);
+  }
+
+  /* ===== Campaign table ===== */
+  .gf-section-title {
+    font-size:.92rem;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+    margin-bottom:.2rem;
+  }
+  .gf-section-title i {
+    color:#f97316;
+  }
+  .gf-section-sub {
+    font-size:.8rem;
+    color:#6b7280;
+    margin-bottom:.6rem;
+  }
+  .gf-table-card {
+    border-radius:1.2rem;
+    border:none;
+    box-shadow:0 12px 36px rgba(15,23,42,.08);
+  }
+  .gf-table thead {
+    font-size:.8rem;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .gf-table thead th {
+    border-bottom:1px solid rgba(148,163,184,.45);
+    color:#6b7280;
+  }
+  .gf-table tbody td {
+    vertical-align:middle;
+    font-size:.86rem;
+  }
+  .gf-campaign-name {
+    font-weight:600;
+    color:#111827;
+  }
+  .gf-campaign-desc {
+    font-size:.78rem;
+    color:#6b7280;
+  }
+  .gf-badge-round {
+    border-radius:999px;
+    padding:.1rem .55rem;
+    font-size:.75rem;
+    font-weight:500;
+  }
+  .gf-badge-soft {
+    background:#eff6ff;
+    color:#1d4ed8;
+  }
+  .gf-badge-soft-amber{
+    background:#fef3c7;
+    color:#b45309;
+  }
+  .gf-badge-soft-slate{
+    background:#e5e7eb;
+    color:#374151;
+  }
+
+  .gf-empty {
+    padding:1.5rem 1rem .8rem;
+    font-size:.85rem;
+    color:#6b7280;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+
+  <!-- Hero bar -->
+  <div class="gf-hero">
+    <div class="gf-hero-left">
+      <div class="gf-hero-icon">
+        <i class="bi bi-gift-fill fs-4"></i>
+      </div>
+      <div>
+        <div class="gf-hero-title">
+          ของขวัญลูกค้า
+          <span class="gf-hero-pill">
+            โปรแกรมดูแลลูกค้าประจำ · Supertools
+          </span>
+        </div>
+        <div class="gf-hero-desc">
+          สรุปภาพรวมแคมเปญของขวัญทั้งหมด ลูกค้าที่เข้าเกณฑ์ และประวัติการให้ของขวัญในระบบ
+        </div>
+      </div>
+    </div>
+
+    <div class="gf-hero-actions">
+      {% if can('gifts.manage') %}
+      <a href="{{ url_for('gifts_new') }}"
+         class="gf-btn-gradient">
+        <i class="bi bi-plus-circle-fill"></i>
+        สร้างแคมเปญของขวัญใหม่
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="row gf-stats-row g-3">
+    <div class="col-md-4">
+      <div class="card gf-stat-card">
+        <div class="gf-stat-body">
+          <div class="gf-stat-label">
+            <i class="bi bi-people-fill text-emerald-500"></i>
+            ลูกค้าที่ผ่านเกณฑ์ (รวมทุกแคมเปญ)
+          </div>
+          <div class="gf-stat-value">
+            {{ total_qualified or 0 }}
+          </div>
+          <div class="gf-stat-sub">
+            นับจากทุกแคมเปญของขวัญที่เปิดใช้งานในระบบ
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card gf-stat-card pink">
+        <div class="gf-stat-body">
+          <div class="gf-stat-label">
+            <i class="bi bi-gift text-pink-500"></i>
+            ลูกค้าที่ได้รับของขวัญแล้ว
+          </div>
+          <div class="gf-stat-value text-success">
+            {{ total_given or 0 }}
+          </div>
+          <div class="gf-stat-sub">
+            ลูกค้าที่ถูกบันทึกสถานะว่า “ให้ของขวัญแล้ว”
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card gf-stat-card indigo">
+        <div class="gf-stat-body">
+          <div class="gf-stat-label">
+            <i class="bi bi-trophy-fill text-warning"></i>
+            ผ่านเกณฑ์มากที่สุด (ครั้ง)
+          </div>
+          <div class="gf-stat-value">
+            {{ top_customer_times or 0 }}
+          </div>
+          <div class="gf-stat-sub">
+            {% if top_customer_name %}
+              ลูกค้า: {{ top_customer_name }}
+            {% else %}
+              ยังไม่มีข้อมูลสถิติลูกค้าที่ผ่านเกณฑ์บ่อยที่สุด
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign table -->
+  <div class="card gf-table-card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <div class="gf-section-title">
+            <i class="bi bi-list-ul"></i>
+            แคมเปญของขวัญทั้งหมด
+          </div>
+          <div class="gf-section-sub">
+            รายการแคมเปญของขวัญที่สร้างในระบบ พร้อมจำนวน Tier และลูกค้าที่ผ่านเกณฑ์ในแต่ละแคมเปญ
+          </div>
+        </div>
+        {% if can('gifts.manage') %}
+        <a href="{{ url_for('gifts_new') }}"
+           class="btn btn-sm btn-outline-primary gf-btn-outline">
+          <i class="bi bi-plus-circle me-1"></i>
+          สร้างแคมเปญใหม่
+        </a>
+        {% endif %}
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle gf-table">
+          <thead class="table-light">
+            <tr>
+              <th style="width:32%">ชื่อแคมเปญ</th>
+              <th style="width:26%">ช่วงวันที่</th>
+              <th class="text-center">รอบ (เดือน)</th>
+              <th class="text-center">Tier</th>
+              <th class="text-center">ลูกค้าที่ผ่านเกณฑ์</th>
+              <th class="text-end">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in campaigns %}
+            {% set total_results = c.results|length if c.results is not none else 0 %}
+            <tr>
+              <td>
+                <div class="gf-campaign-name">
+                  {{ c.name }}
+                </div>
+                {% if c.description %}
+                <div class="gf-campaign-desc">
+                  {{ c.description }}
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="gf-badge-round gf-badge-soft-slate">
+                  {{ c.period_start.strftime('%d/%m/%Y') }}
+                  – {{ c.period_end.strftime('%d/%m/%Y') }}
+                </span>
+              </td>
+              <td class="text-center">
+                <span class="gf-badge-round gf-badge-soft-amber">
+                  {{ c.cycle_months or '-' }}
+                </span>
+              </td>
+              <td class="text-center">
+                <span class="gf-badge-round gf-badge-soft">
+                  {{ c.tiers|length if c.tiers is not none else 0 }}
+                </span>
+              </td>
+              <td class="text-center">
+                <span class="gf-badge-round gf-badge-soft-slate">
+                  {{ total_results }}
+                </span>
+              </td>
+              <td class="text-end">
+                <a href="{{ url_for('gifts_campaign_view', cid=c.id) }}"
+                   class="btn btn-sm btn-outline-secondary rounded-pill">
+                  <i class="bi bi-eye me-1"></i>
+                  ดูรายละเอียด
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if campaigns|length == 0 %}
+      <div class="gf-empty">
+        ยังไม่มีแคมเปญของขวัญในระบบ  
+        {% if can('gifts.manage') %}
+          — เริ่มต้นสร้างแคมเปญแรกได้เลยด้วยปุ่ม <strong>“สร้างแคมเปญใหม่”</strong> ด้านบนขวา
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

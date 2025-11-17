@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ 'เพิ่ม' if mode=='new' else 'แก้ไข' }}อะไหล่{% endblock %}
+{% block content %}
+<div class="container py-3">
+  <h1 class="h5 mb-3"><i class="bi bi-gear-wide-connected"></i> {{ 'เพิ่ม' if mode=='new' else 'แก้ไข' }}อะไหล่</h1>
+
+  <form method="post" class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">รหัส</label>
+      <input name="code" class="form-control" value="{{ sp.code if sp else '' }}" required>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">ชื่อ</label>
+      <input name="name" class="form-control" value="{{ sp.name if sp else '' }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">หน่วยนับ</label>
+      <input name="unit" class="form-control" value="{{ sp.unit if sp else 'ชิ้น' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">ราคาต่อหน่วย</label>
+      <input name="unit_cost" class="form-control" type="number" step="0.01" value="{{ sp.unit_cost if sp else '0' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">คงคลัง</label>
+      <input name="stock_qty" class="form-control" type="number" step="0.01" value="{{ sp.stock_qty if sp else '0' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">หมายเหตุ</label>
+      <textarea name="notes" class="form-control" rows="3">{{ sp.notes if sp else '' }}</textarea>
+    </div>
+    <div class="col-12 d-flex gap-2">
+      <button class="btn btn-primary">บันทึก</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('spares_list') }}">ยกเลิก</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

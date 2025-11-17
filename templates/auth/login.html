@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% set no_container = True %}
+{% block title %}เข้าสู่ระบบ · Supertools{% endblock %}
+
+{% block content %}
+<div class="login-hero">
+  <!-- ชั้นเอฟเฟกต์พื้นหลัง -->
+  <div class="login-overlay"></div>
+  <div class="login-gradient"></div>
+
+  <div class="login-center">
+    <div class="card login-glass">
+      <div class="card-body p-4 p-md-5">
+        <div class="text-center mb-3">
+          <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="56" height="56" class="rounded-2 shadow-sm">
+          <h1 class="h5 mt-2 mb-0">เข้าสู่ระบบ</h1>
+          <small class="text-muted">admin / admin123 (ทดสอบ)</small>
+        </div>
+
+        <form method="post" action="/auth/login" id="loginForm" novalidate>
+          <div class="mb-3">
+            <label class="form-label">ชื่อผู้ใช้</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-person"></i></span>
+              <input type="text" class="form-control" name="username" required autocomplete="username" placeholder="เช่น admin">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">รหัสผ่าน</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-shield-lock"></i></span>
+              <input type="password" class="form-control" name="password" id="pw" required autocomplete="current-password" placeholder="••••••••">
+              <button class="btn btn-outline-secondary" type="button" id="togglePw"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="remember" id="remember">
+            <label class="form-check-label" for="remember">จดจำการเข้าสู่ระบบ</label>
+          </div>
+
+          <button class="btn btn-primary w-100" type="submit" id="btnLogin">
+            <i class="bi bi-box-arrow-in-right me-1"></i> เข้าสู่ระบบ
+          </button>
+          <div class="text-center mt-2">
+            <small id="offlineHint" class="text-warning d-none">ออฟไลน์อยู่ — ต้องออนไลน์เพื่อเข้าสู่ระบบ</small>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // toggle password
+  const pw = document.getElementById('pw');
+  const toggle = document.getElementById('togglePw');
+  toggle?.addEventListener('click', () => {
+    if (!pw) return;
+    const isPw = pw.type === 'password';
+    pw.type = isPw ? 'text' : 'password';
+    toggle.firstElementChild?.classList.toggle('bi-eye');
+    toggle.firstElementChild?.classList.toggle('bi-eye-slash');
+  });
+
+  // บล็อก submit ตอนออฟไลน์
+  const form = document.getElementById('loginForm');
+  const btn  = document.getElementById('btnLogin');
+  const hint = document.getElementById('offlineHint');
+  function setOnlineState() {
+    const on = navigator.onLine;
+    btn && (btn.disabled = !on);
+    hint && hint.classList.toggle('d-none', on);
+  }
+  window.addEventListener('online', setOnlineState);
+  window.addEventListener('offline', setOnlineState);
+  setOnlineState();
+  form?.addEventListener('submit', e => { if (!navigator.onLine) { e.preventDefault(); setOnlineState(); }});
+</script>
+{% endblock %}

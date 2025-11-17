@@ -1,0 +1,603 @@
+{# templates/dashboard.html #}
+{% extends "base.html" %}
+{% block title %}Dashboard · Supertools{% endblock %}
+
+{% block head %}
+<style>
+  .dash-hero {
+    border-radius: 1.5rem;
+    padding: 1.1rem 1.4rem;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(129, 140, 248, .2) 0, transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(244, 114, 182, .18) 0, transparent 50%),
+      linear-gradient(135deg, #0f172a, #1e293b);
+    color: #e5e7eb;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, .45);
+  }
+  .dash-hero h1 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .dash-hero .subtitle {
+    font-size: .85rem;
+    opacity: .85;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border-radius: 999px;
+    padding: .2rem .6rem;
+    font-size: .78rem;
+    font-weight: 500;
+    background: rgba(15,23,42,.8);
+    color: #e5e7eb;
+    border: 1px solid rgba(148,163,184,.6);
+  }
+
+  .stat-card {
+    border-radius: 1.1rem;
+    border: 1px solid rgba(15,23,42,.06);
+    background: radial-gradient(circle at 0 0, #f8fafc 0, #e5e7eb 40%, #eff6ff 100%);
+    box-shadow: 0 10px 26px rgba(15,23,42,.10);
+    padding: 0.75rem 0.9rem;
+  }
+  .stat-label {
+    font-size: .78rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+  .stat-chip {
+    font-size: .72rem;
+    padding: .12rem .5rem;
+    border-radius: 999px;
+    background: rgba(15,23,42,.04);
+  }
+
+  .section-title {
+    font-size: .92rem;
+    font-weight: 600;
+    color: #111827;
+  }
+  .section-sub {
+    font-size: .78rem;
+    color: #6b7280;
+  }
+
+  .soft-table {
+    font-size: .83rem;
+  }
+  .soft-table thead {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #6b7280;
+  }
+  .soft-table tbody tr td {
+    vertical-align: middle;
+  }
+
+  .badge-soft {
+    border-radius: 999px;
+    padding: .15rem .55rem;
+    font-size: .75rem;
+  }
+  .badge-soft-green { background: #ecfdf5; color:#15803d; }
+  .badge-soft-amber { background: #fffbeb; color:#b45309; }
+  .badge-soft-red   { background: #fef2f2; color:#b91c1c; }
+  .badge-soft-slate { background: #f3f4f6; color:#374151; }
+
+  .chart-card {
+    border-radius: 1.1rem;
+    border: 1px solid rgba(148,163,184,.25);
+    background: radial-gradient(circle at 0 0, #eff6ff 0, #e5e7eb 45%, #f9fafb 100%);
+    box-shadow: 0 12px 30px rgba(15,23,42,.12);
+    padding: 0.75rem 0.85rem 0.9rem;
+    max-height: 260px;          /* จำกัดให้เตี้ยลง */
+  }
+  .chart-card canvas {
+    max-height: 210px;          /* กันไม่ให้สูงเกิน */
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-2">
+
+  {# ================= HERO + FILTER ================= #}
+  <div class="dash-hero mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-center">
+      <div class="d-flex align-items-start gap-3">
+        <div class="avatar avatar-md">
+          <i class="bi bi-speedometer2 fs-5"></i>
+        </div>
+        <div>
+          <h1 class="mb-1">ภาพรวมธุรกิจ (Dashboard)</h1>
+          <div class="subtitle">
+            ช่วงวันที่
+            <span class="fw-semibold">
+              {{ start.strftime('%d/%m/%Y') }} – {{ end.strftime('%d/%m/%Y') }}
+            </span>
+          </div>
+          <div class="mt-2">
+            <span class="pill">
+              <i class="bi bi-currency-exchange"></i>
+              รายรับ {{ "{:,.2f}".format(stats.income_total) }} ฿
+            </span>
+            <span class="pill ms-1">
+              <i class="bi bi-graph-down-arrow"></i>
+              รายจ่าย {{ "{:,.2f}".format(stats.expense_total) }} ฿
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-column align-items-md-end gap-2">
+        <div class="btn-group mb-1">
+          <a class="btn btn-sm btn-outline-light {% if rng=='today' %}active{% endif %}"
+             href="{{ url_for('dashboard', range='today') }}">วันนี้</a>
+          <a class="btn btn-sm btn-outline-light {% if rng=='7d' %}active{% endif %}"
+             href="{{ url_for('dashboard', range='7d') }}">7 วัน</a>
+          <a class="btn btn-sm btn-outline-light {% if rng=='30d' %}active{% endif %}"
+             href="{{ url_for('dashboard', range='30d') }}">30 วัน</a>
+          <a class="btn btn-sm btn-outline-light {% if rng=='1y' %}active{% endif %}"
+             href="{{ url_for('dashboard', range='1y') }}">1 ปี</a>
+        </div>
+
+        <form method="get" class="d-flex flex-wrap gap-1 align-items-center">
+          <input type="date" name="start" class="form-control form-control-sm"
+                 value="{{ start.strftime('%Y-%m-%d') }}">
+          <span class="mx-1 small">ถึง</span>
+          <input type="date" name="end" class="form-control form-control-sm"
+                 value="{{ end.strftime('%Y-%m-%d') }}">
+          <button type="submit" name="range" value="custom"
+                  class="btn btn-sm btn-primary">
+            <i class="bi bi-funnel me-1"></i> ใช้ช่วงวันที่นี้
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ================= แถว 1: การเงินหลัก ================= #}
+  <div class="row g-2 mb-2">
+    <div class="col-md-4">
+      <div class="stat-card h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">รายรับ</div>
+            <div class="stat-value text-success">
+              {{ "{:,.2f}".format(stats.income_total) }} ฿
+            </div>
+            <div class="text-muted small mt-1">
+              จากใบเสร็จรับเงิน (RC) ที่ออกเอกสารแล้ว
+            </div>
+          </div>
+          <div class="text-success opacity-75">
+            <i class="bi bi-cash-coin fs-3"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="stat-card h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">รายจ่ายรวม</div>
+            <div class="stat-value text-danger">
+              {{ "{:,.2f}".format(stats.expense_total) }} ฿
+            </div>
+            <div class="mt-1 small">
+              <span class="stat-chip me-1">
+                ค่าเสื่อม {{ "{:,.0f}".format(stats.expense_breakdown.depr) }}
+              </span>
+              <span class="stat-chip me-1">
+                ซ่อม {{ "{:,.0f}".format(stats.expense_breakdown.repair) }}
+              </span>
+              <span class="stat-chip">
+                ใบรับสินค้า {{ "{:,.0f}".format(stats.expense_breakdown.grn) }}
+              </span>
+            </div>
+          </div>
+          <div class="text-danger opacity-75">
+            <i class="bi bi-activity fs-3"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="stat-card h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">กำไรสุทธิ (ประมาณการ)</div>
+            {% set profit = stats.income_total - stats.expense_total %}
+            <div class="stat-value {{ 'text-success' if profit>=0 else 'text-danger' }}">
+              {{ "{:,.2f}".format(profit) }} ฿
+            </div>
+
+            {% set mc = stats.chart.month_compare %}
+            <div class="small mt-1">
+              {% if mc.delta_prev_pct is not none %}
+                <span class="badge-soft {% if mc.delta_prev_pct>=0 %}badge-soft-green{% else %}badge-soft-red{% endif %}">
+                  เทียบเดือนที่แล้ว {{ mc.delta_prev_pct }}%
+                </span>
+              {% endif %}
+              {% if mc.delta_ly_pct is not none %}
+                <span class="badge-soft ms-1 {% if mc.delta_ly_pct>=0 %}badge-soft-green{% else %}badge-soft-red{% endif %}">
+                  เทียบเดือนเดียวกันปีก่อน {{ mc.delta_ly_pct }}%
+                </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="text-primary opacity-75">
+            <i class="bi bi-graph-up-arrow fs-3"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ================= แถว 2: จัดส่ง / วางบิล ================= #}
+  <div class="row g-2 mb-2">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">สถานะใบจัดส่ง</div>
+              <div class="section-sub">ภาพรวมงานขนส่งทั้งหมดในระบบ</div>
+            </div>
+            <i class="bi bi-truck fs-4 text-primary"></i>
+          </div>
+
+          <div class="d-flex gap-3 mt-1">
+            <div>
+              <div class="small text-muted">รอจัดส่ง</div>
+              <div class="h4 mb-0 text-warning">{{ stats.delivery.waiting }}</div>
+            </div>
+            <div>
+              <div class="small text-muted">จัดส่งสำเร็จ</div>
+              <div class="h4 mb-0 text-success">{{ stats.delivery.done }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">สถานะใบวางบิล</div>
+              <div class="section-sub">
+                นับเฉพาะใบวางบิล (BL) ที่วันที่เอกสารอยู่ในช่วงที่เลือก
+              </div>
+            </div>
+            <i class="bi bi-receipt fs-4 text-primary"></i>
+          </div>
+
+          <div class="d-flex gap-3 mt-1">
+            <div>
+              <div class="small text-muted">วางบิลแล้ว (ในช่วง)</div>
+              <div class="h4 mb-0 text-slate-800">{{ stats.billing.billed }}</div>
+            </div>
+            <div>
+              <div class="small text-muted">เกินกำหนดชำระ (รวมทั้งหมด)</div>
+              <div class="h4 mb-0 text-danger">{{ stats.billing.overdue }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ================= แถว 3: กราฟ ================= #}
+  <div class="row g-2 mb-2">
+    <div class="col-lg-8">
+      <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div>
+            <div class="section-title">กราฟรายรับ vs รายจ่าย</div>
+            <div class="section-sub">ตามช่วงวันที่ที่เลือก (รายวัน)</div>
+          </div>
+          <i class="bi bi-graph-up fs-4 text-primary"></i>
+        </div>
+        <canvas id="incomeExpenseChart" height="110"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div>
+            <div class="section-title">เปรียบเทียบยอดขายรายเดือน</div>
+            <div class="section-sub">
+              เดือนนี้, เดือนที่แล้ว, เดือนเดียวกันปีก่อน
+            </div>
+          </div>
+          <i class="bi bi-intersect fs-4 text-primary"></i>
+        </div>
+        <canvas id="monthCompareChart" height="130"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# ================= แถว 4: รายการอุปกรณ์ / ซ่อม ================= #}
+  <div class="row g-2 mb-2">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">อุปกรณ์ที่กำลังถูกเช่า</div>
+              <div class="section-sub">
+                จำนวน {{ stats.renting["count"] }} ชิ้น พร้อมข้อมูลปัจจุบัน
+              </div>
+            </div>
+            <i class="bi bi-box-seam fs-4 text-primary"></i>
+          </div>
+
+          {% set renting_items = stats.renting["items"] %}
+          {% if renting_items %}
+          <div class="table-responsive">
+            <table class="table soft-table mb-0">
+              <thead>
+                <tr>
+                  <th>รหัส</th>
+                  <th>อุปกรณ์</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in renting_items %}
+                <tr>
+                  <td class="text-muted">{{ it.sku }}</td>
+                  <td>{{ it.name }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <div class="text-muted small">ยังไม่มีอุปกรณ์ที่ถูกเช่าอยู่ในตอนนี้</div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">อุปกรณ์ที่ส่งซ่อม</div>
+              <div class="section-sub">งานซ่อมที่ยังไม่ปิด</div>
+            </div>
+            <i class="bi bi-tools fs-4 text-primary"></i>
+          </div>
+
+          {% if stats.repairs %}
+          <div class="table-responsive">
+            <table class="table soft-table mb-0">
+              <thead>
+                <tr>
+                  <th>เลขที่งาน</th>
+                  <th>อุปกรณ์</th>
+                  <th>ลูกค้า</th>
+                  <th>สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in stats.repairs %}
+                <tr>
+                  <td class="text-muted">{{ r.job_no }}</td>
+                  <td>{{ r.equipment }}</td>
+                  <td>{{ r.customer }}</td>
+                  <td>
+                    <span class="badge-soft badge-soft-amber">{{ r.status }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <div class="text-muted small">ยังไม่มีงานซ่อมที่เปิดอยู่</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ================= แถว 5: Top 5 ต่าง ๆ ================= #}
+  <div class="row g-2 mb-3">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">5 อันดับอุปกรณ์ที่ทำเงินสูงสุด</div>
+              <div class="section-sub">จากใบเสร็จออกเอกสารแล้ว ในช่วงที่เลือก</div>
+            </div>
+            <i class="bi bi-trophy fs-4 text-warning"></i>
+          </div>
+
+          {% if stats.top_items %}
+          <ol class="mb-0 ps-3 small">
+            {% for it in stats.top_items %}
+            <li class="mb-1 d-flex justify-content-between">
+              <span>{{ it.name }}</span>
+              <span class="fw-semibold">{{ "{:,.2f}".format(it.amount) }} ฿</span>
+            </li>
+            {% endfor %}
+          </ol>
+          {% else %}
+            <div class="text-muted small">ยังไม่มีข้อมูลในช่วงที่เลือก</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div>
+              <div class="section-title">5 ลูกค้าที่เช่ามากที่สุด</div>
+              <div class="section-sub">เรียงตามยอดรายรับในช่วงที่เลือก</div>
+            </div>
+            <i class="bi bi-people fs-4 text-primary"></i>
+          </div>
+
+          {% if stats.top_customers %}
+          <ol class="mb-0 ps-3 small">
+            {% for c in stats.top_customers %}
+            <li class="mb-1 d-flex justify-content-between">
+              <span>{{ c.name }}</span>
+              <span class="fw-semibold">{{ "{:,.2f}".format(c.amount) }} ฿</span>
+            </li>
+            {% endfor %}
+          </ol>
+          {% else %}
+            <div class="text-muted small">ยังไม่มีข้อมูลในช่วงที่เลือก</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const dashChartData = {{ stats.chart|tojson }};
+  (function() {
+    // กราฟรายรับ vs รายจ่าย
+    const ctx = document.getElementById("incomeExpenseChart");
+    if (ctx && dashChartData) {
+      const gctx = ctx.getContext("2d");
+      const gradIncome = gctx.createLinearGradient(0, 0, 0, 220);
+      gradIncome.addColorStop(0, "rgba(59,130,246,0.7)");
+      gradIncome.addColorStop(1, "rgba(59,130,246,0.05)");
+
+      const gradExpense = gctx.createLinearGradient(0, 0, 0, 220);
+      gradExpense.addColorStop(0, "rgba(248,113,113,0.75)");
+      gradExpense.addColorStop(1, "rgba(248,113,113,0.06)");
+
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: dashChartData.labels,
+          datasets: [
+            {
+              label: "รายรับ",
+              data: dashChartData.income,
+              fill: true,
+              backgroundColor: gradIncome,
+              borderColor: "rgba(37,99,235,1)",
+              borderWidth: 2,
+              tension: 0.35,
+              pointRadius: 0
+            },
+            {
+              label: "รายจ่าย",
+              data: dashChartData.expense,
+              fill: true,
+              backgroundColor: gradExpense,
+              borderColor: "rgba(239,68,68,1)",
+              borderWidth: 2,
+              tension: 0.35,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { font: { size: 11 } }
+            },
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              callbacks: {
+                label: (ctx) => {
+                  const v = ctx.parsed.y || 0;
+                  return `${ctx.dataset.label}: ${v.toLocaleString()} ฿`;
+                }
+              }
+            }
+          },
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: {
+              ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+              grid: { display: false }
+            },
+            y: {
+              ticks: {
+                callback: (v) => v.toLocaleString()
+              },
+              grid: { color: "rgba(148,163,184,0.25)" }
+            }
+          }
+        }
+      });
+    }
+
+    // กราฟเปรียบเทียบเดือน
+    const mctx = document.getElementById("monthCompareChart");
+    if (mctx && dashChartData && dashChartData.month_compare) {
+      const mc = dashChartData.month_compare;
+      new Chart(mctx, {
+        type: "radar",
+        data: {
+          labels: [mc.current.label, mc.prev.label, mc.last_year.label],
+          datasets: [{
+            label: "ยอดขาย (บาท)",
+            data: [mc.current.value, mc.prev.value, mc.last_year.value],
+            borderWidth: 2,
+            borderColor: "rgba(56,189,248,1)",
+            backgroundColor: "rgba(56,189,248,0.3)",
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            r: {
+              angleLines: { color: "rgba(148,163,184,0.35)" },
+              grid: { color: "rgba(209,213,219,0.4)" },
+              ticks: {
+                backdropColor: "transparent",
+                showLabelBackdrop: false
+              },
+              pointLabels: {
+                font: { size: 11 }
+              }
+            }
+          }
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

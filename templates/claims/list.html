@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+{% block title %}งานเคลม{% endblock %}
+
+{% block head %}
+<style>
+  /* ===== Hero / Gradient ===== */
+  .cl-hero{
+    background: radial-gradient(1200px 600px at -10% -20%, rgba(131,105,83,.25) 0%, rgba(131,105,83,0) 60%),
+                linear-gradient(135deg, #f6f7fb 0%, #eef2ff 100%);
+    border-bottom: 1px solid rgba(0,0,0,.06);
+  }
+  .cl-hero .title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:700; letter-spacing:.3px;
+  }
+  .cl-hero .title i{
+    background:#fff; color:#836953; width:40px; height:40px;
+    display:grid; place-items:center; border-radius:12px;
+    box-shadow:0 6px 20px rgba(131,105,83,.18);
+  }
+
+  /* ===== Glass card ===== */
+  .glass{
+    background: rgba(255,255,255,.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,.06);
+    border-radius: 1rem;
+    box-shadow: 0 10px 30px rgba(20,20,40,.06);
+  }
+
+  /* ===== Table polish ===== */
+  .table-modern thead th{
+    background: linear-gradient(180deg, #fafbff 0%, #f2f4ff 100%);
+    border-bottom:1px solid rgba(0,0,0,.06);
+    color:#334155; font-weight:600;
+  }
+  .table-modern tbody tr{
+    transition: transform .08s ease, box-shadow .2s ease, background-color .2s ease;
+  }
+  .table-modern tbody tr:hover{
+    background: #f9fafb;
+    box-shadow: inset 0 0 0 9999px rgba(131,105,83,.03);
+  }
+  .table-modern td, .table-modern th{ vertical-align: middle; }
+  .cl-number{
+    font-weight:700; color:#111827; text-decoration:none;
+  }
+  .cl-number:hover{ text-decoration:underline; }
+
+  /* ===== Status pills ===== */
+  .badge-soft{
+    --bg: #e5e7eb; --fg:#111827;
+    background:var(--bg); color:var(--fg);
+    padding:.4rem .65rem; border-radius:999px;
+    font-weight:600;
+  }
+  .badge-submitted{ --bg:#fff3cd; --fg:#7a5f1a; }
+  .badge-approved{ --bg:#dcfce7; --fg:#166534; }
+  .badge-replaced{ --bg:#e0e7ff; --fg:#3730a3; }
+  .badge-closed  { --bg:#e5e7eb; --fg:#374151; }
+
+  /* ===== Tiny utilities ===== */
+  .btn-gradient{
+    background: linear-gradient(135deg, #7c5a3f 0%, #9b7b5f 60%, #c8a88e 100%);
+    border: none;
+    box-shadow: 0 8px 16px rgba(131,105,83,.25);
+  }
+  .btn-gradient:hover{ filter: brightness(.98); }
+  .shadow-soft{ box-shadow: 0 8px 18px rgba(0,0,0,.06); }
+
+  /* Search input */
+  .search-pill{
+    border-radius:999px; padding-left:2.4rem;
+    background:#fff;
+  }
+  .search-icon{
+    position:absolute; left:.9rem; top:50%; transform:translateY(-50%);
+    color:#9ca3af;
+  }
+
+  .btn-icon{ display:inline-flex; align-items:center; gap:.35rem; }
+  .text-muted-2{ color:#6b7280 !important; }
+
+  /* Delivery section (ปุ่ม + badge ใบส่งเคลม) */
+  .cl-delivery-cell{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:.25rem;
+  }
+  .cl-delivery-actions{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:.35rem;
+  }
+  .cl-badge-delivery{
+    border-radius:999px;
+    background:#ecfdf3;
+    color:#166534;
+    padding:.15rem .55rem;
+    font-size:.75rem;
+    font-weight:600;
+    border:1px solid #bbf7d0;
+  }
+
+  @media (max-width: 768px){
+    .cl-hero-actions{ width:100%; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ===== Helpers ===== #}
+
+{# ตรวจว่ามีใบส่งสินค้าเคลมหรือยัง (รองรับหลายฟิลด์ เดิม) #}
+{% macro has_claim_delivery(c) -%}
+  {%- if c.delivery_claim_id is defined and c.delivery_claim_id -%}
+    {{ true }}
+  {%- elif c.delivery_claim is defined and c.delivery_claim and (c.delivery_claim.id is defined and c.delivery_claim.id) -%}
+    {{ true }}
+  {%- elif c.has_delivery_claim is defined and c.has_delivery_claim -%}
+    {{ true }}
+  {%- else -%}
+    {{ false }}
+  {%- endif -%}
+{%- endmacro %}
+
+{# แผนที่สถานะ -> ภาษาไทย #}
+{% set TH_STATUS = {
+  'SUBMITTED':'ส่งเคลมแล้ว',
+  'APPROVED':'อนุมัติ',
+  'REPLACED':'ทดแทนแล้ว',
+  'REPLACEMENT':'ทดแทนแล้ว',
+  'CLOSED':'ปิดงาน',
+  'DONE':'ปิดงาน'
+} %}
+
+<div class="cl-hero py-3 py-md-4">
+  <div class="container">
+    <div class="d-flex flex-column flex-md-row align-items-md-center gap-3 justify-content-between">
+      <div class="d-flex align-items-center gap-3">
+        <div class="title fs-4">
+          <i class="bi bi-shield-exclamation"></i>
+          งานเคลม
+        </div>
+        <span class="badge bg-light text-dark border">{{ rows|length }} รายการ</span>
+      </div>
+      <div class="cl-hero-actions d-flex gap-2">
+        <a href="{{ url_for('claim_new') }}" class="btn btn-gradient text-white">
+          <i class="bi bi-plus-circle me-1"></i> ออกใบเคลม
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container my-3">
+  <div class="glass p-3 p-md-4 shadow-soft">
+    <!-- Toolbar -->
+    <div class="d-flex flex-column flex-md-row gap-2 justify-content-between align-items-md-center mb-3">
+      <div class="position-relative" style="min-width:260px;">
+        <i class="bi bi-search search-icon"></i>
+        <input id="q" type="text" class="form-control search-pill"
+               placeholder="ค้นหา: เลขที่เคลม / ลูกค้า / อ้างอิง QU / สถานะ">
+      </div>
+      <div class="text-muted small">
+        เคล็ดลับ: พิมพ์คำสำคัญเพื่อกรองรายการแบบทันที
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-modern table-hover align-middle">
+        <thead>
+          <tr>
+            <th style="width:180px">เลขที่</th>
+            <th style="width:120px">วันที่</th>
+            <th>ลูกค้า</th>
+            <th style="width:180px">อ้างอิง QU</th>
+            <th style="width:140px">สถานะ</th>
+            <th class="text-end" style="width:220px"></th>
+          </tr>
+        </thead>
+
+        <tbody id="rows">
+          {% for r in rows %}
+          {% set s = (r.status or '')|upper %}
+          {% set label = TH_STATUS.get(s, r.status) %}
+
+          {# ใช้ deliveries_map จาก view (ของใหม่) + helper เดิม รวมกัน #}
+          {% set dl = deliveries_map.get(r.id) if deliveries_map is defined else None %}
+          {% set has_del_new = dl is not none %}
+          {% set has_del_old = (has_claim_delivery(r)|string == 'True') %}
+          {% set has_del = has_del_new or has_del_old %}
+
+          {# id ใบส่ง + เลขที่ใบส่ง สำหรับแสดงด้านล่าง #}
+          {% set did = (
+            dl.id
+            if dl is not none
+            else (
+              r.delivery_claim.id
+              if r.delivery_claim is defined and r.delivery_claim and r.delivery_claim.id is defined
+              else (r.delivery_claim_id if r.delivery_claim_id is defined else None)
+            )
+          ) %}
+          {% set dl_number = (
+            dl.number
+            if dl is not none and dl.number is defined
+            else (
+              r.delivery_claim.number
+              if r.delivery_claim is defined and r.delivery_claim and r.delivery_claim.number is defined
+              else ''
+            )
+          ) %}
+
+          <tr data-search="{{ (r.number ~ ' ' ~ (r.customer and r.customer.name or '') ~ ' ' ~ (r.quote and r.quote.number or '') ~ ' ' ~ s ~ ' ' ~ label)|lower }}">
+            <td>
+              <a class="cl-number" href="{{ url_for('claim_view', claim_id=r.id) }}">{{ r.number }}</a>
+            </td>
+            <td>{{ r.date.strftime('%d/%m/%Y') }}</td>
+            <td class="text-truncate" style="max-width:520px">{{ r.customer and r.customer.name or '—' }}</td>
+            <td class="text-muted">{{ r.quote and r.quote.number or '—' }}</td>
+            <td>
+              {% if   s == 'SUBMITTED' %}
+                <span class="badge-soft badge-submitted">{{ label }}</span>
+              {% elif s == 'APPROVED' %}
+                <span class="badge-soft badge-approved">{{ label }}</span>
+              {% elif s in ['REPLACED','REPLACEMENT'] %}
+                <span class="badge-soft badge-replaced">{{ label }}</span>
+              {% elif s in ['CLOSED','DONE'] %}
+                <span class="badge-soft badge-closed">{{ label }}</span>
+              {% else %}
+                <span class="badge-soft">{{ label }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="cl-delivery-cell">
+
+                <div class="cl-delivery-actions">
+                  <a class="btn btn-outline-secondary btn-sm btn-icon"
+                     href="{{ url_for('claim_view', claim_id=r.id) }}">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                    <span class="d-none d-md-inline">เปิด</span>
+                  </a>
+
+                  {% if can('transport.manage') %}
+                    {% if not has_del %}
+                      {# ยังไม่มีใบส่งเคลม → ปุ่มสีเขียวสร้างใบส่งเคลม #}
+                      <a class="btn btn-success btn-sm btn-icon"
+                         href="{{ url_for('deliveries.create_from_claim', cid=r.id) }}">
+                        <i class="bi bi-truck-front"></i>
+                        <span class="d-none d-lg-inline">สร้างใบส่งสินค้าเคลม</span>
+                      </a>
+                    {% elif did %}
+                      {# มีใบส่งเคลมแล้ว → ปุ่มเทาเปิดใบส่ง #}
+                      <a class="btn btn-outline-secondary btn-sm btn-icon"
+                         href="{{ url_for('deliveries.view_doc', did=did) }}">
+                        <i class="bi bi-truck-front"></i>
+                        <span class="d-none d-lg-inline">เปิดใบส่งเคลม</span>
+                      </a>
+                    {% endif %}
+                  {% endif %}
+                </div>
+
+                {% if has_del and did %}
+                  <div class="d-flex align-items-center gap-1 text-muted-2 small">
+                    <span class="cl-badge-delivery">
+                      <i class="bi bi-check-circle-fill me-1"></i> สร้างใบส่งสินค้าเคลมแล้ว
+                    </span>
+                    {% if dl_number %}
+                      <span class="d-none d-lg-inline">
+                        ใบส่งเคลม:
+                        <a href="{{ url_for('deliveries.view_doc', did=did) }}"
+                           class="link-success text-decoration-none">
+                          {{ dl_number }}
+                        </a>
+                      </span>
+                    {% endif %}
+                  </div>
+                {% endif %}
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5">
+              <div class="d-inline-flex flex-column align-items-center gap-2">
+                <div class="display-6">🧾</div>
+                <div class="fw-semibold">ยังไม่มีใบเคลม</div>
+                <div class="text-muted small">เริ่มสร้างใบเคลมฉบับแรกได้ทันที</div>
+                <a href="{{ url_for('claim_new') }}" class="btn btn-gradient text-white mt-2">
+                  <i class="bi bi-plus-circle me-1"></i> ออกใบเคลม
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ค้นหาแบบทันที
+  (function(){
+    const i = document.getElementById('q');
+    const rows = document.querySelectorAll('#rows tr');
+    i?.addEventListener('input', function(){
+      const q = (this.value || '').trim().toLowerCase();
+      rows.forEach(tr=>{
+        const hay = tr.getAttribute('data-search') || '';
+        tr.style.display = hay.indexOf(q) !== -1 ? '' : 'none';
+      });
+    });
+  })();
+</script>
+{% endblock %}

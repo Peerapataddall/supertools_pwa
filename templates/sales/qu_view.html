@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}{{ (page_title or {
+  'QU':'ใบเสนอราคา',
+  'BL':'ใบวางบิล',
+  'IV':'ใบกำกับภาษี',
+  'RC':'ใบเสร็จรับเงิน'
+}[d.doc_type or 'QU']) ~ ' ' ~ d.number }}{% endblock %}
+
+{% block content %}
+
+<style>
+  /* ===== Soft / Gradient Cards ===== */
+  .st-softcard{
+    border:0; border-radius:1rem;
+    background: radial-gradient(circle at 0% 0%, rgba(255,255,255,1) 0%, rgba(240,248,255,.7) 60%, rgba(235,244,255,.4) 100%);
+    box-shadow: 0 20px 40px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
+    border:1px solid rgba(0,0,0,.03);
+  }
+  .st-softcard-header{
+    background:transparent; border-bottom:1px solid rgba(0,0,0,.05);
+    border-radius:1rem 1rem 0 0; font-weight:600;
+  }
+  .st-summary-card{
+    border:0; border-radius:1rem;
+    background: radial-gradient(circle at 100% 0%, rgba(255,255,255,1) 0%, rgba(230,245,255,.8) 60%, rgba(215,240,255,.5) 100%);
+    box-shadow: 0 20px 40px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.04);
+    border:1px solid rgba(0,0,0,.04);
+  }
+  .st-top-actions .btn{ border-radius:.75rem; }
+
+  /* ===== Chips ===== */
+  .st-chip{
+    display:inline-flex; align-items:center; gap:.45rem;
+    border-radius:999px; padding:.35rem .65rem; font-weight:600; font-size:.8rem; border:1px solid;
+    background:#f8fafc; color:#334155; border-color:#e2e8f0;
+  }
+  .chip-approve{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+  .chip-draft{   background:#f3f4f6; color:#374151; border-color:#e5e7eb; }
+  .chip-cancel{  background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+  .chip-reject{  background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+
+  .chip-unpaid{  background:#fff7ed; color:#92400e; border-color:#fed7aa; }
+  .chip-paid{    background:#eefdf3; color:#065f46; border-color:#bbf7d0; }
+  .chip-uniss{   background:#eff6ff; color:#1e3a8a; border-color:#bfdbfe; }
+  .chip-iss{     background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+
+  /* ===== Head meta ===== */
+  .st-head-meta{ font-size:.8rem; color:#6b7280; line-height:1.1; }
+  .st-head-value{ font-weight:600; font-size:1rem; color:#111; }
+
+  /* ===== Table ===== */
+  .table-rounded thead th:first-child{ border-top-left-radius:.75rem; }
+  .table-rounded thead th:last-child{  border-top-right-radius:.75rem; }
+  .table-rounded tbody tr:last-child td:first-child{ border-bottom-left-radius:.75rem; }
+  .table-rounded tbody tr:last-child td:last-child{  border-bottom-right-radius:.75rem; }
+  .table thead th{
+    background-color: rgba(0,0,0,.03) !important;
+    border-bottom-width:1px!important; color:#374151; font-weight:500;
+  }
+  .table td,.table th{ vertical-align:middle; }
+
+  .st-total-grand{ font-size:1.15rem; font-weight:600; }
+</style>
+
+{# ================== Helpers ================== #}
+{% macro status_chip(s) -%}
+  {% set s = (s or 'DRAFT')|upper %}
+  {% if s in ['DRAFT','APPROVED','CANCELLED','REJECTED'] %}
+    {% set smap = {
+      'DRAFT': ('ร่าง','chip-draft','bi-pencil'),
+      'APPROVED': ('อนุมัติแล้ว','chip-approve','bi-check-circle'),
+      'CANCELLED': ('ยกเลิก','chip-cancel','bi-x-circle'),
+      'REJECTED': ('ปฏิเสธ','chip-reject','bi-exclamation-circle')
+    } %}
+  {% elif s in ['UNPAID','PAID'] %}
+    {% set smap = {
+      'UNPAID': ('ยังไม่ชำระเงิน','chip-unpaid','bi-hourglass-split'),
+      'PAID': ('ชำระเงินแล้ว','chip-paid','bi-cash-stack')
+    } %}
+  {% elif s in ['UNISSUED','ISSUED'] %}
+    {% set smap = {
+      'UNISSUED': ('ยังไม่ออกเอกสาร','chip-uniss','bi-file-earmark'),
+      'ISSUED': ('ออกเอกสารแล้ว','chip-iss','bi-file-earmark-check')
+    } %}
+  {% else %}
+    {% set smap = { s: (s, 'chip-draft', 'bi-info-circle') } %}
+  {% endif %}
+  {% set label, klass, icon = smap.get(s, (s, 'chip-draft', 'bi-info-circle')) %}
+  <span class="st-chip {{ klass }}"><i class="bi {{ icon }}"></i> {{ label }}</span>
+{%- endmacro %}
+
+{% set DOC_NAME = (page_title or {
+  'QU':'ใบเสนอราคา',
+  'BL':'ใบวางบิล',
+  'IV':'ใบกำกับภาษี',
+  'RC':'ใบเสร็จรับเงิน'
+}[d.doc_type or 'QU']) %}
+
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start align-items-stretch gap-3 mb-3">
+  <div class="d-flex flex-column">
+    <div class="d-flex align-items-center flex-wrap gap-2">
+      <h1 class="h5 m-0 d-flex align-items-center gap-2">
+        <i class="bi bi-receipt-cutoff text-primary"></i>
+        <span>{{ DOC_NAME }} {{ d.number }}</span>
+      </h1>
+      {{ status_chip(d.status) }}
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 small text-muted mt-1">
+      {% if d.po_customer %}
+      <div class="d-flex align-items-center gap-1">
+        <i class="bi bi-hash"></i>
+        <span>PO ลูกค้า: <span class="fw-semibold text-dark">{{ d.po_customer }}</span></span>
+      </div>
+      {% endif %}
+      <div class="d-flex align-items-center gap-1">
+        <i class="bi bi-calendar-event"></i>
+        <span>วันที่เอกสาร: <span class="fw-semibold text-dark">{{ d.date|strftime("%d/%m/%Y") }}</span></span>
+      </div>
+      <div class="d-flex align-items-center gap-1">
+        <i class="bi bi-clock-history"></i>
+        <span>เครดิต {{ d.credit_days or 0 }} วัน</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="st-top-actions d-flex flex-wrap gap-2 ms-lg-auto">
+    {# ปุ่มพรีวิว/ปริ้น (ทุกเอกสาร) #}
+    <a class="btn btn-outline-primary btn-sm" href="{% if d.doc_type=='QU' %}{{ url_for('qu_preview', qid=d.id) }}{% elif d.doc_type=='BL' %}{{ url_for('bl_print', did=d.id) }}{% elif d.doc_type=='IV' %}{{ url_for('iv_print', did=d.id) }}{% else %}{{ url_for('rc_print', did=d.id) }}{% endif %}" target="_blank">
+      <i class="bi bi-eye me-1"></i> พรีวิว/ปริ้น
+    </a>
+
+    {# QU: ปุ่มอนุมัติ (ถ้ายังไม่อนุมัติ) #}
+    {% if d.doc_type=='QU' and d.status!='APPROVED' and can('sales.manage') and not (hide_approve or false) %}
+      <form method="post" action="{{ url_for('qu_approve', qid=d.id) }}" class="d-inline">
+        <button class="btn btn-success btn-sm">
+          <i class="bi bi-check2-circle me-1"></i> อนุมัติใบเสนอราคา
+        </button>
+      </form>
+    {% elif d.doc_type=='QU' and d.status=='APPROVED' %}
+      <span class="badge bg-success align-self-center">อนุมัติแล้ว</span>
+    {% endif %}
+
+    {# เอกสารลูก: ปุ่มเปลี่ยนสถานะ + ปริ้น #}
+    {% if d.doc_type=='BL' and can('sales.manage') %}
+      <form class="d-inline" method="post" action="{{ url_for('bl_toggle', did=d.id) }}">
+        <button class="btn btn-outline-secondary btn-sm">
+          เปลี่ยนสถานะเป็น {{ 'ยังไม่ชำระเงิน' if d.status=='PAID' else 'ชำระเงินแล้ว' }}
+        </button>
+      </form>
+    {% elif d.doc_type=='IV' and can('sales.manage') %}
+      <form class="d-inline" method="post" action="{{ url_for('iv_toggle', did=d.id) }}">
+        <button class="btn btn-outline-secondary btn-sm">
+          เปลี่ยนสถานะเป็น {{ 'ยังไม่ออกใบกำกับภาษี' if d.status=='ISSUED' else 'ออกใบกำกับภาษีแล้ว' }}
+        </button>
+      </form>
+    {% elif d.doc_type=='RC' and can('sales.manage') %}
+      <form class="d-inline" method="post" action="{{ url_for('rc_toggle', did=d.id) }}">
+        <button class="btn btn-outline-secondary btn-sm">
+          เปลี่ยนสถานะเป็น {{ 'ยังไม่ออกใบเสร็จรับเงิน' if d.status=='ISSUED' else 'ออกใบเสร็จรับเงิน' }}
+        </button>
+      </form>
+    {% endif %}
+
+    {# ปุ่มกลับ #}
+    {% if d.doc_type=='QU' %}
+      <a href="{{ url_for('qu_list') }}" class="btn btn-light border btn-sm">กลับ</a>
+    {% elif d.doc_type=='BL' %}
+      <a href="{{ url_for('bl_list') }}" class="btn btn-light border btn-sm">กลับ</a>
+    {% elif d.doc_type=='IV' %}
+      <a href="{{ url_for('iv_list') }}" class="btn btn-light border btn-sm">กลับ</a>
+    {% else %}
+      <a href="{{ url_for('rc_list') }}" class="btn btn-light border btn-sm">กลับ</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- ซ้าย: ข้อมูลเอกสาร + รายการ -->
+  <div class="col-lg-8 d-flex flex-column gap-3">
+
+    <!-- กล่องข้อมูลเอกสาร -->
+    <div class="st-softcard">
+      <div class="card-body p-3 p-md-4">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="st-head-meta">ลูกค้า</div>
+            <div class="st-head-value">{{ d.customer and d.customer.name or '—' }}</div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="st-head-meta">วันที่เอกสาร</div>
+            <div class="st-head-value">{{ d.date|strftime("%d/%m/%Y") }}</div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="st-head-meta">เครดิต (วัน)</div>
+            <div class="st-head-value">{{ d.credit_days or 0 }}</div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="st-head-meta">เลขที่ PO ลูกค้า</div>
+            <div class="st-head-value">{{ d.po_customer or "—" }}</div>
+          </div>
+
+          <div class="col-md-6 d-flex flex-wrap align-items-start gap-2">
+            <span class="st-chip">
+              <i class="bi bi-receipt"></i>
+              ภาษี: {{ d.tax_mode|tax_mode_th if d.tax_mode is defined else 'คิด VAT แยก' }}
+            </span>
+            <span class="st-chip">
+              <i class="bi bi-clipboard-check"></i>
+              หัก ณ ที่จ่าย: {{ d.wht_pct or 0 }}%
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายการ -->
+    <div class="st-softcard">
+      <div class="st-softcard-header px-3 px-md-4 py-3 d-flex align-items-center gap-2">
+        <i class="bi bi-ui-radios-grid text-primary"></i>
+        <span>รายการ</span>
+      </div>
+
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0 table-rounded">
+            <thead>
+              <tr>
+                <th>รายการ</th>
+                <th class="text-end" style="width:10%">จำนวน</th>
+                <th style="width:18%">หน่วย/ระยะ</th>
+                <th class="text-end" style="width:15%">ราคา/หน่วย</th>
+                <th class="text-end" style="width:10%">%ลด</th>
+                <th class="text-end" style="width:15%">รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% if d.items %}
+              {% for it in d.items %}
+              <tr>
+                <td>{{ it.name }}</td>
+                <td class="text-end">{{ '%.0f'|format(it.qty or 0) }}</td>
+                <td>{{ it.rent_unit|unit_th }} × {{ it.rent_duration or 1 }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.unit_price or 0) }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.discount_pct or 0) }}</td>
+                <td class="text-end">{{ '%.2f'|format(it.line_total or 0) }}</td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">ยังไม่มีรายการ</td>
+              </tr>
+            {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ขวา: สรุป -->
+  <div class="col-lg-4">
+    <div class="st-summary-card">
+      <div class="card-body p-3 p-md-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <i class="bi bi-calculator text-primary"></i>
+          <div class="fw-semibold">สรุป</div>
+        </div>
+
+        <div class="st-summary-row d-flex justify-content-between">
+          <span>ยอดรวมก่อนภาษี</span>
+          <span>{{ '%.2f'|format(d.amount_subtotal or 0) }}</span>
+        </div>
+
+        <div class="st-summary-row d-flex justify-content-between">
+          <span>ภาษีมูลค่าเพิ่ม ({{ d.vat_pct if d.vat_pct is defined else 7 }}%)</span>
+          <span>{{ '%.2f'|format(d.amount_vat or 0) }}</span>
+        </div>
+
+        <div class="st-summary-row fw-semibold border-top pt-2 mt-2 mb-2 d-flex justify-content-between">
+          <span>ยอดรวมสุทธิ</span>
+          <span>{{ '%.2f'|format(d.amount_total or 0) }}</span>
+        </div>
+
+        <div class="st-summary-row d-flex justify-content-between">
+          <span>หัก ณ ที่จ่าย ({{ d.wht_pct or 0 }}%)</span>
+          <span>-{{ '%.2f'|format(d.amount_wht or 0) }}</span>
+        </div>
+
+        <div class="st-summary-row st-summary-bigrow d-flex justify-content-between">
+          <span class="label">ยอดหลังหัก ณ ที่จ่าย</span>
+          <span class="value st-total-grand">{{ '%.2f'|format(d.amount_grand or 0) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

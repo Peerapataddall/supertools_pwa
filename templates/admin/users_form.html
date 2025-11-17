@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ 'แก้ไขผู้ใช้' if is_edit else 'เพิ่มผู้ใช้' }} · Supertools{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 920px;">
+  <h1 class="h5 mb-3"><i class="bi bi-person-plus me-2"></i>{{ 'แก้ไขผู้ใช้' if is_edit else 'เพิ่มผู้ใช้' }}</h1>
+
+  <form method="post" class="card shadow-sm">
+    <div class="card-body row g-3">
+      {% if not is_edit %}
+      <div class="col-md-4">
+        <label class="form-label">ชื่อผู้ใช้</label>
+        <input name="username" class="form-control" placeholder="เช่น somchai" required>
+      </div>
+      {% else %}
+      <div class="col-md-4">
+        <label class="form-label">ชื่อผู้ใช้</label>
+        <input class="form-control" value="{{ u.username }}" disabled>
+      </div>
+      {% endif %}
+
+      <div class="col-md-8">
+        <label class="form-label">ชื่อ-นามสกุล</label>
+        <input name="full_name" class="form-control" value="{{ u.full_name if is_edit else '' }}" placeholder="สมชาย ใจดี">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">{{ 'รหัสผ่านใหม่ (ถ้าต้องการเปลี่ยน)' if is_edit else 'รหัสผ่าน' }}</label>
+        <input type="password" name="password" class="form-control" {% if not is_edit %}required{% endif %}>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">ยืนยันรหัสผ่าน</label>
+        <input type="password" name="confirm" class="form-control" {% if not is_edit %}required{% endif %}>
+      </div>
+
+      <div class="col-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_active" id="isActive" {% if not is_edit or u.is_active %}checked{% endif %}>
+          <label class="form-check-label" for="isActive">เปิดใช้งาน</label>
+        </div>
+      </div>
+
+      <hr class="my-2">
+
+      <div class="col-md-4">
+        <label class="form-label">ตำแหน่ง (เลือกได้หลายตำแหน่ง)</label>
+        <div class="border rounded p-2" style="max-height:240px; overflow:auto;">
+          {% for r in roles %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="roles" id="r{{r.id}}" value="{{ r.id }}"
+                     {% if is_edit and r.id in role_ids_have %}checked{% endif %}>
+              <label class="form-check-label" for="r{{r.id}}">{{ r.name }} <small class="text-muted">({{ r.code }})</small></label>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="col-md-8">
+        <label class="form-label">สิทธิ์ที่อนุญาต (เลือกเป็นรายสิทธิ์)</label>
+        <div class="border rounded p-2" style="max-height:240px; overflow:auto;">
+          {% for p in perms %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="perms" id="p{{p.id}}" value="{{ p.id }}"
+                     {% if is_edit and p.id in perm_ids_have %}checked{% endif %}>
+              <label class="form-check-label" for="p{{p.id}}">
+                <code>{{ p.code }}</code> — {{ p.name }}
+              </label>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="form-text">* admin ผ่านทุกสิทธิ์โดยอัตโนมัติ</div>
+      </div>
+    </div>
+
+    <div class="card-footer d-flex justify-content-end gap-2">
+      <a href="{{ url_for('users_list') }}" class="btn btn-outline-secondary">ยกเลิก</a>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i> บันทึก</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

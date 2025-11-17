@@ -1,0 +1,152 @@
+{# templates/repairs/list.html #}
+{% extends "base.html" %}
+{% block title %}งานซ่อม{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+
+  <!-- Header + Search -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h5 m-0">
+      <i class="bi bi-tools"></i>
+      งานซ่อม
+    </h1>
+    <form class="d-flex" method="get" action="{{ url_for('repairs.list_') }}">
+      <input type="search" class="form-control form-control-sm me-2" name="q"
+             placeholder="ค้นหาเลขที่งาน/เคลม/ลูกค้า/อุปกรณ์"
+             value="{{ request.args.get('q','') }}">
+      <button class="btn btn-sm btn-outline-secondary">ค้นหา</button>
+    </form>
+  </div>
+
+  <!-- Tabs filter -->
+  <div class="d-flex gap-2 mb-3">
+    <a class="btn btn-sm {{ 'btn-primary' if (show or '')!='pending' else 'btn-outline-primary' }}"
+       href="{{ url_for('repairs.list_', q=request.args.get('q','')) }}">
+      ทั้งหมด
+    </a>
+    <a class="btn btn-sm {{ 'btn-primary' if (show or '')=='pending' else 'btn-outline-primary' }}"
+       href="{{ url_for('repairs.list_', q=request.args.get('q',''), show='pending') }}">
+      รอเปิดงานซ่อม
+    </a>
+  </div>
+
+  {% if (show or '') in ('pending','') %}
+  <!-- รอเปิดงานซ่อม (มาจากใบเคลม) -->
+  <div class="card st-softcard border-0 mb-4">
+    <div class="card-header bg-transparent d-flex align-items-center gap-2">
+      <i class="bi bi-hourglass-split text-warning"></i>
+      <strong>รอเปิดงานซ่อม (มาจากใบเคลม)</strong>
+      <span class="badge rounded-pill bg-secondary">{{ pending|length }}</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:160px">เลขที่ใบเคลม</th>
+            <th>ลูกค้า</th>
+            <th>รายการที่เคลม</th>
+            <th style="width:260px">อุปกรณ์คาดว่า</th>
+            <th style="width:140px" class="text-center">เปิดงานซ่อม</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pending %}
+          <tr>
+            <td>
+              {% set _href = has_claim_view and url_for('claims.view', cid=row.claim_id) or '#' %}
+              <a href="{{ _href }}">{{ row.claim_number }}</a>
+              <div class="small text-muted">
+                {% if row.claim_date %}{{ row.claim_date.strftime('%d/%m/%Y') }}{% endif %}
+              </div>
+            </td>
+            <td>{{ row.customer_name }}</td>
+            <td>
+              {{ row.item_name or '-' }}
+              <span class="text-muted">× {{ row.qty }}</span>
+            </td>
+            <td>
+              {% if row.eq_sku %}
+                <div class="fw-600">{{ row.eq_sku }}</div>
+                <div class="small text-muted">{{ row.eq_name }}</div>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <form method="post"
+                    action="{{ url_for('repairs.open_from_claim', cid=row.claim_id, item_id=row.item_id) }}">
+                <button class="btn btn-primary btn-sm">
+                  <i class="bi bi-wrench"></i> เปิดงานซ่อม
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">ไม่มีรายการค้างเปิดงาน</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if (show or '') in ('','opened') %}
+  <!-- งานซ่อมที่เปิดแล้ว -->
+  <div class="card st-softcard border-0">
+    <div class="card-header bg-transparent d-flex align-items-center gap-2">
+      <i class="bi bi-hammer text-success"></i>
+      <strong>งานซ่อมที่เปิดแล้ว</strong>
+      <span class="badge rounded-pill bg-secondary">{{ jobs|length }}</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:160px">เลขที่งาน</th>
+            <th>อุปกรณ์</th>
+            <th style="width:120px" class="text-center">สถานะ</th>
+            <th style="width:160px">เปิดเมื่อ</th>
+            <th style="width:100px" class="text-center">จัดการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for j in jobs %}
+          <tr>
+            <td><a href="{{ url_for('repairs.view_', jid=j.id) }}">{{ j.number }}</a></td>
+            <td>
+              {% if j.equipment %}
+                <div class="fw-600">{{ j.equipment.sku }}</div>
+                <div class="small text-muted">{{ j.equipment.name }}</div>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% set st=(j.status or '').upper() %}
+              <span class="badge rounded-pill {{ 'bg-success' if st=='DONE' else 'bg-info' if st=='OPEN' else 'bg-secondary' }}">
+                {{ st }}
+              </span>
+            </td>
+            <td>{% if j.opened_at %}{{ j.opened_at.strftime('%d/%m/%Y %H:%M') }}{% else %}-{% endif %}</td>
+            <td class="text-center">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('repairs.view_', jid=j.id) }}">เปิดดู</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">ยังไม่มีงานซ่อม</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

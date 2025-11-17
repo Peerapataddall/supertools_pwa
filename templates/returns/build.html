@@ -1,0 +1,213 @@
+{# templates/returns/build.html #}
+{% extends "base.html" %}
+{% block title %}สร้างใบคืนสินค้า{% endblock %}
+
+{% block head %}
+<style>
+  .rtb-hero{
+    border-radius:1.5rem;
+    border:1px solid rgba(15,23,42,.06);
+    background:
+      radial-gradient(1200px 600px at -10% -10%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(135deg,#f8fafc 0%,#e5e7eb 35%,#dbeafe 100%);
+    box-shadow:0 18px 40px rgba(15,23,42,.12);
+    padding:1.25rem 1.5rem;
+    margin-bottom:1.25rem;
+  }
+  .rtb-hero-title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:700; letter-spacing:.3px;
+  }
+  .rtb-hero-title i{
+    width:40px; height:40px; border-radius:1rem;
+    display:grid; place-items:center;
+    background:#fff; color:#16a34a;
+    box-shadow:0 8px 18px rgba(148,163,184,.45);
+  }
+  .rtb-chip{
+    display:inline-flex; align-items:center; gap:.25rem;
+    border-radius:999px; padding:.15rem .55rem;
+    font-size:.78rem; font-weight:600;
+    background:#ecfdf3; color:#15803d;
+    border:1px solid rgba(22,163,74,.18);
+  }
+  .rtb-badge-qu{
+    display:inline-flex; align-items:center; gap:.25rem;
+    border-radius:999px; padding:.15rem .6rem;
+    font-size:.78rem;
+    background:#eff6ff; color:#1d4ed8;
+    border:1px solid rgba(59,130,246,.14);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <!-- HERO -->
+  <section class="rtb-hero mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+      <div>
+        <div class="rtb-hero-title mb-1">
+          <i class="bi bi-arrow-return-left"></i>
+          <div>
+            <div class="text-uppercase small text-muted mb-1">เอกสารขาย</div>
+            <h1 class="h5 mb-0">สร้างใบคืนสินค้า</h1>
+          </div>
+        </div>
+        <p class="small text-muted mb-1">
+          เลือกอุปกรณ์ที่ต้องการรับคืนจากใบเสนอราคา แล้วระบุจำนวนที่คืนเข้าระบบ
+        </p>
+        {% if qu %}
+          <div class="small text-muted">
+            อ้างอิงใบเสนอราคา
+            <span class="rtb-badge-qu">
+              <i class="bi bi-file-earmark-text"></i>
+              {{ qu.number }}
+            </span>
+            {% if qu.date %}
+              · วันที่ {{ qu.date.strftime("%d/%m/%Y") }}
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="d-flex flex-column flex-sm-row gap-2">
+        <a href="{{ url_for('returns_new') }}"
+           class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+          <i class="bi bi-arrow-left"></i>
+          <span>กลับไปเลือกใบเสนอราคา</span>
+        </a>
+        <a href="{{ url_for('returns_list') }}"
+           class="btn btn-outline-light btn-sm d-flex align-items-center gap-1">
+          <i class="bi bi-card-checklist"></i>
+          <span>รายการใบคืนสินค้า</span>
+        </a>
+      </div>
+    </div>
+
+    {% if qu and qu.customer %}
+      <hr class="mt-3 mb-2">
+      <div class="d-flex flex-wrap align-items-center gap-3 small">
+        <div>
+          <span class="text-muted">ลูกค้า:</span>
+          <span class="fw-semibold">{{ qu.customer.name }}</span>
+        </div>
+        {% if qu.customer.phone %}
+          <div>
+            <i class="bi bi-telephone me-1"></i>{{ qu.customer.phone }}
+          </div>
+        {% endif %}
+        {% if qu.customer.address %}
+          <div class="text-truncate" style="max-width:420px;">
+            <i class="bi bi-geo-alt me-1"></i>{{ qu.customer.address }}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- FORM เลือกรายการคืน -->
+  <form method="post" class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">
+        รายการอุปกรณ์ในใบเสนอราคา
+      </div>
+      <div class="small text-muted">
+        ระบบจะอัปเดตสถานะอุปกรณ์เป็น “พร้อมให้เช่า” และบันทึก Log การคืนให้อัตโนมัติ
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:40px;" class="text-center">เลือก</th>
+            <th>รหัส / SKU</th>
+            <th>อุปกรณ์</th>
+            <th style="width:120px;" class="text-end">จำนวนเช่า</th>
+            <th style="width:140px;" class="text-end">จำนวนที่คืน</th>
+            <th style="width:200px;">หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows is defined and rows %}
+            {% for r in rows %}
+              {% set it = r.item %}
+              {% set eq = r.equipment %}
+              <tr>
+                <td class="text-center">
+                  <input type="checkbox"
+                         class="form-check-input"
+                         name="return_item_{{ it.id }}"
+                         value="1"
+                         checked>
+                </td>
+                <td>
+                  {{ (eq and (eq.sku or eq.code)) or '-' }}
+                </td>
+                <td>
+                  <div class="fw-semibold">
+                    {{ eq and eq.name or 'ไม่พบข้อมูลอุปกรณ์' }}
+                  </div>
+                  <div class="small text-muted">
+                    {% if it.remark %}{{ it.remark }}{% endif %}
+                  </div>
+                </td>
+                <td class="text-end">
+                  {{ it.qty or 0 }}
+                </td>
+                <td class="text-end">
+                  <input type="number"
+                         name="qty_{{ it.id }}"
+                         class="form-control form-control-sm text-end"
+                         min="0"
+                         max="{{ it.qty or 0 }}"
+                         step="1"
+                         value="{{ it.qty or 0 }}">
+                </td>
+                <td>
+                  <input type="text"
+                         name="item_note_{{ it.id }}"
+                         class="form-control form-control-sm"
+                         placeholder="หมายเหตุ (ถ้ามี)">
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                ไม่พบรายการอุปกรณ์ในใบเสนอราคานี้
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="p-3 border-top bg-white">
+      <label class="form-label small text-muted mb-1">หมายเหตุใบคืนสินค้า (ถ้ามี)</label>
+      <textarea name="remark" class="form-control form-control-sm"
+                rows="2"
+                placeholder="เช่น คืนอุปกรณ์หลังครบสัญญา มีรอยขีดข่วนเล็กน้อย ฯลฯ"></textarea>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center bg-white">
+      <div class="small text-muted">
+        * หากไม่ต้องการคืนบางรายการ ให้เอาติ๊กถูกหน้าแถวออก หรือปรับจำนวนคืนให้เป็น 0
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('returns_new') }}" class="btn btn-light">
+          ยกเลิก
+        </a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-circle me-1"></i>
+          บันทึกใบคืนสินค้า
+        </button>
+      </div>
+    </div>
+  </form>
+
+</div>
+{% endblock %}
