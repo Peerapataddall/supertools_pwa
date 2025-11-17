@@ -4671,44 +4671,7 @@ def seed_transport_perms():
 
 # ============================================================================
 
-# ==== seed default admin user ======================================
-def seed_default_admin():
-    from werkzeug.security import generate_password_hash
 
-    # ถ้ามี admin อยู่แล้วก็ไม่ต้องทำอะไร
-    admin = User.query.filter_by(username="admin").first()
-    if admin:
-        return
-
-    admin = User(username="admin", role="admin")
-
-    # ตั้งชื่อให้ ถ้าคลาส User มี field เหล่านี้
-    if hasattr(User, "full_name"):
-        admin.full_name = "ผู้ดูแลระบบ"
-    elif hasattr(User, "name"):
-        admin.name = "ผู้ดูแลระบบ"
-
-    if hasattr(User, "is_active"):
-        admin.is_active = True
-
-    # ตั้งรหัสผ่าน admin123
-    admin.password_hash = generate_password_hash("admin123")
-
-    db.session.add(admin)
-    db.session.commit()
-    print("[seed] created default admin user: admin / admin123")
-
-
-# ==== call transport seeding once at startup ================================
-try:
-    with app.app_context():
-        db.create_all()
-        print("[init] db.create_all completed")
-
-        seed_transport_perms()
-        seed_default_admin()
-except Exception as e:
-    print(f"[seed] startup tasks failed: {e}")
 
 # ================== DELIVERY / TRANSPORT BLUEPRINT (PLACEHOLDER) ==================
 
@@ -5495,6 +5458,57 @@ app.register_blueprint(bp_repairs)
 app.register_blueprint(bp_deliveries)
 print("REPAIRS ROUTES:",
       [r.rule for r in app.url_map.iter_rules() if "repairs" in r.rule])
+
+
+
+# ==== seed default admin user ======================================
+def seed_default_admin():
+    from werkzeug.security import generate_password_hash
+
+    # ถ้ามี admin อยู่แล้วก็ไม่ต้องทำอะไร
+    admin = User.query.filter_by(username="admin").first()
+    if admin:
+        print("[seed] admin already exists")
+        return
+
+    admin = User(username="admin", role="admin")
+
+    # ตั้งชื่อถ้ามี field
+    if hasattr(User, "full_name"):
+        admin.full_name = "ผู้ดูแลระบบ"
+    elif hasattr(User, "name"):
+        admin.name = "ผู้ดูแลระบบ"
+
+    if hasattr(User, "is_active"):
+        admin.is_active = True
+
+    admin.password_hash = generate_password_hash("admin123")
+
+    db.session.add(admin)
+    db.session.commit()
+    print("[seed] created default admin user: admin / admin123")
+
+
+# ==== run startup tasks (create tables + seed) =====================
+def run_startup_tasks():
+    from sqlalchemy.exc import OperationalError
+
+    with app.app_context():
+        try:
+            db.create_all()
+            print("[init] db.create_all completed")
+        except OperationalError as e:
+            print(f"[init] db.create_all failed: {e}")
+
+        try:
+            seed_transport_perms()
+            seed_default_admin()
+        except Exception as e:
+            print(f"[seed] startup tasks failed: {e}")
+
+
+# เรียกตอน import app ครั้งแรก (ทั้งตอน dev และบน Render)
+run_startup_tasks()
 
 
 
