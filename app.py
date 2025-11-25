@@ -950,6 +950,21 @@ def compute_promo_discount(items: List[Dict], rental_days: int | None, promo: Pr
     if not promo or not promo.is_in_effect(date.today()):
         return 0.0
 
+    # ---- ผูกโปรกับหน่วยเช่าให้ตรงกัน (รายวัน / รายเดือน / ปี) ----
+    promo_unit = (promo.rental_unit or "DAY").upper()
+    bill_units: set[str] = set()
+
+    for it in (items or []):
+        qty = int(it.get("qty", 0) or 0)
+        if qty <= 0:
+            continue
+        ru_item = (it.get("rent_unit") or "DAY").upper()
+        bill_units.add(ru_item)
+
+    # ถ้าบิลมีหน่วยเช่าจริง แต่ไม่มีหน่วยที่ตรงกับโปรเลย → ไม่ให้ใช้โปรนี้
+    if bill_units and promo_unit not in bill_units:
+        return 0.0
+
     # ------------- เตรียมข้อมูล -------------
     # แปลงราคา/วัน และจำนวนวันรวมจากรายการจริง
     normalized = []
@@ -1014,6 +1029,7 @@ def compute_promo_discount(items: List[Dict], rental_days: int | None, promo: Pr
         disc = float(promo.discount_value or 0)
 
     return max(0.0, min(disc, base_amount))
+
 
 
 
@@ -2548,29 +2564,98 @@ def _best_promo_today() -> list[Promotion]:
             .order_by(Promotion.id.desc())
             .all())
 
+def _choose_best_promo_for_items(items: list[dict], rental_days: int | None):
+    """
+    ประเมินทุกโปรที่ active วันนี้ แล้วเลือกตัวที่เหมาะสุด
+    เกณฑ์เรียง:
+      1) ส่วนลดบาทมากสุด
+      2) ถ้าส่วนลดเท่ากัน → min_items มากกว่า
+      3) ถ้าเท่ากันอีก → min_duration (แปลงเป็นวัน) มากกว่า
+      4) ถ้ายังเท่ากัน → id มากกว่า (อันใหม่กว่า)
+    """
+    promos = _best_promo_today()
+    best = None
+    best_disc = 0.0
+    best_key = None  # key เอาไว้เทียบ
+
+    for p in promos:
+        disc = float(compute_promo_discount(items, rental_days=rental_days, promo=p) or 0.0)
+        if disc <= 0:
+            continue  # โปรนี้ไม่เข้าเงื่อนไข
+
+        # แปลงเงื่อนไขวันขั้นต่ำของโปรเป็นจำนวนวันจริง
+        min_days_required = _unit_to_days(p.rental_unit or "DAY", p.min_duration or 0)
+
+        # key สำหรับจัดลำดับ
+        key = (
+            disc,
+            p.min_items or 0,
+            min_days_required,
+            p.id or 0,
+        )
+
+        if best is None or key > best_key:
+            best = p
+            best_disc = disc
+            best_key = key
+
+    return best, best_disc
+
+
 @app.post("/api/promos/evaluate")
 @permission_required("promos.view")
 def api_promos_evaluate():
-    """รับ items ปัจจุบันจากหน้าแบบฟอร์ม → ประเมินทุกโปรที่เปิดวันนี้ → เลือกที่ลดมากสุด"""
+    """รับ items ปัจจุบันจากหน้าแบบฟอร์ม → ประเมินทุกโปรที่เปิดวันนี้ → เลือกโปรที่ดีที่สุด"""
     data = request.get_json(force=True) or {}
     items = data.get("items") or []
     rental_days = data.get("rental_days")  # ส่งมาก็ได้ ไม่ส่งมาก็ให้ None
 
     promos = _best_promo_today()
-    best, best_disc = None, 0.0
+    best = None
+    best_disc = 0.0
+    best_key = None  # ใช้เก็บ key สำหรับเทียบว่าโปรไหน "ดีกว่า"
+
     for p in promos:
         disc = float(compute_promo_discount(items, rental_days=rental_days, promo=p) or 0.0)
-        if disc > best_disc:
-            best, best_disc = p, disc
+
+        # ถ้าส่วนลดไม่เข้าเงื่อนไข หรือได้ 0 ก็ข้ามโปรนี้ไปเลย
+        if disc <= 0:
+            continue
+
+        # แปลงเงื่อนไขวันขั้นต่ำของโปรเป็นจำนวนวันจริง ๆ เพื่อเอาไว้เทียบ
+        min_days_required = _unit_to_days(p.rental_unit or "DAY", p.min_duration or 0)
+
+        # key สำหรับจัดลำดับโปร:
+        #   1) ส่วนลดบาทมากสุด
+        #   2) ถ้าส่วนลดเท่ากัน → min_items มากกว่า
+        #   3) ถ้ายังเท่ากัน → min_days_required มากกว่า
+        #   4) ถ้ายังเท่ากัน → id ใหม่กว่า
+        key = (
+            disc,
+            p.min_items or 0,
+            min_days_required,
+            p.id or 0,
+        )
+
+        if best is None or key > best_key:
+            best = p
+            best_disc = disc
+            best_key = key
 
     if not best or best_disc <= 0:
-        return jsonify({"ok": True, "hasPromo": False, "message": "ไม่มีโปรโมชันที่เข้าเงื่อนไข"})
+        return jsonify({
+            "ok": True,
+            "hasPromo": False,
+            "message": "ไม่มีโปรโมชันที่เข้าเงื่อนไข"
+        })
 
     return jsonify({
-        "ok": True, "hasPromo": True,
+        "ok": True,
+        "hasPromo": True,
         "promo": {"id": best.id, "name": best.name},
-        "discount": round(best_disc, 2)
+        "discount": round(best_disc, 2),
     })
+
 
 
 def _apply_discount_as_negative_line(d: SalesDoc, amount: float, label: str):
@@ -2585,27 +2670,59 @@ def _apply_discount_as_negative_line(d: SalesDoc, amount: float, label: str):
     db.session.add(line)
     _calc_sales_totals(d)
 
+
 @app.post("/sales/quotes/<int:qid>/check_promo")
 @permission_required("sales.manage")
 def qu_check_promo(qid):
-    d = (SalesDoc.query
-         .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
-         .get_or_404(qid))
+    """เช็คและนำโปรโมชันที่ดีที่สุดมาใช้กับใบเสนอราคา qid"""
+    d = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
+        .get_or_404(qid)
+    )
 
     items = _items_from_doc(d)
+
     promos = _best_promo_today()
     if not promos:
         flash("ไม่พบโปรโมชันที่เปิดใช้งานวันนี้", "warning")
         return redirect(url_for("qu_view", qid=d.id))
 
-    # ประเมินทุกโปร เลือกที่ให้ส่วนลดมากที่สุด
+    # ประเมินทุกโปร เลือกโปร "ที่ดีที่สุด"
+    # เกณฑ์:
+    #   1) ส่วนลดบาทมากสุด
+    #   2) ถ้าส่วนลดเท่ากัน → min_items มากกว่า
+    #   3) ถ้ายังเท่ากัน → min_duration (แปลงเป็นวัน) มากกว่า
+    #   4) ถ้ายังเท่ากัน → id ใหม่กว่า (โปรใหม่กว่า)
     best = None
     best_disc = 0.0
+    best_key = None
+
     for p in promos:
-        disc = compute_promo_discount(items, rental_days=None, promo=p) or 0.0
-        if disc > best_disc:
-            best_disc = disc
+        disc = float(
+            compute_promo_discount(items, rental_days=None, promo=p) or 0.0
+        )
+        if disc <= 0:
+            # โปรนี้ไม่เข้าเงื่อนไข / ไม่มีส่วนลดจริง ข้าม
+            continue
+
+        # แปลงเงื่อนไขวันขั้นต่ำของโปรเป็นจำนวนวัน เพื่อใช้เทียบกัน
+        min_days_required = _unit_to_days(
+            p.rental_unit or "DAY",
+            p.min_duration or 0,
+        )
+
+        key = (
+            disc,
+            p.min_items or 0,
+            min_days_required,
+            p.id or 0,
+        )
+
+        if best is None or key > best_key:
             best = p
+            best_disc = disc
+            best_key = key
 
     if best and best_disc > 0:
         # ใส่ส่วนลดเป็นแถวลบ และเขียนบันทึกในหมายเหตุ
@@ -2613,11 +2730,16 @@ def qu_check_promo(qid):
         note = f"[AUTO PROMO] ใช้โปร '{best.name}' ลด {best_disc:,.2f} บาท"
         d.remark = (d.remark + "\n" + note).strip() if d.remark else note
         db.session.commit()
-        flash(f"นำส่วนลดจากโปร '{best.name}' มาใช้แล้ว ({best_disc:,.2f} บาท) และบันทึกข้อความในหมายเหตุ", "success")
+        flash(
+            f"นำส่วนลดจากโปร '{best.name}' มาใช้แล้ว ({best_disc:,.2f} บาท) "
+            f"และบันทึกข้อความในหมายเหตุ",
+            "success",
+        )
     else:
         flash("ไม่มีโปรโมชันที่เข้าเงื่อนไขสำหรับเอกสารนี้", "info")
 
     return redirect(url_for("qu_view", qid=d.id))
+
 
 
 # ---------- Sales: Quotes ----------
@@ -5577,18 +5699,21 @@ def seed_default_admin():
 
 # ==== run startup tasks (create tables + seed) =====================
 def run_startup_tasks():
+    """รันตอนแอปถูก import (เช่นบน Render) เพื่อสร้างตารางและ seed ข้อมูลพื้นฐาน"""
     from sqlalchemy.exc import OperationalError
 
     with app.app_context():
+        # สร้างตารางทั้งหมด
         try:
             db.create_all()
             print("[init] db.create_all completed")
         except OperationalError as e:
             print(f"[init] db.create_all failed: {e}")
 
+        # ใช้ bootstrap() ตัวเดียวกับที่ใช้เวลา run บนเครื่อง
         try:
-            seed_transport_perms()
-            seed_default_admin()
+            bootstrap()  # ภายในมีการสร้างสิทธิ์/ตำแหน่ง/บริษัท/admin ฯลฯ ให้ครบ
+            print("[seed] bootstrap completed")
         except Exception as e:
             print(f"[seed] startup tasks failed: {e}")
 

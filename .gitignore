@@ -16,3 +16,5 @@ migrations/versions/__pycache__/
 
 # IDE settings (เอาออกได้ถ้าอยากแชร์ .vscode)
 .vscode/
+
+static/uploads/
