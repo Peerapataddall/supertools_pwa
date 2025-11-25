@@ -13,28 +13,262 @@
 
   <!-- PWA -->
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-  <meta name="theme-color" content="#836953">
+  <meta name="theme-color" content="#123658">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
 
-  <!-- overrides เดิม -->
+  <!-- Global theme overrides (modern UI with new palette) -->
   <style>
-    :root { --brand:#836953; }
-    .brandbar{ background:var(--brand); min-height:64px; box-shadow:0 1px 0 rgba(0,0,0,.12); }
-    .navbar-floating{ position:sticky; top:0; z-index:1030; }
-    .brand-logo{ width:48px; height:48px; object-fit:cover; border-radius:12px; display:block; }
-    .brand-text{ font-weight:600; letter-spacing:.2px; }
-    .nav-link{ padding:.35rem .65rem; }
-    .nav-link.active, .nav-link:hover{ color:#fff !important; }
-    .user-pill{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.15); }
-    .avatar{ display:inline-grid; place-items:center; border-radius:999px; background:#fff; color:#333; }
+    :root{
+      /* พาเลตหลัก */
+      --brand-bg:#AFD5F0;      /* ฟ้าพื้นหลังที่นายเลือก */
+      --brand:#123658;         /* น้ำเงินเข้ม – ตัวหนังสือ/เมนูหลัก */
+      --brand-accent:#FF8A5C;  /* ส้ม – ปุ่ม/ไฮไลต์ */
+      --brand-soft:#d6ecff;    /* ฟ้าอ่อนใช้ทำการ์ด */
+      --shell-radius:1.5rem;
+    }
+
+    html,body{
+      height:100%;
+    }
+
+    body{
+      margin:0;
+      font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif;
+      color:#0f172a;
+      background:
+        radial-gradient(1200px 600px at -10% -20%, rgba(18,54,88,.30) 0%, rgba(18,54,88,0) 55%),
+        radial-gradient(900px 500px at 120% 120%, rgba(255,138,92,.25) 0%, rgba(255,138,92,0) 60%),
+        var(--brand-bg);
+    }
+
+    /* ===== Top brand bar ===== */
+    .brandbar{
+      background:
+        radial-gradient(900px 280px at 0% 0%, rgba(255,255,255,.96) 0%, rgba(255,255,255,.80) 40%, rgba(148,163,184,.35) 100%);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      min-height:64px;
+      border-bottom:1px solid rgba(148,163,184,.35);
+      box-shadow:0 18px 45px rgba(15,23,42,.18);
+      position:sticky;
+      top:0;
+      z-index:1030;
+    }
+
+    .brandbar .container-fluid{
+      max-width:1440px;
+    }
+
+    .brand-logo{
+      width:48px;
+      height:48px;
+      object-fit:cover;
+      border-radius:16px;
+      display:block;
+      box-shadow:0 6px 18px rgba(15,23,42,.25);
+    }
+
+    .brand-text{
+      font-weight:600;
+      letter-spacing:.2px;
+      font-size:1.1rem;
+      color:var(--brand) !important;
+    }
+
+    .user-pill{
+      background:rgba(15,23,42,.03);
+      border:1px solid rgba(148,163,184,.45);
+      border-radius:999px;
+      box-shadow:0 10px 30px rgba(15,23,42,.10);
+      transition:all .2s ease-out;
+    }
+
+    .user-pill:hover{
+      background:rgba(255,255,255,.85);
+      transform:translateY(-1px);
+      box-shadow:0 14px 40px rgba(15,23,42,.18);
+    }
+
+    .avatar{
+      display:inline-grid;
+      place-items:center;
+      border-radius:999px;
+      background:#fff;
+      color:#111827;
+      box-shadow:0 4px 14px rgba(15,23,42,.18);
+    }
+
     .avatar-sm{ width:28px; height:28px; font-size:.8rem; font-weight:700; }
     .avatar-md{ width:40px; height:40px; font-size:1rem; font-weight:700; }
     .avatar-initials{ line-height:1; }
-    .offcanvas.text-bg-dark{ background:#2a2a2a; }
-    .dropdown-menu{ --bs-dropdown-min-width:14rem; }
+
     .btn-link.nav-link{ text-decoration:none; }
     .disabled-link{ opacity:.55; pointer-events:none; }
+
+    .offcanvas.text-bg-dark{
+      background:
+        radial-gradient(circle at 0% 0%, #1f2a3b 0%, #020817 55%, #020817 100%);
+    }
+
+    .dropdown-menu{ --bs-dropdown-min-width:14rem; }
+
+    /* ===== Shell layout ===== */
+    .st-shell{
+      max-width:1440px;
+      margin:0 auto;
+      padding:1.25rem 1.25rem 1.75rem;
+      display:flex;
+      gap:1.25rem;
+      min-height:calc(100vh - 72px);
+    }
+
+    .st-sidebar{
+      width:260px;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(148,163,184,.40) 0%, transparent 40%),
+        linear-gradient(165deg,#020817,#071d34);
+      border-radius:var(--shell-radius);
+      padding:1.25rem 1rem;
+      color:#e5e7eb;
+      box-shadow:0 28px 70px rgba(15,23,42,.75);
+      position:sticky;
+      top:88px;
+      max-height:calc(100vh - 96px);
+      overflow:auto;
+    }
+
+    .st-sidebar-header{
+      padding:0 .6rem .25rem;
+    }
+
+    .st-sidebar-logo{
+      width:40px;
+      height:40px;
+      border-radius:14px;
+      object-fit:cover;
+      box-shadow:0 8px 22px rgba(15,23,42,.35);
+    }
+
+    .st-main-area{
+      flex:1 1 auto;
+      background:rgba(255,255,255,.94);
+      border-radius:var(--shell-radius);
+      box-shadow:0 24px 60px rgba(15,23,42,.16);
+      backdrop-filter:blur(16px);
+      -webkit-backdrop-filter:blur(16px);
+      overflow:hidden;
+    }
+
+    @media (max-width:991.98px){
+      .st-shell{
+        padding:1rem;
+      }
+      .st-main-area{
+        border-radius:1.25rem;
+      }
+    }
+
+    @media (max-width:767.98px){
+      .st-shell{
+        padding:0.75rem;
+      }
+    }
+
+    /* ===== Sidebar nav styling ===== */
+    .st-side-nav{ font-size:.9rem; }
+
+    .st-side-nav-section + .st-side-nav-section{
+      margin-top:0.35rem;
+    }
+
+    .st-side-nav-label{
+      font-size:.75rem;
+      text-transform:uppercase;
+      letter-spacing:.09em;
+      color:rgba(148,163,184,.85);
+      padding:.8rem .9rem .35rem;
+    }
+
+    .st-side-link{
+      display:flex;
+      align-items:center;
+      gap:.65rem;
+      padding:.42rem .9rem;
+      border-radius:.9rem;
+      color:#e5e7eb;
+      text-decoration:none;
+      position:relative;
+      overflow:hidden;
+      transition:all .18s ease-out;
+    }
+
+    .st-side-link i{
+      font-size:1rem;
+      flex-shrink:0;
+      opacity:.95;
+    }
+
+    .st-side-link span{
+      white-space:nowrap;
+      text-overflow:ellipsis;
+      overflow:hidden;
+    }
+
+    .st-side-link::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(120deg,rgba(148,163,184,.22),rgba(56,189,248,.20));
+      opacity:0;
+      transition:opacity .18s ease-out;
+      z-index:-1;
+    }
+
+    .st-side-link:hover{
+      transform:translateX(3px);
+      background:rgba(15,23,42,.55);
+    }
+
+    .st-side-link:hover::before{
+      opacity:1;
+    }
+
+    .st-side-link.is-active{
+      background:linear-gradient(135deg,#ffffff,#fef3e7);
+      color:#0f172a;
+      box-shadow:0 14px 40px rgba(15,23,42,.55);
+      transform:translateX(2px);
+    }
+
+    .st-side-link.is-active i{
+      color:var(--brand-accent);
+    }
+
+    .st-side-link.is-active::before{
+      opacity:0;
+    }
+
+    /* small pill for active section label */
+    .st-side-nav-label::after{
+      content:"";
+      display:inline-block;
+      width:32px;
+      height:1px;
+      margin-left:.4rem;
+      border-radius:999px;
+      background:linear-gradient(90deg,rgba(148,163,184,.7),rgba(148,163,184,0));
+    }
+
+    /* ===== Alerts inside main content ===== */
+    .st-main-area .alert{
+      border-radius:1rem;
+      box-shadow:0 10px 28px rgba(15,23,42,.08);
+    }
+
+    footer{
+      color:#6b7280;
+    }
   </style>
 
   {% block head %}{% endblock %}
@@ -42,7 +276,7 @@
 <body>
 
 {# ================= Top bar ================= #}
-<nav class="navbar navbar-dark brandbar {% if no_container %}navbar-floating{% endif %}">
+<nav class="navbar navbar-dark brandbar">
   <div class="container-fluid ps-2 pe-2">
 
     <!-- โลโก้ = ปุ่มเปิดเมนู (เฉพาะจอเล็ก) -->
@@ -57,7 +291,7 @@
     <a class="navbar-brand d-none d-md-flex align-items-center gap-2" href="/">
       <img src="{{ url_for('static', filename='images/logo-supertool.png') }}"
            alt="Supertools" class="brand-logo" />
-      <span class="brand-text text-white">Supertools</span>
+      <span class="brand-text">Supertools</span>
     </a>
 
     {% if current_user.is_authenticated %}
@@ -67,9 +301,9 @@
 
       <!-- User pill ขวา -->
       <div class="ms-auto d-none d-md-flex align-items-center gap-2">
-        <div class="user-pill d-flex align-items-center px-2 py-1 rounded-5">
+        <div class="user-pill d-flex align-items-center px-2 py-1">
           <div class="avatar avatar-sm me-2"><span class="avatar-initials">{{ initials }}</span></div>
-          <span class="user-name text-white-75 small">{{ display }}</span>
+          <span class="user-name text-secondary small">{{ display }}</span>
         </div>
         <form action="/auth/logout" method="post" class="m-0">
           <button class="btn btn-light btn-sm" type="submit">
@@ -90,7 +324,7 @@
     </h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="ปิด"></button>
   </div>
-    <div class="offcanvas-body d-flex flex-column">
+  <div class="offcanvas-body d-flex flex-column">
     {% if current_user.is_authenticated %}
       {% set display = (current_user.full_name or current_user.username or '').strip() %}
       {% set parts = display.split() %}
@@ -109,7 +343,7 @@
       <nav class="st-side-nav flex-grow-1">
         <ul class="list-unstyled mb-0">
 
-          {# Dashboard #}
+          {# 1) Dashboard #}
           {% if can('dashboard.view') or is_admin %}
           <li>
             <a href="{{ url_for('dashboard') }}" class="st-side-link {% if ep=='dashboard' %}is-active{% endif %}">
@@ -119,7 +353,54 @@
           </li>
           {% endif %}
 
-          {# เอกสารซื้อ #}
+          {# 2) อุปกรณ์ #}
+          {% if can('equipment.view') or is_admin %}
+          {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
+          {% set is_eq_new  = ep in ['equip_new'] %}
+          {% set is_cat     = ep in ['cat_list','cat_new'] %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">อุปกรณ์</div>
+            <ul class="list-unstyled mb-0">
+              <li>
+                <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
+                  <i class="bi bi-grid-3x3-gap"></i>
+                  <span>รายการอุปกรณ์</span>
+                </a>
+              </li>
+              {% if can('equipment.manage') or is_admin %}
+              <li>
+                <a href="{{ url_for('equip_new') }}" class="st-side-link {% if is_eq_new %}is-active{% endif %}">
+                  <i class="bi bi-plus-circle"></i>
+                  <span>เพิ่มอุปกรณ์</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
+                  <i class="bi bi-tags"></i>
+                  <span>หมวดหมู่ / Prefix SKU</span>
+                </a>
+              </li>
+              {% endif %}
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 3) ลูกค้า #}
+          {% if can('customers.view') or is_admin %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">ลูกค้า</div>
+            <ul class="list-unstyled mb-0">
+              <li>
+                <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
+                  <i class="bi bi-people"></i>
+                  <span>ลูกค้า</span>
+                </a>
+              </li>
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 4) เอกสารซื้อ #}
           {% if can('purchases.view') or is_admin %}
           {% set is_po  = ep in ['po_list','po_new','po_view'] %}
           {% set is_grn = ep in ['grn_list','grn_view'] %}
@@ -144,7 +425,7 @@
           </li>
           {% endif %}
 
-          {# เอกสารขาย #}
+          {# 5) เอกสารขาย #}
           {% if can('sales.view') or is_admin %}
           {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
           {% set is_bl = ep in ['bl_list','bl_view'] %}
@@ -196,53 +477,7 @@
           </li>
           {% endif %}
 
-          {# งานเคลม #}
-          {% if can('claims.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">งานเคลม</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
-                  <i class="bi bi-shield-exclamation"></i>
-                  <span>รายการใบเคลม</span>
-                </a>
-              </li>
-              {% if can('claims.manage') or is_admin %}
-              <li>
-                <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
-                  <i class="bi bi-plus-circle"></i>
-                  <span>สร้างใบเคลม</span>
-                </a>
-              </li>
-              {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# งานซ่อม #}
-          {% if can('repairs.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">งานซ่อม</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
-                  <i class="bi bi-tools"></i>
-                  <span>รายการงานซ่อม</span>
-                </a>
-              </li>
-              {% if can('spares.view') or is_admin %}
-              <li>
-                <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
-                  <i class="bi bi-nut"></i>
-                  <span>อะไหล่ / สต็อกซ่อม</span>
-                </a>
-              </li>
-              {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# งานขนส่ง #}
+          {# 6) งานขนส่ง #}
           {% if can('transport.access') or is_admin %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">งานขนส่ง</div>
@@ -277,31 +512,22 @@
           </li>
           {% endif %}
 
-          {# อุปกรณ์ #}
-          {% if can('equipment.view') or is_admin %}
-          {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
-          {% set is_eq_new  = ep in ['equip_new'] %}
-          {% set is_cat     = ep in ['cat_list','cat_new'] %}
+          {# 7) งานเคลม #}
+          {% if can('claims.view') or is_admin %}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">อุปกรณ์</div>
+            <div class="st-side-nav-label">งานเคลม</div>
             <ul class="list-unstyled mb-0">
               <li>
-                <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
-                  <i class="bi bi-grid-3x3-gap"></i>
-                  <span>รายการอุปกรณ์</span>
+                <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                  <i class="bi bi-shield-exclamation"></i>
+                  <span>รายการใบเคลม</span>
                 </a>
               </li>
-              {% if can('equipment.manage') or is_admin %}
+              {% if can('claims.manage') or is_admin %}
               <li>
-                <a href="{{ url_for('equip_new') }}" class="st-side-link {% if is_eq_new %}is-active{% endif %}">
+                <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
                   <i class="bi bi-plus-circle"></i>
-                  <span>เพิ่มอุปกรณ์</span>
-                </a>
-              </li>
-              <li>
-                <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
-                  <i class="bi bi-tags"></i>
-                  <span>หมวดหมู่ / Prefix SKU</span>
+                  <span>สร้างใบเคลม</span>
                 </a>
               </li>
               {% endif %}
@@ -309,7 +535,30 @@
           </li>
           {% endif %}
 
-          {# โปรโมชั่น #}
+          {# 8) งานซ่อม #}
+          {% if can('repairs.view') or is_admin %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">งานซ่อม</div>
+            <ul class="list-unstyled mb-0">
+              <li>
+                <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
+                  <i class="bi bi-tools"></i>
+                  <span>รายการงานซ่อม</span>
+                </a>
+              </li>
+              {% if can('spares.view') or is_admin %}
+              <li>
+                <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
+                  <i class="bi bi-nut"></i>
+                  <span>อะไหล่ / สต็อกซ่อม</span>
+                </a>
+              </li>
+              {% endif %}
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 9) โปรโมชั่น #}
           {% if can('promos.view') or is_admin %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">โปรโมชั่น</div>
@@ -332,7 +581,7 @@
           </li>
           {% endif %}
 
-          {# ของขวัญ #}
+          {# 10) ของขวัญ #}
           {% if can('gifts.view') or is_admin %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">ของขวัญ</div>
@@ -355,22 +604,7 @@
           </li>
           {% endif %}
 
-          {# ลูกค้า #}
-          {% if can('customers.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">ลูกค้า</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
-                  <i class="bi bi-people"></i>
-                  <span>ลูกค้า</span>
-                </a>
-              </li>
-            </ul>
-          </li>
-          {% endif %}
-
-          {# การตั้งค่า #}
+          {# 11) การตั้งค่า #}
           {% if can('users.manage') or is_admin or can('company.manage') %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">การตั้งค่า</div>
@@ -409,7 +643,6 @@
       <div class="text-white-50">โปรดเข้าสู่ระบบ</div>
     {% endif %}
   </div>
-
 </div>
 
 {# ========= Layout: sidebar + main ========= #}
@@ -434,6 +667,7 @@
     <nav class="st-side-nav flex-grow-1">
       <ul class="list-unstyled mb-0">
 
+        {# 1) Dashboard #}
         {% if can('dashboard.view') or is_admin %}
         <li>
           <a href="{{ url_for('dashboard') }}" class="st-side-link {% if ep=='dashboard' %}is-active{% endif %}">
@@ -443,6 +677,54 @@
         </li>
         {% endif %}
 
+        {# 2) อุปกรณ์ #}
+        {% if can('equipment.view') or is_admin %}
+        {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
+        {% set is_eq_new  = ep in ['equip_new'] %}
+        {% set is_cat     = ep in ['cat_list','cat_new'] %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">อุปกรณ์</div>
+          <ul class="list-unstyled mb-0">
+            <li>
+              <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
+                <i class="bi bi-grid-3x3-gap"></i>
+                <span>รายการอุปกรณ์</span>
+              </a>
+            </li>
+            {% if can('equipment.manage') or is_admin %}
+            <li>
+              <a href="{{ url_for('equip_new') }}" class="st-side-link {% if is_eq_new %}is-active{% endif %}">
+                <i class="bi bi-plus-circle"></i>
+                <span>เพิ่มอุปกรณ์</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
+                <i class="bi bi-tags"></i>
+                <span>หมวดหมู่ / Prefix SKU</span>
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 3) ลูกค้า #}
+        {% if can('customers.view') or is_admin %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">ลูกค้า</div>
+          <ul class="list-unstyled mb-0">
+            <li>
+              <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
+                <i class="bi bi-people"></i>
+                <span>ลูกค้า</span>
+              </a>
+            </li>
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 4) เอกสารซื้อ #}
         {% if can('purchases.view') or is_admin %}
         {% set is_po  = ep in ['po_list','po_new','po_view'] %}
         {% set is_grn = ep in ['grn_list','grn_view'] %}
@@ -467,6 +749,7 @@
         </li>
         {% endif %}
 
+        {# 5) เอกสารขาย #}
         {% if can('sales.view') or is_admin %}
         {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
         {% set is_bl = ep in ['bl_list','bl_view'] %}
@@ -518,50 +801,7 @@
         </li>
         {% endif %}
 
-        {% if can('claims.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">งานเคลม</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
-                <i class="bi bi-shield-exclamation"></i>
-                <span>รายการใบเคลม</span>
-              </a>
-            </li>
-            {% if can('claims.manage') or is_admin %}
-            <li>
-              <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
-                <i class="bi bi-plus-circle"></i>
-                <span>สร้างใบเคลม</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {% if can('repairs.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">งานซ่อม</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
-                <i class="bi bi-tools"></i>
-                <span>รายการงานซ่อม</span>
-              </a>
-            </li>
-            {% if can('spares.view') or is_admin %}
-            <li>
-              <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
-                <i class="bi bi-nut"></i>
-                <span>อะไหล่ / สต็อกซ่อม</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
+        {# 6) งานขนส่ง #}
         {% if can('transport.access') or is_admin %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">งานขนส่ง</div>
@@ -596,30 +836,22 @@
         </li>
         {% endif %}
 
-        {% if can('equipment.view') or is_admin %}
-        {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
-        {% set is_eq_new  = ep in ['equip_new'] %}
-        {% set is_cat     = ep in ['cat_list','cat_new'] %}
+        {# 7) งานเคลม #}
+        {% if can('claims.view') or is_admin %}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">อุปกรณ์</div>
+          <div class="st-side-nav-label">งานเคลม</div>
           <ul class="list-unstyled mb-0">
             <li>
-              <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
-                <i class="bi bi-grid-3x3-gap"></i>
-                <span>รายการอุปกรณ์</span>
+              <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                <i class="bi bi-shield-exclamation"></i>
+                <span>รายการใบเคลม</span>
               </a>
             </li>
-            {% if can('equipment.manage') or is_admin %}
+            {% if can('claims.manage') or is_admin %}
             <li>
-              <a href="{{ url_for('equip_new') }}" class="st-side-link {% if is_eq_new %}is-active{% endif %}">
+              <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
                 <i class="bi bi-plus-circle"></i>
-                <span>เพิ่มอุปกรณ์</span>
-              </a>
-            </li>
-            <li>
-              <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
-                <i class="bi bi-tags"></i>
-                <span>หมวดหมู่ / Prefix SKU</span>
+                <span>สร้างใบเคลม</span>
               </a>
             </li>
             {% endif %}
@@ -627,6 +859,30 @@
         </li>
         {% endif %}
 
+        {# 8) งานซ่อม #}
+        {% if can('repairs.view') or is_admin %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">งานซ่อม</div>
+          <ul class="list-unstyled mb-0">
+            <li>
+              <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
+                <i class="bi bi-tools"></i>
+                <span>รายการงานซ่อม</span>
+              </a>
+            </li>
+            {% if can('spares.view') or is_admin %}
+            <li>
+              <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
+                <i class="bi bi-nut"></i>
+                <span>อะไหล่ / สต็อกซ่อม</span>
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 9) โปรโมชั่น #}
         {% if can('promos.view') or is_admin %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">โปรโมชั่น</div>
@@ -649,6 +905,7 @@
         </li>
         {% endif %}
 
+        {# 10) ของขวัญ #}
         {% if can('gifts.view') or is_admin %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">ของขวัญ</div>
@@ -671,20 +928,7 @@
         </li>
         {% endif %}
 
-        {% if can('customers.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">ลูกค้า</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
-                <i class="bi bi-people"></i>
-                <span>ลูกค้า</span>
-              </a>
-            </li>
-          </ul>
-        </li>
-        {% endif %}
-
+        {# 11) การตั้งค่า #}
         {% if can('users.manage') or is_admin or can('company.manage') %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">การตั้งค่า</div>
@@ -724,7 +968,6 @@
         {% endif %}
       {% endwith %}
 
-      {# ===== ที่นี่คือ block เดียวในไฟล์นี้ ===== #}
       {% block content %}{% endblock %}
     </div>
   </main>

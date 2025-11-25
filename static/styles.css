@@ -71,56 +71,64 @@ footer{ position: relative; z-index: 1; }
   100%{ transform: rotate(0deg) translateY(0); }
 }
 
-/* ===== Brand Topbar (โลโก้พอดีขอบ) ===== */
+/* ===== Brand Topbar (โลโก้+ผู้ใช้ ให้เข้ากับธีมใหม่) ===== */
 .brandbar{
-  --bar-h: 64px;                      /* ความสูงบาร์มาตรฐาน */
-  background-color: #836953 !important;
+  --bar-h: 64px;
+  background:
+    radial-gradient(900px 280px at 0% 0%, rgba(255,255,255,.96) 0%, rgba(255,255,255,.80) 40%, rgba(148,163,184,.35) 100%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 18px 45px rgba(15,23,42,.18);
+  border-bottom: 1px solid rgba(148,163,184,.35);
 }
 @media (max-width: 576px){
-  .brandbar{ --bar-h: 54px; }         /* มือถือเตี้ยลงหน่อย */
+  .brandbar{ --bar-h: 54px; }
 }
 .brandbar.navbar{ min-height: var(--bar-h); }
 .brandbar .navbar-brand{
   height: var(--bar-h);
-  padding: 0;                         /* ตัด padding เองเพื่อคุมพอดี */
+  padding: 0;
   margin: 0;
-  display: flex; align-items: center;
+  display: flex;
+  align-items: center;
 }
 
-/* โลโก้ชิดซ้ายพอดีขอบบาร์ (กินขอบบน/ล่างเล็กน้อยให้ฟิต) */
+/* โลโก้บนบาร์ */
 .brand-logo{
-  height: calc(var(--bar-h) + 10px);  /* สูงกว่า bar นิด เพื่อให้แนบสนิท */
-  width: auto;
-  margin: -5px 10px -5px 0;           /* บีบขอบบน/ล่าง และชิดซ้าย */
-  border-radius: 10px;                 /* จะเอาเหลี่ยมสนิทก็เปลี่ยนเป็น 0 */
+  width: 48px;
+  height: 48px;
+  margin-right: 10px;
+  border-radius: 16px;
   object-fit: cover;
-  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  box-shadow: 0 6px 18px rgba(15,23,42,.25);
 }
 
-/* สีข้อความแบรนด์บนพื้นเข้ม */
+/* สีข้อความแบรนด์บนพื้นสว่าง */
 .brandbar .brand-text,
 .brandbar .navbar-brand,
 .brandbar .navbar-brand:hover,
 .brandbar .navbar-brand:focus{
-  color: #fff;
+  color: #123658;
 }
 
-/* ===== User pill & Avatar ===== */
+/* ===== User pill & Avatar (ให้ match กับ topbar ใหม่) ===== */
 .user-pill{
-  background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(15,23,42,.04);
+  border: 1px solid rgba(148,163,184,.45);
   border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(15,23,42,.10);
 }
 .avatar{
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
-  background: rgba(255,255,255,.2);
-  color: #fff;
+  background: #fff;
+  color: #111827;
   font-weight: 600;
   line-height: 1;
   user-select: none;
   overflow: hidden;
+  box-shadow: 0 4px 14px rgba(15,23,42,.18);
 }
 .avatar-sm{ width: 28px; height: 28px; font-size: 12px; }
 .avatar-md{ width: 40px; height: 40px; font-size: 16px; }
@@ -716,6 +724,8 @@ body .page-bg{ background:#f7faff; }
 
 /* =======================================
    Layout: Sidebar ซ้าย + Main Content
+   (เวอร์ชันเก่า – ตอนนี้ base.html มี layout ใหม่ครอบทับอยู่
+    แต่ยังเก็บไว้เพื่อกันหน้าเก่าที่อาจใช้)
    ======================================= */
 
 .st-shell{
@@ -736,7 +746,7 @@ body .page-bg{ background:#f7faff; }
   padding-top: 0.5rem;
 }
 
-/* Sidebar (แสดงบน md ขึ้นไปเท่านั้น – ที่ template ใช้ d-none d-md-flex แล้ว) */
+/* Sidebar */
 .st-sidebar{
   width: 240px;
   flex-shrink:0;
@@ -750,7 +760,7 @@ body .page-bg{ background:#f7faff; }
     0 0 0 1px rgba(148,163,184,.18);
   color:#e5e7eb;
   position: sticky;
-  top: 76px; /* ประมาณความสูง brandbar */
+  top: 76px;
   max-height: calc(100vh - 86px);
   overflow-y: auto;
 }
@@ -856,10 +866,10 @@ body .page-bg{ background:#f7faff; }
   }
 }
 
-/* ===== Layout: Sidebar + Main ===== */
+/* ===== Layout: Sidebar + Main (เวอร์ชันย่อ) ===== */
 .st-shell{
   display:flex;
-  min-height: calc(100vh - 64px); /* ต่ำกว่าแถบบน */
+  min-height: calc(100vh - 64px);
 }
 
 /* desktop sidebar */
@@ -931,4 +941,3 @@ body .page-bg{ background:#f7faff; }
 .offcanvas.text-bg-dark .st-side-nav-label{
   color:#9ca3af;
 }
-
