@@ -207,88 +207,143 @@
 
 {% block scripts %}
 <script>
-const tbody   = document.querySelector('#itemsTable tbody');
-const addRowBtn = document.getElementById('addRow');
+(function(){
+  const tbody         = document.querySelector('#itemsTable tbody');
+  if (!tbody) return;  // เผื่อหน้าไหนหลุดมาใช้ script นี้
 
-const vatRateInput = document.getElementById('vatRate');
-// sync กับ mobile field ถ้ามี
-const vatRateMobile = document.getElementById('vatRate_m');
-if (vatRateMobile){
-  vatRateMobile.addEventListener('input', ()=>{ vatRateInput.value = vatRateMobile.value; recalc(); });
-}
+  const addRowBtn     = document.getElementById('addRow');
+  const vatRateInput  = document.getElementById('vatRate');
+  const vatRateMobile = document.getElementById('vatRate_m');
+  const vatPercentText = document.getElementById('vatPercentText');
+  const radios        = document.querySelectorAll('input[name="tax_type"]');
 
-const vatPercentText = document.getElementById('vatPercentText');
-const radios = document.querySelectorAll('input[name="tax_type"]');
-
-function getVatRate(){
-  const v = parseFloat(vatRateInput.value || 0);
-  return isNaN(v) ? 0 : v;
-}
-function getTaxType(){
-  return document.querySelector('input[name="tax_type"]:checked').value; // inc | ex | none
-}
-
-function recalc(){
-  let sub=0, disc=0, tot=0;
-  tbody.querySelectorAll('tr').forEach(tr=>{
-    const qty  = parseFloat(tr.querySelector('[name="item_qty[]"]').value || 0);
-    const cost = parseFloat(tr.querySelector('[name="item_cost[]"]').value || 0);
-    const dpc  = parseFloat(tr.querySelector('[name="item_disc[]"]').value || 0);
-    const lsub = qty*cost;
-    const ldisc= lsub*(dpc/100);
-    const ltot = lsub-ldisc;
-    sub += lsub; disc += ldisc; tot += ltot;
-    tr.querySelector('.lineTotal').textContent = ltot.toFixed(2);
-  });
-
-  const vatRate = getVatRate();
-  const type = getTaxType();
-
-  let netEx = 0, vat = 0, grand = 0;
-
-  if(type === 'none'){
-    netEx = tot; vat = 0; grand = tot;
-  }else if(type === 'ex'){
-    netEx = tot; vat = netEx * (vatRate/100); grand = netEx + vat;
-  }else{ // inc
-    grand = tot; vat = grand * (vatRate / (100 + vatRate)); netEx = grand - vat;
+  function getVatRate(){
+    const v = parseFloat(vatRateInput && vatRateInput.value || 0);
+    return isNaN(v) ? 0 : v;
   }
 
-  document.getElementById('sumSub').textContent   = sub.toFixed(2);
-  document.getElementById('sumDisc').textContent  = disc.toFixed(2);
-  document.getElementById('sumNetEx').textContent = netEx.toFixed(2);
-  document.getElementById('sumVat').textContent   = vat.toFixed(2);
-  document.getElementById('sumGrand').textContent = grand.toFixed(2);
-  vatPercentText.textContent = (isNaN(vatRate)?0:vatRate).toString();
+  function getTaxType(){
+    const checked = document.querySelector('input[name="tax_type"]:checked');
+    return checked ? checked.value : 'inc';
+  }
 
-  document.getElementById('hidSub').value   = sub.toFixed(2);
-  document.getElementById('hidDisc').value  = disc.toFixed(2);
-  document.getElementById('hidNetEx').value = netEx.toFixed(2);
-  document.getElementById('hidVat').value   = vat.toFixed(2);
-  document.getElementById('hidGrand').value = grand.toFixed(2);
-}
+  function recalc(){
+    let sub = 0, disc = 0, tot = 0;
 
-function makeRow(){
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input class="form-control form-control-sm" name="item_sku[]" placeholder="SKU"></td>
-    <td><input class="form-control form-control-sm" name="item_name[]" placeholder="ชื่อรายการ" required></td>
-    <td><input class="form-control form-control-sm text-end" name="item_qty[]" type="number" step="0.01" value="1" oninput="recalc()"></td>
-    <td><input class="form-control form-control-sm" name="item_unit[]" value="ชิ้น"></td>
-    <td><input class="form-control form-control-sm text-end" name="item_cost[]" type="number" step="0.01" value="0" oninput="recalc()"></td>
-    <td><input class="form-control form-control-sm text-end" name="item_disc[]" type="number" step="0.01" value="0" oninput="recalc()"></td>
-    <td class="text-end lineTotal">0.00</td>
-    <td><button class="btn btn-sm btn-ghost" type="button" onclick="this.closest('tr').remove(); recalc();"><i class="bi bi-x-lg"></i></button></td>
-  `;
-  tbody.appendChild(tr);
-  recalc();
-}
+    tbody.querySelectorAll('tr').forEach(function(tr){
+      const qtyEl  = tr.querySelector('[name="item_qty[]"]');
+      const costEl = tr.querySelector('[name="item_cost[]"]');
+      const discEl = tr.querySelector('[name="item_disc[]"]');
 
-addRowBtn.addEventListener('click', makeRow);
-vatRateInput.addEventListener('input', recalc);
-radios.forEach(r => r.addEventListener('change', recalc));
+      const qty  = parseFloat(qtyEl  && qtyEl.value  || 0);
+      const cost = parseFloat(costEl && costEl.value || 0);
+      const dpc  = parseFloat(discEl && discEl.value || 0);
 
-makeRow(); // แถวแรก
+      const lsub  = qty * cost;
+      const ldisc = lsub * (dpc/100);
+      const ltot  = lsub - ldisc;
+
+      sub  += lsub;
+      disc += ldisc;
+      tot  += ltot;
+
+      const lineEl = tr.querySelector('.lineTotal');
+      if (lineEl) lineEl.textContent = ltot.toFixed(2);
+    });
+
+    const vatRate = getVatRate();
+    const type    = getTaxType();
+
+    let netEx = 0, vat = 0, grand = 0;
+
+    if (type === 'none'){
+      netEx = tot; vat = 0; grand = tot;
+    } else if (type === 'ex'){
+      netEx = tot; vat = netEx * (vatRate/100); grand = netEx + vat;
+    } else { // inc
+      grand = tot;
+      vat   = grand * (vatRate / (100 + vatRate));
+      netEx = grand - vat;
+    }
+
+    document.getElementById('sumSub').textContent   = sub.toFixed(2);
+    document.getElementById('sumDisc').textContent  = disc.toFixed(2);
+    document.getElementById('sumNetEx').textContent = netEx.toFixed(2);
+    document.getElementById('sumVat').textContent   = vat.toFixed(2);
+    document.getElementById('sumGrand').textContent = grand.toFixed(2);
+
+    vatPercentText.textContent = (isNaN(vatRate) ? 0 : vatRate).toString();
+
+    document.getElementById('hidSub').value   = sub.toFixed(2);
+    document.getElementById('hidDisc').value  = disc.toFixed(2);
+    document.getElementById('hidNetEx').value = netEx.toFixed(2);
+    document.getElementById('hidVat').value   = vat.toFixed(2);
+    document.getElementById('hidGrand').value = grand.toFixed(2);
+  }
+
+  function bindRowEvents(tr){
+    const qtyEl  = tr.querySelector('[name="item_qty[]"]');
+    const costEl = tr.querySelector('[name="item_cost[]"]');
+    const discEl = tr.querySelector('[name="item_disc[]"]');
+    [qtyEl, costEl, discEl].forEach(function(el){
+      if (el) el.addEventListener('input', recalc);
+    });
+
+    const delBtn = tr.querySelector('.js-remove-row');
+    if (delBtn){
+      delBtn.addEventListener('click', function(){
+        tr.remove();
+        recalc();
+      });
+    }
+  }
+
+  function makeRow(){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm" name="item_sku[]"  placeholder="SKU"></td>
+      <td><input class="form-control form-control-sm" name="item_name[]" placeholder="ชื่อรายการ" required></td>
+      <td><input class="form-control form-control-sm text-end" name="item_qty[]"  type="number" step="0.01" value="1"></td>
+      <td><input class="form-control form-control-sm" name="item_unit[]" value="ชิ้น"></td>
+      <td><input class="form-control form-control-sm text-end" name="item_cost[]" type="number" step="0.01" value="0"></td>
+      <td><input class="form-control form-control-sm text-end" name="item_disc[]" type="number" step="0.01" value="0"></td>
+      <td class="text-end lineTotal">0.00</td>
+      <td><button class="btn btn-sm btn-ghost js-remove-row" type="button"><i class="bi bi-x-lg"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+    bindRowEvents(tr);
+    recalc();
+  }
+
+  if (addRowBtn){
+    addRowBtn.addEventListener('click', makeRow);
+  }
+
+  if (vatRateInput){
+    vatRateInput.addEventListener('input', function(){
+      if (vatRateMobile){
+        vatRateMobile.value = this.value;
+      }
+      recalc();
+    });
+  }
+
+  if (vatRateMobile){
+    vatRateMobile.addEventListener('input', function(){
+      if (vatRateInput){
+        vatRateInput.value = this.value;
+      }
+      recalc();
+    });
+  }
+
+  radios.forEach(function(r){
+    r.addEventListener('change', recalc);
+  });
+
+  // สร้างแถวแรก
+  makeRow();
+})();
 </script>
 {% endblock %}
 {% endblock %}

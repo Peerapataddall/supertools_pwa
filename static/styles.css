@@ -941,3 +941,21 @@ body .page-bg{ background:#f7faff; }
 .offcanvas.text-bg-dark .st-side-nav-label{
   color:#9ca3af;
 }
+
+/* ===== Supertools: Modal override (ไม่ให้ฉากทึบ + modal อยู่บนสุด) ===== */
+
+/* ให้ตัว modal ลอยอยู่บนทุกอย่างแน่นอน */
+.modal{
+  z-index: 2000 !important;
+}
+
+/* ปิด backdrop ให้โปร่งใส + ไม่กินคลิกเลย */
+.modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: transparent !important;  /* ไม่มีสีทึบเลย */
+  opacity: 0 !important;               /* โปร่งใส 100% */
+  pointer-events: none !important;     /* ไม่บังคลิก / พิมพ์ */
+  z-index: 0 !important;               /* ดันไปหลังสุด */
+}
+
