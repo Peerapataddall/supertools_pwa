@@ -35,13 +35,24 @@ from flask import current_app
 
 # ================== App & DB ==================
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "change-me"                       # <- เปลี่ยนค่าในงานจริง
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///supertools.db"
+
+# อ่าน SECRET_KEY จาก env ถ้ามี ถ้าไม่มีใช้ค่าเดิม
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me")
+
+# เลือก DB จาก DATABASE_URL ถ้ามี ไม่งั้นใช้ sqlite เดิม
+db_url = os.getenv("DATABASE_URL", "sqlite:///supertools.db")
+
+# บางผู้ให้บริการให้ prefix postgres:// ต้องแปลงเป็น postgresql+psycopg2://
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB เผื่อไฟล์ใหญ่กว่าค่าโลโก้ที่ตั้งไว้
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
 
 
 
