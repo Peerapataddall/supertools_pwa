@@ -292,9 +292,30 @@
         {% for it in d.items or [] %}
         <tr>
           <td class="photo">
-            {% set url = img_map.get(it.id) if img_map else None %}
-            {% if url %}
-              <div class="thumb"><img src="{{ url }}" alt=""></div>
+            {# 1) ใช้ url จาก img_map ก่อน 2) ถ้าไม่มี ใช้ image_path จาก item/equipment #}
+            {% set raw_img = it.image_path or (it.equipment and it.equipment.image_path) %}
+            {% set mapped = img_map.get(it.id) if img_map else None %}
+
+            {% if mapped %}
+              {% set img_url = mapped %}
+            {% elif raw_img %}
+              {% if '://' in raw_img or raw_img[:5] == 'data:' %}
+                {# เป็น URL เต็มหรือ data URL #}
+                {% set img_url = raw_img %}
+              {% else %}
+                {# เป็น path ใน static ให้แปลงเป็น url_for('static', ...) #}
+                {% set _rel = raw_img.lstrip('/') %}
+                {% if _rel.startswith('static/') %}
+                  {% set _rel = _rel[7:] %}
+                {% endif %}
+                {% set img_url = url_for('static', filename=_rel) %}
+              {% endif %}
+            {% else %}
+              {% set img_url = None %}
+            {% endif %}
+
+            {% if img_url %}
+              <div class="thumb"><img src="{{ img_url }}" alt=""></div>
             {% endif %}
           </td>
           <td class="name">{{ it.name }}</td>

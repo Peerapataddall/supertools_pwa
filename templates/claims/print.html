@@ -7,7 +7,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     @page { size: A4; margin: 12mm; }
-    html,body{ background:#fff; color:#000; font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif; }
+    html,body{
+      background:#fff; color:#000;
+      font-family:"Prompt",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai","Noto Sans",sans-serif;
+    }
     body{ font-size:12.2px; }
     .doc{ width:100%; }
 
@@ -43,18 +46,33 @@
       background-position:center;
       background-size:cover;
     }
-    .comp-name{ font-size:15px; font-weight:700; line-height:1.15; margin:0 0 2px 0; }
+    .comp-name{
+      font-size:15px;
+      font-weight:700;
+      line-height:1.15;
+      margin:0 0 2px 0;
+    }
     .comp-lines .line{ line-height:1.25; }
     .head-right{ min-width:260px; }
-    .doc-title{ font-size:18px; font-weight:700; line-height:1.2; margin:0 0 4px 0; }
+    .doc-title{
+      font-size:18px;
+      font-weight:700;
+      line-height:1.2;
+      margin:0 0 4px 0;
+    }
     .chip{
-      display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px;
-      border:1px solid #d0e7ff; background:#eef7ff; color:#1a6eea; font-size:11px; margin-left:6px;
+      display:inline-flex; align-items:center; gap:6px;
+      padding:2px 8px; border-radius:999px;
+      border:1px solid #d0e7ff;
+      background:#eef7ff; color:#1a6eea;
+      font-size:11px; margin-left:6px;
     }
 
     .box{
-      border:1px solid #e6e9ef; border-radius:10px;
-      padding:10px 12px; margin:10px 0 12px;
+      border:1px solid #e6e9ef;
+      border-radius:10px;
+      padding:10px 12px;
+      margin:10px 0 12px;
       page-break-inside:avoid;
     }
     table{ width:100%; border-collapse:collapse; }
@@ -141,7 +159,7 @@
   {% if comp and comp.logo_path %}
     {% set logo_url = url_for('static', filename=comp.logo_path) %}
   {% else %}
-    {# โลโก้ default ที่อยู่ใน static/images/logo-supertool.png #}
+    {# โลโก้ default #}
     {% set logo_url = url_for('static', filename='images/logo-supertool.png') %}
   {% endif %}
   {% set addr_parts = [ comp and comp.address or '', comp and comp.district or '', comp and comp.amphoe or '', comp and comp.province or '', comp and comp.postcode or '' ] %}
@@ -177,9 +195,9 @@
       {% set _ = dn_list.append(c.delivery_doc.number) %}
     {% endif %}
     {% if c.delivery_docs %}
-      {% for d in c.delivery_docs %}
-        {% if d and d.number %}
-          {% set _ = dn_list.append(d.number) %}
+      {% for ddoc in c.delivery_docs %}
+        {% if ddoc and ddoc.number %}
+          {% set _ = dn_list.append(ddoc.number) %}
         {% endif %}
       {% endfor %}
     {% endif %}
@@ -209,7 +227,6 @@
           <div class="small muted">
             เลขที่ใบส่งสินค้า: {{ dn_list|unique|join(', ') or '-' }}
           </div>
-          {# ลบหมายเหตุออกตามที่ขอ #}
         </div>
       </div>
     </div>
@@ -225,12 +242,50 @@
         </tr>
       </thead>
       <tbody>
-        {% for it in c.items %}
-          {% set left_url  = img_left  and img_left.get(it.id) %}
-          {% set right_url = img_right and img_right.get(it.id) %}
+        {% for it in c.items or [] %}
 
-          {% set item_sku   = (it.sales_item and it.sales_item.sku) or (it.equipment and it.equipment.sku) %}
-          {% set item_name  = (it.sales_item and it.sales_item.name) or (it.equipment and it.equipment.name) or it.name or '-' %}
+          {# เตรียมข้อมูลรูปฝั่งซ้าย (อุปกรณ์ที่เคลม) #}
+          {% set left_raw =
+                (it.sales_item and it.sales_item.image_path) or
+                (it.equipment  and it.equipment.image_path) %}
+          {% set left_from_map = img_left and img_left.get(it.id) %}
+          {% if left_from_map %}
+            {% set left_url = left_from_map %}
+          {% elif left_raw %}
+            {% if '://' in left_raw or left_raw[:5] == 'data:' %}
+              {% set left_url = left_raw %}
+            {% else %}
+              {% set _l = left_raw.lstrip('/') %}
+              {% if _l.startswith('static/') %}
+                {% set _l = _l[7:] %}
+              {% endif %}
+              {% set left_url = url_for('static', filename=_l) %}
+            {% endif %}
+          {% else %}
+            {% set left_url = None %}
+          {% endif %}
+
+          {# เตรียมข้อมูลรูปฝั่งขวา (อุปกรณ์ทดแทน) #}
+          {% set right_raw = it.replacement_equipment and it.replacement_equipment.image_path %}
+          {% set right_from_map = img_right and img_right.get(it.id) %}
+          {% if right_from_map %}
+            {% set right_url = right_from_map %}
+          {% elif right_raw %}
+            {% if '://' in right_raw or right_raw[:5] == 'data:' %}
+              {% set right_url = right_raw %}
+            {% else %}
+              {% set _r = right_raw.lstrip('/') %}
+              {% if _r.startswith('static/') %}
+                {% set _r = _r[7:] %}
+              {% endif %}
+              {% set right_url = url_for('static', filename=_r) %}
+            {% endif %}
+          {% else %}
+            {% set right_url = None %}
+          {% endif %}
+
+          {% set item_sku  = (it.sales_item and it.sales_item.sku) or (it.equipment and it.equipment.sku) %}
+          {% set item_name = (it.sales_item and it.sales_item.name) or (it.equipment and it.equipment.name) or it.name or '-' %}
 
           <tr>
             <td class="photo">
@@ -243,7 +298,9 @@
             <td class="name">
               {% if item_sku %}[{{ item_sku }}] {% endif %}{{ item_name }}
             </td>
-            <td class="qty text-right">{{ '%.2f'|format((it.qty_claim or 0) * 1.0) }}</td>
+            <td class="qty text-right">
+              {{ '%.2f'|format((it.qty_claim or 0) * 1.0) }}
+            </td>
             <td class="repl">
               {% if right_url %}
                 <span class="thumb"><img src="{{ right_url }}" alt=""></span>
