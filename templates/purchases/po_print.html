@@ -86,7 +86,12 @@
 
   {# ===== Data binding ===== #}
   {% set c = company %}
-  {% set logo_url = (c and c.logo_path) and url_for('static', filename=c.logo_path) or url_for('static', filename='im/logo-print.png') %}
+  {% if c and c.logo_path %}
+    {% set logo_url = url_for('static', filename=c.logo_path) %}
+  {% else %}
+    {# โลโก้ default ที่อยู่ใน static/images/logo-supertool.png #}
+    {% set logo_url = url_for('static', filename='images/logo-supertool.png') %}
+  {% endif %}
   {% set addr_parts = [ c and c.address or '', c and c.district or '', c and c.amphoe or '', c and c.province or '', c and c.postcode or '' ] %}
   {% set addr_join = addr_parts|select|join(' ') %}
   {% set STATUS_TH = {'DRAFT':'ฉบับร่าง', 'APPROVED':'อนุมัติ', 'ORDERED':'สั่งซื้อแล้ว'} %}
@@ -171,25 +176,51 @@
     <div class="totals">
       <div class="spacer"></div>
       <div class="panel">
-        <div class="row-sum"><div>มูลค่าก่อนส่วนลด</div><div class="text-right">{{ '{:,.2f}'.format(po.amount_subtotal or 0) }}</div></div>
-        <div class="row-sum"><div>ส่วนลดรวม</div><div class="text-right">{{ '{:,.2f}'.format(po.amount_discount or 0) }}</div></div>
-        <div class="row-sum"><div>ฐานภาษี (หลังหักส่วนลด)</div><div class="text-right">{{ '{:,.2f}'.format(base) }}</div></div>
-        <div class="row-sum"><div>ภาษีมูลค่าเพิ่ม 7%</div><div class="text-right">{{ '{:,.2f}'.format(vat) }}</div></div>
-        <div class="row-sum total"><div>รวมทั้งสิ้น</div><div class="text-right">{{ '{:,.2f}'.format(grand) }}</div></div>
+        <div class="row-sum">
+          <div>มูลค่าก่อนส่วนลด</div>
+          <div class="text-right">{{ '{:,.2f}'.format(po.amount_subtotal or 0) }}</div>
+        </div>
+        <div class="row-sum">
+          <div>ส่วนลดรวม</div>
+          <div class="text-right">{{ '{:,.2f}'.format(po.amount_discount or 0) }}</div>
+        </div>
+        <div class="row-sum">
+          <div>ฐานภาษี (หลังหักส่วนลด)</div>
+          <div class="text-right">{{ '{:,.2f}'.format(base) }}</div>
+        </div>
+        <div class="row-sum">
+          <div>ภาษีมูลค่าเพิ่ม 7%</div>
+          <div class="text-right">{{ '{:,.2f}'.format(vat) }}</div>
+        </div>
+        <div class="row-sum total">
+          <div>รวมทั้งสิ้น</div>
+          <div class="text-right">{{ '{:,.2f}'.format(grand) }}</div>
+        </div>
         <div class="small muted">* คิด VAT จากฐานภาษี (ราคายังไม่รวม VAT)</div>
       </div>
     </div>
 
     <!-- SIGNATURES -->
     <div class="sign">
-      <div class="cell"><div class="sig-line">ผู้อนุมัติ</div><div class="small muted">วันที่........../........../..........</div></div>
-      <div class="cell"><div class="sig-line">ผู้จัดทำ</div><div class="small muted">วันที่........../........../..........</div></div>
-      <div class="cell"><div class="sig-line">ผู้รับสินค้า</div><div class="small muted">วันที่........../........../..........</div></div>
+      <div class="cell">
+        <div class="sig-line">ผู้อนุมัติ</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+      <div class="cell">
+        <div class="sig-line">ผู้จัดทำ</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
+      <div class="cell">
+        <div class="sig-line">ผู้รับสินค้า</div>
+        <div class="small muted">วันที่........../........../..........</div>
+      </div>
     </div>
   </div>
 
   <script>
-    window.addEventListener('load', () => { setTimeout(() => window.print(), 200); });
+    window.addEventListener('load', () => {
+      setTimeout(() => window.print(), 200);
+    });
   </script>
 </body>
 </html>
