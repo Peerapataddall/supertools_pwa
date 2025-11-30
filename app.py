@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta , time 
 from functools import wraps
+from sqlite3 import Connection as SQLite3Connection
+
 import os  # ← ใช้สำหรับอัปโหลดโลโก้
 from typing import List, Dict, Optional
 from flask import Flask, render_template, redirect, url_for, request, flash, abort, jsonify, Blueprint,render_template_string
@@ -30,6 +32,7 @@ from sqlalchemy import text
 import types
 from enum import Enum
 from flask import current_app
+
 
 
 
@@ -1545,9 +1548,12 @@ def _next_return_number_by_date_with_prefix(prefix: str = "RT",
 # ================== SQLite PRAGMA ==================
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_conn, conn_record):
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+    """Enable foreign key constraint only when using SQLite."""
+    # ถ้าเป็น SQLite เท่านั้นค่อยสั่ง PRAGMA
+    if isinstance(dbapi_conn, SQLite3Connection):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # ================== Routes ==================
 @app.route("/")
