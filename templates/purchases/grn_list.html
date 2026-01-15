@@ -51,10 +51,30 @@
       </div>
     </div>
 
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex flex-wrap align-items-end justify-content-end gap-2">
+      <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+        <div style="min-width:240px; max-width:340px;">
+          <label class="form-label mb-0 small text-muted">ค้นหา</label>
+          <input type="text" name="q" class="form-control form-control-sm" placeholder="เลขที่ GRN / ผู้ขาย / เลขที่ PO" value="{{ q or request.args.get('q','') }}">
+        </div>
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">เริ่ม</label>
+          <input type="date" name="start" class="form-control form-control-sm" value="{{ start or request.args.get('start','') }}">
+        </div>
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">สิ้นสุด</label>
+          <input type="date" name="end" class="form-control form-control-sm" value="{{ end or request.args.get('end','') }}">
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" type="submit" title="กรอง"><i class="bi bi-funnel"></i></button>
+      </form>
+
       <a href="{{ url_for('po_list') }}" class="btn btn-ghost">
         <i class="bi bi-receipt-cutoff me-1"></i> ไปยังใบสั่งซื้อ (PO)
       </a>
+      <a href="{{ url_for('export_grn_excel', q=(q or request.args.get('q','')), start=(start or request.args.get('start','')), end=(end or request.args.get('end',''))) }}" class="btn btn-outline-dark btn-sm">
+        <i class="bi bi-filetype-xlsx me-1"></i> Export Excel
+      </a>
+
     </div>
   </div>
 </div>

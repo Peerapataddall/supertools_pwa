@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}สัญญา {{ ct.number }}{% endblock %}
+
+{% block head %}
+<style>
+  .ctv-hero{
+    border-radius:1.25rem;
+    border:1px solid rgba(15,23,42,.10);
+    background: radial-gradient(900px 450px at 0% 0%, rgba(59,130,246,.12) 0%, rgba(59,130,246,0) 60%),
+                linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow:0 22px 45px rgba(2,6,23,.08);
+    padding:1rem 1.2rem;
+    margin-bottom:1rem;
+  }
+  .ctv-title{display:flex; align-items:center; gap:.65rem; font-weight:900; letter-spacing:.2px;}
+  .ctv-title i{background:#0f172a; color:#fff; width:42px;height:42px;border-radius:14px; display:grid; place-items:center; box-shadow:0 10px 25px rgba(2,6,23,.18);}
+  .ctv-chip{
+    display:inline-flex; align-items:center; gap:.35rem;
+    padding:.25rem .65rem; border-radius:999px; font-size:.78rem; font-weight:800;
+    border:1px solid rgba(15,23,42,.12);
+    background:#f8fafc;
+  }
+  .ctv-chip-ok{ background:#ecfeff; color:#155e75; border-color:#a5f3fc; }
+  .ctv-chip-warn{ background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+  .ctv-card{
+    border:1px solid rgba(15,23,42,.10);
+    border-radius:1.25rem;
+    box-shadow:0 20px 40px rgba(2,6,23,.08);
+    overflow:hidden;
+  }
+  .ctv-table th{font-size:.82rem; color:#475569; background:#f8fafc;}
+  .ctv-muted{color:#64748b;}
+  .ctv-actions .btn{border-radius:.9rem;}
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="ctv-hero">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+      <div>
+        <div class="ctv-title">
+          <i class="bi bi-journal-bookmark"></i>
+          <div>
+            <div style="font-size:1.2rem;">สัญญา {{ ct.number }}</div>
+            <div class="ctv-muted" style="font-weight:700;">ลูกค้า: {{ ct.customer.name if ct.customer else '-' }} · โครงการ: {{ ct.project_name or '-' }}</div>
+          </div>
+        </div>
+
+        <div class="mt-2 d-flex flex-wrap gap-2">
+          <span class="ctv-chip ctv-chip-ok"><i class="bi bi-calendar3"></i> {{ ct.contract_start or ct.date }} – {{ ct.contract_end or '-' }}</span>
+          <span class="ctv-chip"><i class="bi bi-list-ol"></i> งวด {{ summary.total }}</span>
+          <span class="ctv-chip ctv-chip-ok"><i class="bi bi-check2-circle"></i> รับชำระแล้ว {{ summary.receipted }}/{{ summary.total }}</span>
+          <span class="ctv-chip ctv-chip-warn"><i class="bi bi-receipt"></i> ออกเอกสารแล้ว {{ summary.invoiced }}/{{ summary.total }}</span>
+        </div>
+      </div>
+
+      <div class="ctv-actions d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="{{ url_for('contract_list') }}"><i class="bi bi-arrow-left"></i> กลับ</a>
+        <a class="btn btn-success" href="{{ url_for('contract_export_xlsx', cid=ct.id) }}"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctv-card bg-white">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 ctv-table">
+        <thead>
+          <tr>
+            <th style="width:70px;">งวด</th>
+            <th style="width:190px;">ช่วงบริการ</th>
+            <th style="width:150px;">วันวางบิล / ครบกำหนด</th>
+            <th style="width:120px;">สถานะ</th>
+            <th style="width:170px;">เอกสาร</th>
+            <th style="width:240px;">PO ย่อย</th>
+            <th style="width:180px;" class="text-end">ยอดสุทธิ</th>
+            <th style="width:210px;" class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in insts %}
+            <tr>
+              <td class="fw-bold">{{ it.installment_no }}</td>
+              <td class="small">
+                <div><i class="bi bi-calendar2-range me-1"></i>{{ it.period_start }} – {{ it.period_end }}</div>
+                <div class="ctv-muted">บริการรายเดือน</div>
+              </td>
+              <td class="small">
+                <div><span class="ctv-muted">วางบิล:</span> {{ it.bill_date }}</div>
+                <div><span class="ctv-muted">ครบกำหนด:</span> {{ it.due_date }}</div>
+              </td>
+              <td>
+                {% set st = (it.status or '').upper() %}
+                {% if st == 'RECEIPTED' %}
+                  <span class="ctv-chip ctv-chip-ok"><i class="bi bi-check2-circle"></i> RECEIPTED</span>
+                {% elif st in ['INVOICED'] %}
+                  <span class="ctv-chip ctv-chip-warn"><i class="bi bi-receipt"></i> INVOICED</span>
+                {% else %}
+                  <span class="ctv-chip"><i class="bi bi-hourglass-split"></i> {{ st or 'PLANNED' }}</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                <div class="d-flex flex-wrap gap-1">
+                  {% if it.bill %}
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('bl_view', did=it.bill.id) }}" title="BL"><i class="bi bi-file-earmark-text"></i> BL</a>
+                  {% else %}
+                    <span class="text-muted">BL -</span>
+                  {% endif %}
+                  {% if it.invoice %}
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('iv_view', did=it.invoice.id) }}" title="IV"><i class="bi bi-file-earmark-text"></i> IV</a>
+                  {% else %}
+                    <span class="text-muted">IV -</span>
+                  {% endif %}
+                  {% if it.receipt %}
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('rc_view', did=it.receipt.id) }}" title="RC"><i class="bi bi-file-earmark-text"></i> RC</a>
+                  {% else %}
+                    <span class="text-muted">RC -</span>
+                  {% endif %}
+                </div>
+              </td>
+
+              <td>
+                <form method="post" action="{{ url_for('contract_installment_set_po', cid=ct.id, iid=it.id) }}" class="d-flex gap-2">
+                  <input type="text" class="form-control form-control-sm" name="po_customer_sub" value="{{ it.po_customer_sub or '' }}" placeholder="เลขที่ PO ย่อย...">
+                  <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-save"></i></button>
+                </form>
+              </td>
+
+              <td class="text-end fw-bold">{{ '%.2f'|format(it.amount_grand or 0) }}</td>
+
+              <td class="text-end">
+                {% if not it.bill_id and not it.invoice_id and not it.receipt_id %}
+                  <form method="post" action="{{ url_for('contract_installment_create_docs', cid=ct.id, iid=it.id) }}" class="d-inline">
+                    <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-plus-circle"></i> สร้างเอกสาร</button>
+                  </form>
+                {% else %}
+                  {% if (it.status or '').upper() != 'RECEIPTED' %}
+                    <form method="post" action="{{ url_for('contract_installment_mark_paid', cid=ct.id, iid=it.id) }}" class="d-inline">
+                      <button class="btn btn-sm btn-success" type="submit"><i class="bi bi-check2-circle"></i> ทำเครื่องหมายชำระแล้ว</button>
+                    </form>
+                  {% else %}
+                    <span class="text-success fw-bold"><i class="bi bi-check2-circle"></i> ชำระแล้ว</span>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">ยังไม่มีตารางงวด</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% endblock %}

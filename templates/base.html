@@ -428,9 +428,11 @@
           {# 5) เอกสารขาย #}
           {% if can('sales.view') or is_admin %}
           {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
+          {% set is_bk = ep in ['bk_list','bk_view'] %}
           {% set is_bl = ep in ['bl_list','bl_view'] %}
           {% set is_iv = ep in ['iv_list','iv_view'] %}
           {% set is_rc = ep in ['rc_list','rc_view'] %}
+          {% set is_ct = ep in ['contract_list','contract_view'] %}
           {% set is_returns = ep in ['returns_list','returns_view','returns_new'] %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">เอกสารขาย</div>
@@ -449,6 +451,13 @@
                 </a>
               </li>
               {% endif %}
+              {# เมนูใหม่: ใบจอง #}
+              <li>
+                <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
+                  <i class="bi bi-calendar-check"></i>
+                  <span>ใบจอง</span>
+                </a>
+              </li>
               <li>
                 <a href="{{ url_for('bl_list') }}" class="st-side-link {% if is_bl %}is-active{% endif %}">
                   <i class="bi bi-receipt"></i>
@@ -467,6 +476,13 @@
                   <span>ใบเสร็จรับเงิน</span>
                 </a>
               </li>
+              <li>
+                <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
+                  <i class="bi bi-journal-bookmark"></i>
+                  <span>สัญญา/PO ใหญ่ (รายงวด)</span>
+                </a>
+              </li>
+
               <li>
                 <a href="{{ url_for('returns_list') }}" class="st-side-link {% if is_returns %}is-active{% endif %}">
                   <i class="bi bi-box-arrow-in-down-left"></i>
@@ -752,9 +768,11 @@
         {# 5) เอกสารขาย #}
         {% if can('sales.view') or is_admin %}
         {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
+        {% set is_bk = ep in ['bk_list','bk_view'] %}
         {% set is_bl = ep in ['bl_list','bl_view'] %}
         {% set is_iv = ep in ['iv_list','iv_view'] %}
         {% set is_rc = ep in ['rc_list','rc_view'] %}
+        {% set is_ct = ep in ['contract_list','contract_view'] %}
         {% set is_returns = ep in ['returns_list','returns_view','returns_new'] %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">เอกสารขาย</div>
@@ -773,6 +791,13 @@
               </a>
             </li>
             {% endif %}
+            {# เมนูใหม่: ใบจอง #}
+            <li>
+              <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
+                <i class="bi bi-calendar-check"></i>
+                <span>ใบจอง</span>
+              </a>
+            </li>
             <li>
               <a href="{{ url_for('bl_list') }}" class="st-side-link {% if is_bl %}is-active{% endif %}">
                 <i class="bi bi-receipt"></i>
@@ -789,6 +814,13 @@
               <a href="{{ url_for('rc_list') }}" class="st-side-link {% if is_rc %}is-active{% endif %}">
                 <i class="bi bi-receipt-cutoff"></i>
                 <span>ใบเสร็จรับเงิน</span>
+              </a>
+            </li>
+
+            <li>
+              <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
+                <i class="bi bi-journal-bookmark"></i>
+                <span>สัญญา/PO ใหญ่ (รายงวด)</span>
               </a>
             </li>
             <li>

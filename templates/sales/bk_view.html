@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}ใบจอง {{ d.number if d is defined else '' }}{% endblock %}
+
+{% block content %}
+{% set d = d|default(doc, true) %}
+
+<div class="container-xxl py-3">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-journal-text text-primary fs-4"></i>
+      <div>
+        <h1 class="h5 m-0">ใบจอง (BK) {{ d.number or '' }}</h1>
+        <div class="text-muted small">
+          ลูกค้า: {{ d.customer.name if d.customer else '-' }}
+          {% if d.doc_date %} · วันที่: {{ d.doc_date.strftime('%d/%m/%Y') }}{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      {% if can('sales.manage') %}
+        <a href="{{ url_for('bk_allocate', bid=d.id) }}" class="btn btn-primary">
+          <i class="bi bi-box-seam me-1"></i> เลือกอุปกรณ์ (ล็อคของ)
+        </a>
+      {% endif %}
+      {% if (d.status or '').upper() != 'APPROVED' and can('sales.manage') %}
+        <form method="post"
+              action="{{ url_for('bk_approve', bid=d.id) }}"
+              onsubmit="return confirm('ยืนยันอนุมัติใบจองนี้หรือไม่?');">
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check2-circle me-1"></i> อนุมัติใบจอง
+          </button>
+        </form>
+      {% endif %}
+      <a href="{{ url_for('bk_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left-circle me-1"></i> กลับรายการใบจอง
+      </a>
+    </div>
+  </div>
+
+  <!-- Info summary -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-8">
+      <div class="card st-softcard border-0 h-100">
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <div class="text-muted small">ชื่อลูกค้า</div>
+              <div class="fw-semibold">{{ d.customer.name if d.customer else '-' }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="text-muted small">เลขที่ใบจอง</div>
+              <div class="fw-semibold">{{ d.number or '-' }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="text-muted small">วันที่เอกสาร</div>
+              <div>{{ d.doc_date.strftime('%d/%m/%Y') if d.doc_date else '-' }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="text-muted small">อ้างอิงจาก</div>
+              <div>
+                {% if d.parent %}
+                  {{ d.parent.doc_type or '' }} {{ d.parent.number or '' }}
+                {% elif d.parent_id %}
+                  เอกสาร #{{ d.parent_id }}
+                {% else %}
+                  -
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <div class="text-muted small">หมายเหตุ</div>
+            <div>{{ d.remark or '-' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status + totals -->
+    <div class="col-lg-4">
+      <div class="card st-softcard st-softcard--accent border-0 h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="text-muted small">สถานะใบจอง</div>
+            {% set st = (d.status or '').upper() %}
+            {% if st == 'APPROVED' %}
+              <span class="badge bg-success-soft text-success border border-success-subtle px-2">
+                <i class="bi bi-check-circle me-1"></i> อนุมัติแล้ว
+              </span>
+            {% elif st == 'CANCELLED' %}
+              <span class="badge bg-danger-soft text-danger border border-danger-subtle px-2">
+                <i class="bi bi-x-circle me-1"></i> ยกเลิก
+              </span>
+            {% else %}
+              <span class="badge bg-warning-soft text-warning border border-warning-subtle px-2">
+                <i class="bi bi-hourglass-split me-1"></i> รออนุมัติ
+              </span>
+            {% endif %}
+          </div>
+
+          <hr class="my-2">
+
+          <div class="d-flex justify-content-between small mb-1">
+            <span>มูลค่าก่อนส่วนลด</span>
+            <span>{{ (d.subtotal or d.total_before_discount or 0)|float|round(2) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small mb-1">
+            <span>ส่วนลดรวม</span>
+            <span>{{ (d.discount_total or 0)|float|round(2) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small mb-1">
+            <span>ฐานภาษี</span>
+            <span>{{ (d.tax_base or 0)|float|round(2) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small mb-1">
+            <span>ภาษีมูลค่าเพิ่ม</span>
+            <span>{{ (d.vat_amount or 0)|float|round(2) }}</span>
+          </div>
+          <div class="d-flex justify-content-between small mb-1">
+            <span>ภาษีหัก ณ ที่จ่าย</span>
+            <span>{{ (d.wht_amount or 0)|float|round(2) }}</span>
+          </div>
+          <hr class="my-2">
+          <div class="d-flex justify-content-between fw-semibold">
+            <span>รวมทั้งสิ้น</span>
+            <span>{{ (d.grand_total or d.total or 0)|float|round(2) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Items table -->
+  <div class="card st-softcard border-0">
+    <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">
+        <i class="bi bi-ui-radios-grid me-2 text-primary"></i> รายการอุปกรณ์ที่จอง
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:32%">รายการ</th>
+              <th style="width:8%" class="text-end">จำนวน</th>
+              <th style="width:10%">หน่วยเช่า</th>
+              <th style="width:10%" class="text-end">ระยะเวลา</th>
+              <th style="width:12%" class="text-end">ราคา/หน่วย</th>
+              <th style="width:8%" class="text-end">%ลด</th>
+              <th style="width:12%" class="text-end">ยอดสุทธิ</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if d.items %}
+            {% for it in d.items %}
+              {% set qty = it.qty or 0 %}
+              {% set dur = it.rent_duration or it.duration or 0 %}
+              {% set price = it.unit_price or it.price or 0 %}
+              {% set disc = it.disc_pct or it.discount_pct or 0 %}
+              {% set gross = qty * dur * price %}
+              {% set disc_amt = gross * (disc/100) %}
+              {% set net = gross - disc_amt %}
+              <tr>
+                <td>
+                  {# แสดงชื่อสินค้า (ตัด [PREFIX] ออกจากท้ายชื่อ) #}
+                  {% set raw_name = it.name or '-' %}
+                  {% if '[' in raw_name and ']' in raw_name %}
+                    {% set display_name = raw_name.split('[', 1)[0].strip() %}
+                  {% else %}
+                    {% set display_name = raw_name %}
+                  {% endif %}
+                  {{ display_name }}
+
+                  {# ถ้า Allocate แล้ว ให้แสดง SKU เต็มของอุปกรณ์จริง #}
+                  {% set alloc_raw = it.allocated_skus or '' %}
+                  {% if alloc_raw %}
+                    {% set alloc_list = alloc_raw.split(',') %}
+                    {% set alloc_clean = [] %}
+                    {% for s in alloc_list %}
+                      {% set s2 = (s or '').strip() %}
+                      {% if s2 %}{% set _ = alloc_clean.append(s2) %}{% endif %}
+                    {% endfor %}
+                    {% if alloc_clean %}
+                      <div class="small text-muted">รหัสอุปกรณ์: {{ alloc_clean|join(', ') }}</div>
+                    {% endif %}
+                  {% elif it.equipment %}
+                    <div class="small text-muted">รหัสอุปกรณ์: {{ it.equipment.sku }}</div>
+                  {% else %}
+                    <div class="small text-muted">รหัสอุปกรณ์: —</div>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ qty|float|round(2) }}</td>
+                <td>
+                  {% set u = (it.rent_unit or it.unit or 'DAY') %}
+                  {% if u == 'HOUR' %}ชั่วโมง
+                  {% elif u == 'MONTH' %}เดือน
+                  {% elif u == 'YEAR' %}ปี
+                  {% else %}วัน{% endif %}
+                </td>
+                <td class="text-end">{{ dur|float|round(2) }}</td>
+                <td class="text-end">{{ price|float|round(2) }}</td>
+                <td class="text-end">{{ disc|float|round(2) }}</td>
+                <td class="text-end">{{ net|float|round(2) }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">
+                ไม่มีรายการอุปกรณ์ในใบจองนี้
+              </td>
+            </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

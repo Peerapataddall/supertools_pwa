@@ -85,6 +85,12 @@
   {% set logo_url = (c and c.logo_path) and url_for('static', filename=c.logo_path) or url_for('static', filename='im/logo-print.png') %}
   {% set addr_parts = [ c and c.address or '', c and c.district or '', c and c.amphoe or '', c and c.province or '', c and c.postcode or '' ] %}
   {% set addr_join = addr_parts|select|join(' ') %}
+  {% set grn_date = grn.grn_date or grn.receive_date or grn.doc_date %}
+
+
+  {# ---- helpers: รองรับ field หลายชื่อ (กันยอดเป็น 0) ---- #}
+  {# เลือกราคา/หน่วยจาก unit_cost หรือ unit_price #}
+  {% set _ = namespace(dummy=0) %}
 
   <div class="doc">
     <!-- HEADER -->
@@ -107,8 +113,13 @@
           ใบรับสินค้า (Goods Receipt)
           <span class="chip">สถานะ: รับเข้าแล้ว</span>
         </div>
+
         <div class="small muted">เลขที่เอกสาร: <span class="fw-600">{{ grn.number }}</span></div>
-        <div class="small muted">วันที่รับเข้า: {{ grn.grn_date|strftime('%d/%m/%Y') or '-' }}</div>
+
+        {# วันที่รับเข้า: รองรับ grn_date / receive_date / doc_date #}
+        {% set rec_date = (grn.grn_date if grn.grn_date is not none else (grn.receive_date if grn.receive_date is not none else grn.doc_date)) %}
+        <div class="small muted">วันที่รับเข้า: {{ rec_date|strftime('%d/%m/%Y') if rec_date else '-' }}</div>
+
         {% if grn.po %}
           <div class="small muted">อ้างอิง PO: {{ grn.po.number }}</div>
         {% endif %}
@@ -127,7 +138,8 @@
         </div>
         <div style="flex:1;">
           <div class="fw-600">อ้างอิง</div>
-          <div class="small muted">พิมพ์เมื่อ: {{ (today or grn.grn_date)|strftime('%d/%m/%Y') }}</div>
+          {% set print_date = today if today else rec_date %}
+          <div class="small muted">พิมพ์เมื่อ: {{ print_date|strftime('%d/%m/%Y') if print_date else '-' }}</div>
           {% if grn.po %}<div class="small muted">เลขที่ PO: {{ grn.po.number }}</div>{% endif %}
         </div>
       </div>
@@ -146,26 +158,35 @@
         </tr>
       </thead>
       <tbody>
+        {% set ns = namespace(sub=0.0) %}
         {% for it in grn.items %}
-        {% set line = (it.qty or 0) * (it.unit_cost or 0) %}
-        <tr>
-          <td class="sku">{{ it.sku or '-' }}</td>
-          <td class="name">{{ it.name }}</td>
-          <td class="qty text-right">{{ '{:,.2f}'.format(it.qty or 0) }}</td>
-          <td class="unit">{{ it.unit or '' }}</td>
-          <td class="price text-right">{{ '{:,.2f}'.format(it.unit_cost or 0) }}</td>
-          <td class="sum text-right">{{ '{:,.2f}'.format(line) }}</td>
-        </tr>
+          {# ราคา/หน่วย: รองรับ unit_cost หรือ unit_price (กันกรณี unit_price ว่าง) #}
+          {% set uprice = (it.unit_cost if it.unit_cost is not none else (it.unit_price or 0)) or 0 %}
+          {% set qty = (it.qty or 0) %}
+          {% set line = qty * uprice %}
+          {% set ns.sub = ns.sub + line %}
+          <tr>
+            <td class="sku">{{ it.sku or '-' }}</td>
+            <td class="name">{{ it.name }}</td>
+            <td class="qty text-right">{{ '{:,.2f}'.format(qty) }}</td>
+            <td class="unit">{{ it.unit or '' }}</td>
+            <td class="price text-right">{{ '{:,.2f}'.format(uprice) }}</td>
+            <td class="sum text-right">{{ '{:,.2f}'.format(line) }}</td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
 
-    <!-- TOTALS: GRN แสดงยอดเดียว -->
-    {% set total = (grn.amount_total or 0.0) %}
+    <!-- TOTALS -->
+    {# ถ้ามี grn.amount_total ใช้อันนั้น, ถ้าไม่มีให้ใช้ ns.sub ที่คำนวณจากรายการ #}
+    {% set total = (grn.amount_total if (grn.amount_total is not none and grn.amount_total) else ns.sub) or 0.0 %}
     <div class="totals">
       <div class="spacer"></div>
       <div class="panel">
-        <div class="row-sum total"><div>มูลค่ารับเข้า</div><div class="text-right">{{ '{:,.2f}'.format(total) }}</div></div>
+        <div class="row-sum total">
+          <div>มูลค่ารับเข้า</div>
+          <div class="text-right">{{ '{:,.2f}'.format(total) }}</div>
+        </div>
         <div class="small muted">* มูลค่านี้อ้างอิงราคาจาก PO</div>
       </div>
     </div>

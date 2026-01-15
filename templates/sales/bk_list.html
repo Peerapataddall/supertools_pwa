@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}รายการใบจอง (BK){% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+
+  <!-- Header / Hero -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-journal-text text-primary fs-4"></i>
+      <div>
+        <h1 class="h5 m-0">รายการใบจอง (BK)</h1>
+        <div class="text-muted small">เอกสารจองอุปกรณ์ที่สร้างจากระบบขาย</div>
+      </div>
+    </div>    <div class="d-flex flex-wrap align-items-end justify-content-end gap-2">
+      <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+        <div style="min-width:240px; max-width:340px;">
+          <label class="form-label mb-0 small text-muted">ค้นหา</label>
+          <input type="text" name="q" class="form-control form-control-sm" placeholder="เลขที่/ลูกค้า..." value="{{ q or request.args.get('q','') }}">
+        </div>
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">เริ่ม</label>
+          <input type="date" name="start" class="form-control form-control-sm" value="{{ start or request.args.get('start','') }}">
+        </div>
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">สิ้นสุด</label>
+          <input type="date" name="end" class="form-control form-control-sm" value="{{ end or request.args.get('end','') }}">
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" type="submit" title="กรอง"><i class="bi bi-funnel"></i></button>
+      </form>
+
+      <a href="{{ url_for('export_sales_doc_excel', doc_type='BK', q=(q or request.args.get('q','')), start=(start or request.args.get('start','')), end=(end or request.args.get('end',''))) }}"
+         class="btn btn-outline-dark btn-sm">
+        <i class="bi bi-filetype-xlsx me-1"></i> Export Excel
+      </a>
+    </div>
+</div>
+
+  <div class="card st-softcard border-0">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:13%">เลขที่ใบจอง</th>
+              <th style="width:18%">ลูกค้า</th>
+              <th style="width:13%">วันที่เอกสาร</th>
+              <th style="width:15%" class="text-end">ยอดรวมทั้งสิ้น</th>
+              <th style="width:12%">สถานะ</th>
+              <th style="width:14%">อ้างอิงจาก</th>
+              <th style="width:15%" class="text-center">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if docs %}
+            {% for d in docs %}
+              {% set st = (d.status or '').upper() %}
+
+              {# ==== วันที่เอกสาร: ถ้า BK ไม่มี ให้ใช้ของ QU แทน ==== #}
+              {% set doc_date = d.date
+                              or d.doc_date
+                              or (d.parent and (d.parent.date or d.parent.doc_date)) %}
+
+              {# ==== ยอดรวม: ถ้า BK เป็น 0 ให้ดึงจาก QU แทน ==== #}
+              {% set total = d.amount_grand
+                            or d.amount_total
+                            or d.amount_subtotal
+                            or (d.parent and (
+                                  d.parent.amount_grand
+                                  or d.parent.amount_total
+                                  or d.parent.amount_subtotal
+                               )) %}
+
+              <tr>
+                <td>{{ d.number or '-' }}</td>
+
+                <td>{{ d.customer.name if d.customer else '-' }}</td>
+
+                <td>
+                  {% if doc_date %}
+                    {{ doc_date.strftime('%d/%m/%Y') }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+
+                <td class="text-end">
+                  {{ '{:,.2f}'.format(total or 0) }}
+                </td>
+
+                <td>
+                  {% if st == 'APPROVED' %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2">
+                      <i class="bi bi-check-circle me-1"></i> อนุมัติแล้ว
+                    </span>
+                  {% elif st == 'CANCELLED' %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2">
+                      <i class="bi bi-x-circle me-1"></i> ยกเลิก
+                    </span>
+                  {% else %}
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2">
+                      <i class="bi bi-hourglass-split me-1"></i> รออนุมัติ
+                    </span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  {% if d.parent %}
+                    จาก {{ d.parent.doc_type or '' }} {{ d.parent.number or '' }}
+                  {% elif d.parent_id %}
+                    จากเอกสาร #{{ d.parent_id }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+
+                <td class="text-center">
+                  <div class="btn-group btn-group-sm">
+
+                    {# ดูรายละเอียด BK #}
+                    <a href="{{ url_for('bk_view', doc_id=d.id) }}"
+                       class="btn btn-outline-primary"
+                       title="ดูรายละเอียด">
+                      <i class="bi bi-eye"></i>
+                    </a>
+
+                    {# ปริ้นใบจอง BK #}
+                    <a href="{{ url_for('bk_print', doc_id=d.id) }}"
+                       class="btn btn-outline-secondary"
+                       title="พิมพ์ใบจอง"
+                       target="_blank">
+                      <i class="bi bi-printer"></i>
+                    </a>
+
+                    {# ปุ่มอนุมัติ แสดงเฉพาะถ้ายังไม่อนุมัติ #}
+                    {% if st != 'APPROVED' and can('sales.manage') %}
+                      <form method="post"
+                            action="{{ url_for('bk_approve', bid=d.id) }}"
+                            class="d-inline"
+                            onsubmit="return confirm('ยืนยันอนุมัติใบจองนี้หรือไม่?');">
+                        <button type="submit" class="btn btn-success" title="อนุมัติ">
+                          <i class="bi bi-check2-circle"></i>
+                        </button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">
+                ยังไม่มีใบจองในระบบ
+              </td>
+            </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

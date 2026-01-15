@@ -2,13 +2,15 @@
 {% block title %}สร้างใบเสนอราคา{% endblock %}
 {% block content %}
 
+
+
 <div class="container-xxl">
   <div class="d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-file-earmark-plus-fill text-primary fs-4"></i>
     <h1 class="h5 m-0">สร้างใบเสนอราคา</h1>
   </div>
 
-  <!-- datalist สำหรับค้นหาอุปกรณ์ -->
+  <!-- datalist สำหรับค้นหาอุปกรณ์ (ใช้ร่วมทุกแถว) -->
   <datalist id="equip-options"></datalist>
 
   <!-- Header -->
@@ -34,6 +36,30 @@
         <input type="text" class="form-control" name="po_customer" form="quForm" placeholder="เช่น RX3030">
       </div>
 
+      <div class="col-md-6 col-lg-3">
+        <label class="form-label">รูปแบบการเรียกเก็บเงิน</label>
+        <select class="form-select" name="billing_mode" id="billingMode" form="quForm">
+          <option value="ONCE" selected>ปกติ (ออกเอกสารชุดเดียว)</option>
+          <option value="INSTALLMENT">สัญญา/PO ใหญ่ (แบ่งงวดรายเดือน)</option>
+        </select>
+        <div class="form-text">ถ้าเลือก “แบ่งงวดรายเดือน” ระบบจะสร้างสัญญา (CT) และตารางงวด เมื่อกดอนุมัติ</div>
+      </div>
+
+      <div class="col-md-6 col-lg-2 js-contract-fields">
+        <label class="form-label">จำนวนงวด (เดือน)</label>
+        <input type="number" class="form-control" name="installment_count" form="quForm" value="12" min="1">
+      </div>
+
+      <div class="col-md-6 col-lg-2 js-contract-fields">
+        <label class="form-label">เริ่มสัญญา</label>
+        <input type="date" class="form-control" name="contract_start" form="quForm">
+      </div>
+
+      <div class="col-md-6 col-lg-2 js-contract-fields">
+        <label class="form-label">สิ้นสุดสัญญา</label>
+        <input type="date" class="form-control" name="contract_end" form="quForm">
+      </div>
+
       <div class="col-md-6 col-lg-2">
         <label class="form-label">ภาษี</label>
         <select class="form-select" name="tax_mode" id="taxMode" form="quForm">
@@ -53,20 +79,34 @@
           <option value="5">5</option>
         </select>
       </div>
+
+      <!-- หัวข้อโครงการ -->
+      <div class="col-12">
+        <label class="form-label">หัวข้อโครงการ</label>
+        <input type="text"
+               class="form-control"
+               name="project_name"
+               form="quForm"
+               placeholder="เช่น งานรีโนเวทสำนักงาน อาคาร A">
+      </div>
     </div>
   </div>
 
   <!-- รายการ -->
   <div class="card st-softcard border-0 mb-3">
     <div class="card-header bg-transparent">
-      <div class="fw-semibold"><i class="bi bi-ui-radios-grid me-2 text-primary"></i>รายการอุปกรณ์</div>
+      <div class="fw-semibold">
+        <i class="bi bi-ui-radios-grid me-2 text-primary"></i>
+        รายการอุปกรณ์
+      </div>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive">
         <table class="table align-middle m-0" id="itemsTable">
           <thead class="table-light">
           <tr>
-            <th style="width:28%">รายการ (ค้นหาอุปกรณ์)</th>
+            <th style="width:16%">รหัส</th>
+            <th style="width:24%">ชื่ออุปกรณ์ / หมวดหมู่</th>
             <th style="width:8%">จำนวน</th>
             <th style="width:12%">หน่วยเช่า</th>
             <th style="width:10%">ระยะเวลา</th>
@@ -77,12 +117,31 @@
           </thead>
           <tbody>
           <tr>
+            <!-- รหัส (Prefix SKU / ค้นหาได้ทั้งรหัสและชื่อ) -->
             <td>
-              <input type="text" class="form-control js-equip-input"
-                     name="name[]" placeholder="พิมพ์เพื่อค้นหา… (จะแสดง [SKU] ชื่อ)"
-                     list="equip-options" autocomplete="off" form="quForm">
+              <input type="text"
+                     class="form-control js-code-input"
+                     placeholder="Prefix SKU หรือชื่อหมวดหมู่"
+                     list="equip-options"
+                     autocomplete="off">
             </td>
-            <td><input type="number" class="form-control text-end item-qty" name="qty[]" value="1" min="0" form="quForm"></td>
+
+            <!-- ชื่ออุปกรณ์ / หมวดหมู่ + ช่องซ่อนส่งให้ backend -->
+            <td>
+              <input type="text"
+                     class="form-control js-name-display"
+                     placeholder="ชื่อหมวดหมู่ / อุปกรณ์"
+                     readonly>
+              <input type="hidden"
+                     name="name[]"
+                     class="js-name-hidden"
+                     form="quForm">
+            </td>
+
+            <td>
+              <input type="number" class="form-control text-end item-qty"
+                     name="qty[]" value="1" min="0" form="quForm">
+            </td>
             <td>
               <select class="form-select item-unit" name="unit[]" form="quForm">
                 <option value="HOUR">ชั่วโมง</option>
@@ -91,11 +150,23 @@
                 <option value="YEAR">ปี</option>
               </select>
             </td>
-            <td><input type="number" class="form-control text-end item-dur" name="duration[]" value="1" min="0" form="quForm"></td>
-            <td><input type="number" class="form-control text-end item-price" name="price[]" value="0" min="0" step="0.01" form="quForm"></td>
-            <td><input type="number" class="form-control text-end item-disc" name="disc[]" value="0" min="0" max="100" step="0.01" form="quForm"></td>
+            <td>
+              <input type="number" class="form-control text-end item-dur"
+                     name="duration[]" value="1" min="0" form="quForm">
+            </td>
+            <td>
+              <input type="number" class="form-control text-end item-price"
+                     name="price[]" value="0" min="0" step="0.01" form="quForm">
+            </td>
+            <td>
+              <input type="number" class="form-control text-end item-disc"
+                     name="disc[]" value="0" min="0" max="100" step="0.01" form="quForm">
+            </td>
             <td class="text-center">
-              <button type="button" class="btn btn-outline-danger btn-sm btn-del-row"><i class="bi bi-x-lg"></i></button>
+              <button type="button"
+                      class="btn btn-outline-danger btn-sm btn-del-row">
+                <i class="bi bi-x-lg"></i>
+              </button>
             </td>
           </tr>
           </tbody>
@@ -107,7 +178,7 @@
           <i class="bi bi-plus-circle me-1"></i> เพิ่มแถว
         </button>
 
-        <!-- ปุ่มใหม่: ตรวจสอบโปรโมชั่น -->
+        <!-- ปุ่มตรวจสอบโปรโมชั่น -->
         <button type="button" class="btn btn-outline-success" id="btnCheckPromo">
           <i class="bi bi-magic me-1"></i> ตรวจสอบโปรโมชั่น
         </button>
@@ -121,21 +192,26 @@
       <div class="card st-softcard border-0 h-100">
         <div class="card-body">
           <label class="form-label">หมายเหตุ</label>
-          <textarea class="form-control" name="remark" id="remarkBox" form="quForm" rows="4" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
+          <textarea class="form-control" name="remark" id="remarkBox" form="quForm"
+                    rows="4" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
         </div>
       </div>
     </div>
     <div class="col-lg-4">
       <div class="card st-softcard st-softcard--accent border-0 h-100">
         <div class="card-body st-totals">
-          <div class="fw-semibold mb-2"><i class="bi bi-calculator me-2 text-primary"></i>สรุปยอด</div>
+          <div class="fw-semibold mb-2">
+            <i class="bi bi-calculator me-2 text-primary"></i>สรุปยอด
+          </div>
           <div class="row-line"><span>มูลค่าก่อนส่วนลด</span><span id="sum-before">0.00</span></div>
           <div class="row-line"><span>ส่วนลดรวม</span><span id="sum-discount">0.00</span></div>
           <hr class="my-2">
           <div class="row-line"><span>ฐานภาษี (หลังหักส่วนลด)</span><span id="sum-taxbase">0.00</span></div>
           <div class="row-line"><span>ภาษีมูลค่าเพิ่ม 7%</span><span id="sum-vat">0.00</span></div>
           <div class="row-line"><span>ภาษีหัก ณ ที่จ่าย</span><span id="sum-wht">0.00</span></div>
-          <div class="row-line row-line--grand border-top pt-2"><span>รวมทั้งสิ้น</span><span id="sum-grand">0.00</span></div>
+          <div class="row-line row-line--grand border-top pt-2">
+            <span>รวมทั้งสิ้น</span><span id="sum-grand">0.00</span>
+          </div>
         </div>
       </div>
     </div>
@@ -157,15 +233,22 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-stars me-2 text-warning"></i>ตรงตามเงื่อนไขโปรโมชัน</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title">
+          <i class="bi bi-stars me-2 text-warning"></i>ตรงตามเงื่อนไขโปรโมชัน
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div id="promoDesc" class="mb-2"></div>
-        <div class="small text-muted">เมื่อยืนยัน ระบบจะลดราคาให้กับ “ชิ้นที่ถูกสุด” ตามเงื่อนไขอัตโนมัติ และจะเพิ่มบันทึกในช่องหมายเหตุ</div>
+        <div class="small text-muted">
+          เมื่อยืนยัน ระบบจะลดราคาให้กับ “ชิ้นที่ถูกสุด” ตามเงื่อนไขอัตโนมัติ
+          และจะเพิ่มบันทึกในช่องหมายเหตุ
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-outline-secondary"
+                data-bs-dismiss="modal">ยกเลิก</button>
         <button type="button" class="btn btn-primary" id="btnApplyPromo">นำส่วนลดมาใช้</button>
       </div>
     </div>
@@ -177,20 +260,23 @@
 {% block scripts %}
 <script>
   // ---------------- Formatting / calc ----------------
-  const fmt = (n)=> (Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmt = (n)=> (Number(n||0)).toLocaleString(
+    undefined,{minimumFractionDigits:2, maximumFractionDigits:2}
+  );
 
   function calc() {
     let before=0, discAll=0;
     document.querySelectorAll('#itemsTable tbody tr').forEach(tr=>{
-      const qty = parseFloat(tr.querySelector('.item-qty').value||0);
-      const dur = parseFloat(tr.querySelector('.item-dur').value||0);
+      const qty   = parseFloat(tr.querySelector('.item-qty').value||0);
+      const dur   = parseFloat(tr.querySelector('.item-dur').value||0);
       const price = parseFloat(tr.querySelector('.item-price').value||0);
-      const disc = parseFloat(tr.querySelector('.item-disc').value||0);
+      const disc  = parseFloat(tr.querySelector('.item-disc').value||0);
       const gross = qty * dur * price;
       const discAmt = gross * (isNaN(disc)?0:disc/100);
       before += gross;
       discAll += discAmt;
     });
+
     const taxMode = document.getElementById('taxMode').value;
     const whtPct  = parseFloat(document.getElementById('whtPct').value||0);
 
@@ -199,7 +285,7 @@
     if (taxMode === 'EXC') { vat = taxBase * 0.07; total = taxBase + vat; }
     else if (taxMode === 'INC') { vat = taxBase * (7/107); total = taxBase; }
     else { vat = 0; total = taxBase; }
-    const wht = total * (whtPct/100);
+    const wht   = total * (whtPct/100);
     const grand = total - wht;
 
     document.getElementById('sum-before').innerText   = fmt(before);
@@ -210,6 +296,16 @@
     document.getElementById('sum-grand').innerText    = fmt(grand);
   }
 
+  // ---------------- Billing mode UI (contract/installment) ----------------
+  function updateBillingModeUI(){
+    const modeEl = document.getElementById('billingMode');
+    if (!modeEl) return;
+    const mode = (modeEl.value || 'ONCE').toUpperCase();
+    document.querySelectorAll('.js-contract-fields').forEach(el => {
+      el.style.display = (mode === 'INSTALLMENT') ? '' : 'none';
+    });
+  }
+
   function bindRow(tr){
     tr.querySelectorAll('input,select').forEach(el=>{
       el.addEventListener('input', calc);
@@ -217,11 +313,18 @@
     });
     tr.querySelector('.btn-del-row').addEventListener('click', ()=>{
       const tbody = document.querySelector('#itemsTable tbody');
-      if (tbody.children.length > 1) { tr.remove(); calc(); }
-      else {
+      if (tbody.children.length > 1) {
+        tr.remove();
+        calc();
+      } else {
         tr.querySelectorAll('input').forEach(i=>{
-          if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) i.value = '1';
-          else i.value = '';
+          if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) {
+            i.value = '1';
+          } else if (i.classList.contains('item-price') || i.classList.contains('item-disc')) {
+            // ปล่อยให้ด้านล่างจัดการ
+          } else {
+            i.value = '';
+          }
         });
         tr.querySelector('.item-price').value='0';
         tr.querySelector('.item-disc').value='0';
@@ -230,54 +333,133 @@
     });
   }
 
-  // --------- datalist Autocomplete ----------
+  // --------- datalist Autocomplete: Prefix SKU + ชื่อหมวดหมู่ ----------
   (function(){
     const dl = document.getElementById('equip-options');
     if (!dl) return;
-    let t=null;
-    const fetchEquip = (q)=>{
-      if (!q || q.length<1){ dl.innerHTML=''; return; }
-      fetch(`/api/equipment/search?q=${encodeURIComponent(q)}`)
-        .then(r=>r.json())
-        .then(list=>{
-          dl.innerHTML='';
-          list.forEach(it=>{
-            const opt=document.createElement('option');
-            opt.value = `[${it.sku}] ${it.name}`;
-            opt.label = it.label || `${it.sku} · ${it.name}`;
+
+    // cache: prefixSku -> { sku เต็ม, name }
+    const cache = {};
+    let t = null;
+
+    function fetchEquip(q){
+      if (!q || q.length < 1){
+        dl.innerHTML = '';
+        return;
+      }
+      fetch(`/api/categories/search?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(list => {
+          dl.innerHTML = '';
+          list.forEach(it => {
+            const sku = it.sku || "";
+
+            // Prefix จาก SKU เช่น SP-001 จาก SP-001-041125-001
+            let prefixSku = sku;
+            const parts = sku.split("-");
+            if (parts.length >= 2){
+              prefixSku = parts[0] + "-" + parts[1];
+            }
+
+            // ใช้ชื่อหมวดหมู่ถ้ามี field category_name; ไม่มีก็ใช้ name ปกติ
+            const name = it.category_name || it.name || "";
+
+            const opt = document.createElement('option');
+            opt.value = prefixSku;                 // ช่อง "รหัส" จะเติม prefix
+            opt.label = `[${prefixSku}] ${name}`;  // dropdown แสดง prefix + ชื่อ
             dl.appendChild(opt);
+
+            if (!cache[prefixSku]){
+              cache[prefixSku] = { sku, name };
+            }
           });
-        }).catch(()=> dl.innerHTML='');
-    };
-    const onType = (ev)=>{ const q=ev.target.value.trim(); clearTimeout(t); t=setTimeout(()=>fetchEquip(q),200); };
-    const wire = (el)=>{ if(el.dataset._wired) return; el.addEventListener('input',onType); el.addEventListener('focus',onType); el.dataset._wired='1'; };
-    document.querySelectorAll('.js-equip-input').forEach(wire);
-    document.addEventListener('click',(e)=>{
+        })
+        .catch(() => { dl.innerHTML = ''; });
+    }
+
+    function syncNameAndHidden(input){
+      const tr = input.closest('tr');
+      if (!tr) return;
+
+      const prefix = (input.value || '').trim();
+      const info = cache[prefix];
+      if (!info) return;
+
+      const nameInput   = tr.querySelector('.js-name-display');
+      const hiddenInput = tr.querySelector('.js-name-hidden');
+
+      if (nameInput){
+        nameInput.value = info.name;
+      }
+      if (hiddenInput){
+        hiddenInput.value = `[${info.sku}] ${info.name}`; // format เดิมสำหรับ backend/promo
+      }
+    }
+
+    function onType(ev){
+      const q = ev.target.value.trim();
+      clearTimeout(t);
+      t = setTimeout(() => fetchEquip(q), 200);
+    }
+
+    function wire(input){
+      if (!input || input.dataset._wired) return;
+      input.addEventListener('input', onType);
+      input.addEventListener('change', () => syncNameAndHidden(input));
+      input.addEventListener('blur',   () => syncNameAndHidden(input));
+      input.dataset._wired = '1';
+    }
+
+    // แถวแรก
+    document.querySelectorAll('.js-code-input').forEach(wire);
+
+    // เวลาเพิ่มแถว
+    document.addEventListener('click', (e) => {
       if (!e.target.closest('[data-add-row]')) return;
-      setTimeout(()=> document.querySelectorAll('.js-equip-input').forEach(wire),30);
+      setTimeout(() => {
+        document.querySelectorAll('.js-code-input').forEach(wire);
+      }, 30);
     });
   })();
 
   // --------- เพิ่มแถว ----------
+    // --------- เพิ่มแถว ----------
   bindRow(document.querySelector('#itemsTable tbody tr'));
+  // โหมดสัญญา/รายงวด: ซ่อน/โชว์ฟิลด์ที่เกี่ยวข้อง
+  const bm = document.getElementById('billingMode');
+  if (bm){
+    bm.addEventListener('change', updateBillingModeUI);
+  }
+  updateBillingModeUI();
   document.getElementById('btnAddRow').addEventListener('click', ()=>{
     const tr0 = document.querySelector('#itemsTable tbody tr');
-    const tr = tr0.cloneNode(true);
+    const tr  = tr0.cloneNode(true);
+
+    // reset ค่าในแถวใหม่
     tr.querySelectorAll('input').forEach(i=>{
-      if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) i.value = '1';
-      else i.value = '';
+      if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) {
+        i.value = '1';
+      } else if (i.classList.contains('item-price')) {
+        i.value = '0';
+      } else if (i.classList.contains('item-disc')) {
+        i.value = '0';
+      } else {
+        i.value = '';
+      }
     });
-    tr.querySelector('.item-price').value='0';
-    tr.querySelector('.item-disc').value='0';
+
+    // 🟢 สำคัญ: เคลียร์ flag _wired ออกจากช่องค้นหารหัสในแถวใหม่
+    tr.querySelectorAll('.js-code-input').forEach(inp=>{
+      delete inp.dataset._wired;
+      inp.removeAttribute('data-_wired');
+    });
+
     document.querySelector('#itemsTable tbody').appendChild(tr);
-    bindRow(tr); calc();
+    bindRow(tr);
+    calc();
   });
 
-  document.getElementById('taxMode').addEventListener('change', calc);
-  document.getElementById('whtPct').addEventListener('change', calc);
-  calc();
-
-  // ===================== Promotion (ใช้คำนวณจากเซิร์ฟเวอร์) =====================
+  // ===================== Promotion (เหมือนเดิม) =====================
   const unitToDays = (unit,n)=>{
     unit = (unit||'DAY').toUpperCase();
     n = Math.max(0, parseInt(n||0,10));
@@ -303,7 +485,6 @@
     return rows;
   }
 
-  // แตกเป็นหน่วย แล้วเรียงจากราคาต่อหน่วยถูกสุด
   function explodeUnits(rows){
     const units = [];
     rows.forEach((r)=>{
@@ -315,7 +496,6 @@
     return units.sort((a,b)=> a.pricePerUnit - b.pricePerUnit);
   }
 
-  // ถ้าจำนวนในแถวนั้นมากกว่าจำนวนที่จะลด ให้แยกแถว
   function splitRowIfNeeded(rowEl, needUnits){
     const qtyEl = rowEl.querySelector('.item-qty');
     let qty = parseInt(qtyEl.value||0,10);
@@ -329,7 +509,6 @@
     return clone;
   }
 
-  // นำส่วนลดมาใช้กับฟอร์ม (โปรลดชิ้นถูกสุด K ชิ้น)
   function applyPromoToForm(promo, rows){
     const k = Math.max(1, parseInt(promo.cheapest_units_to_discount||1,10));
     const cheapest = explodeUnits(rows).slice(0, k);
@@ -351,7 +530,6 @@
       }
     });
 
-    // เพิ่มบันทึกในหมายเหตุ
     const box = document.getElementById('remarkBox');
     const tag = `โปรโมชั่น: ${promo.name}`;
     if (!box.value.includes(tag)){
@@ -360,7 +538,6 @@
     calc();
   }
 
-  // ---------- Modal + ปุ่มตรวจสอบ ----------
   let promoToApply = null;
   const promoModal = new bootstrap.Modal(document.getElementById('promoModal'));
   document.getElementById('btnApplyPromo').addEventListener('click', ()=>{
@@ -371,7 +548,6 @@
     }
   });
 
-  // cache โปรทั้งหมดเพื่อดึงรายละเอียด (type/value) หลังรู้ว่าโปรไหนชนะจาก server
   let activePromosCache = null;
   async function getActivePromos(){
     if (activePromosCache) return activePromosCache;
@@ -382,12 +558,19 @@
 
   async function checkPromoNow(){
     try{
-      const rows = collectItems().filter(r=> r.name && r.qty>0 && r.rent_duration>0 && r.unit_price>0);
-      if (!rows.length){ alert('กรุณากรอกรายการอย่างน้อย 1 รายการก่อนตรวจสอบโปรโมชัน'); return; }
+      const rows = collectItems().filter(r=>
+        r.name && r.qty>0 && r.rent_duration>0 && r.unit_price>0
+      );
+      if (!rows.length){
+        alert('กรุณากรอกรายการอย่างน้อย 1 รายการก่อนตรวจสอบโปรโมชัน');
+        return;
+      }
       const anyNoDisc = rows.some(r => (parseFloat(r.discPct||0) <= 0));
-      if (!anyNoDisc) { alert('รายการนี้ได้รับส่วนลดแล้ว'); return; }
+      if (!anyNoDisc) {
+        alert('รายการนี้ได้รับส่วนลดแล้ว');
+        return;
+      }
 
-      // เรียกเซิร์ฟเวอร์คำนวณว่า “โปรไหนดีที่สุด”
       const res = await fetch("{{ url_for('api_promos_evaluate') }}", {
         method:"POST",
         headers: {"Content-Type":"application/json"},
@@ -396,25 +579,32 @@
       const data = await res.json();
 
       if (!data.ok || !data.hasPromo){
-        alert('ยังไม่เข้าเงื่อนไขโปรโมชันที่ใช้งานอยู่'); 
+        alert('ยังไม่เข้าเงื่อนไขโปรโมชันที่ใช้งานอยู่');
         return;
       }
 
-      // หารายละเอียดโปร (type/value/cheapest_units_to_discount) จากรายการโปรที่เปิดอยู่
       const promos = await getActivePromos();
-      const promoDetail = (promos || []).find(p => String(p.id) === String(data.promo.id));
+      const promoDetail = (promos || []).find(
+        p => String(p.id) === String(data.promo.id)
+      );
       if (!promoDetail){
-        alert('ไม่พบรายละเอียดโปรโมชันที่เลือก'); 
+        alert('ไม่พบรายละเอียดโปรโมชันที่เลือก');
         return;
       }
 
-      // อธิบายในโมดัล + เตรียม apply
-      const durText = (promoDetail.rental_unit==='MONTH'?'เดือน':promoDetail.rental_unit==='YEAR'?'ปี':'วัน');
-      const cond = `เงื่อนไข: อย่างน้อย ${promoDetail.min_items||0} ชิ้น, ระยะเช่า ≥ ${promoDetail.min_duration||0} ${durText}`;
-      const how  = `ลดชิ้นราคาถูกสุด ${promoDetail.cheapest_units_to_discount||1} ชิ้น — ` +
-                   (promoDetail.discount_type==='PCT' ? `${promoDetail.discount_value||0}%`
-                   : `${promoDetail.discount_value||0} บาท/ชิ้น`);
+      const durText =
+        (promoDetail.rental_unit==='MONTH'?'เดือน':
+         promoDetail.rental_unit==='YEAR'?'ปี':'วัน');
+      const cond =
+        `เงื่อนไข: อย่างน้อย ${promoDetail.min_items||0} ชิ้น, ` +
+        `ระยะเช่า ≥ ${promoDetail.min_duration||0} ${durText}`;
+      const how =
+        `ลดชิ้นราคาถูกสุด ${promoDetail.cheapest_units_to_discount||1} ชิ้น — ` +
+        (promoDetail.discount_type==='PCT'
+          ? `${promoDetail.discount_value||0}%`
+          : `${promoDetail.discount_value||0} บาท/ชิ้น`);
       const approx = Number(data.discount||0).toLocaleString();
+
       document.getElementById('promoDesc').innerHTML =
         `<div class="fw-semibold">${data.promo.name}</div>
          <div class="small text-muted">${cond}</div>
@@ -424,9 +614,9 @@
       promoToApply = { promo: { ...promoDetail, name: data.promo.name }, rows };
       promoModal.show();
 
-      // เติมหมายเหตุล่วงหน้าด้วยข้อความแจ้งเตือน (ไม่ซ้ำบรรทัดเดิม)
       const box = document.getElementById('remarkBox');
-      const note = `[AUTO PROMO] ใช้โปร '${data.promo.name}' ส่วนลดโดยประมาณ ${approx} บาท`;
+      const note =
+        `[AUTO PROMO] ใช้โปร '${data.promo.name}' ส่วนลดโดยประมาณ ${approx} บาท`;
       if (!box.value.includes(note)){
         box.value = (box.value.trim()? box.value.trim()+'\n' : '') + note;
       }
@@ -436,7 +626,7 @@
     }
   }
 
-  // ผูกเฉพาะ “ปุ่มตรวจสอบโปรโมชั่น”
-  document.getElementById('btnCheckPromo')?.addEventListener('click', checkPromoNow);
+  document.getElementById('btnCheckPromo')
+    ?.addEventListener('click', checkPromoNow);
 </script>
 {% endblock %}

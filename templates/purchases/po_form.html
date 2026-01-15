@@ -1,349 +1,534 @@
 {% extends "base.html" %}
-{% block title %}สร้างใบสั่งซื้อ{% endblock %}
+{% set mode = mode or "create" %}
+{% set title = "สร้างใบสั่งซื้อ" if mode=="create" else "แก้ไขใบสั่งซื้อ" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block head %}
+<style>
+  .po-wrap{ max-width:1180px; margin:0 auto; }
+
+  .po-hero{
+    border-radius: 1.25rem;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid rgba(15,23,42,.08);
+    background: radial-gradient(1200px 600px at 0% 0%, rgba(99,102,241,.14) 0%, rgba(99,102,241,0) 60%),
+                linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 0 18px 36px rgba(15,23,42,.06);
+    margin-bottom: 1rem;
+  }
+  .po-hero .ttl{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:800; letter-spacing:.3px;
+    color:#0f172a;
+  }
+  .po-hero .ttl i{
+    width:40px; height:40px; border-radius:999px;
+    display:grid; place-items:center;
+    background:#fff;
+    border:1px solid rgba(15,23,42,.08);
+    box-shadow: 0 10px 22px rgba(15,23,42,.08);
+  }
+  .muted{ color:rgba(15,23,42,.60); font-weight:800; }
+
+  /* stack layout */
+  .po-stack{ display:flex; flex-direction:column; gap:1rem; }
+
+  .po-card{
+    background:#fff;
+    border:1px solid rgba(15,23,42,.08);
+    border-radius: 1.25rem;
+    box-shadow: 0 18px 36px rgba(15,23,42,.06);
+  }
+  .po-card .po-card-hd{
+    padding:.95rem 1.1rem;
+    border-bottom:1px solid rgba(15,23,42,.06);
+    display:flex; align-items:center; justify-content:space-between;
+    gap:1rem;
+  }
+  .po-card .po-card-hd .left{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:900; color:#0f172a;
+  }
+  .po-card .po-card-hd .left i{
+    width:34px; height:34px; border-radius:12px;
+    display:grid; place-items:center;
+    background: rgba(99,102,241,.08);
+    border:1px solid rgba(99,102,241,.18);
+    color:#4338ca;
+  }
+  .po-card .po-card-bd{ padding:1.1rem; }
+
+  /* supplier card */
+  .sup-card .po-card-bd{ padding:1.0rem 1.1rem; }
+  .sup-title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight:1000; color:#0f172a;
+    margin-bottom:.4rem;
+  }
+  .sup-title i{
+    width:34px; height:34px; border-radius:12px;
+    display:grid; place-items:center;
+    background: rgba(59,130,246,.10);
+    border:1px solid rgba(59,130,246,.18);
+    color:#1d4ed8;
+  }
+
+  /* Supplier inline actions */
+  .sup-actions{
+    display:flex;
+    gap:.5rem;
+    align-items:flex-end;
+  }
+  .btn-sup-add{
+    border-radius: 999px;
+    font-weight: 900;
+  }
+
+  /* Table */
+  .po-table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing: 0 .55rem;
+  }
+  .po-table thead th{
+    font-size:.82rem;
+    color:rgba(15,23,42,.72);
+    font-weight:1000;
+    letter-spacing:.2px;
+    padding:.1rem .5rem;
+    white-space:nowrap;
+  }
+  .po-row{
+    background:#fff;
+    border:1px solid rgba(15,23,42,.08);
+    border-radius: 1rem;
+    box-shadow: 0 10px 22px rgba(15,23,42,.05);
+  }
+  .po-table tbody td{ padding:.55rem .5rem; vertical-align:middle; }
+  .po-table tbody tr.po-row td:first-child{ border-top-left-radius:1rem; border-bottom-left-radius:1rem; }
+  .po-table tbody tr.po-row td:last-child{ border-top-right-radius:1rem; border-bottom-right-radius:1rem; }
+
+  .money{ text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .qty-unit{
+    display:grid;
+    grid-template-columns: 120px 1fr;
+    gap:.5rem;
+    align-items:center;
+  }
+
+  .btn-icon{
+    width:38px; height:38px; border-radius:14px;
+    display:grid; place-items:center;
+    border:1px solid rgba(15,23,42,.10);
+    background:#fff;
+  }
+  .btn-icon:hover{ box-shadow:0 10px 22px rgba(15,23,42,.08); }
+
+  /* Summary */
+  .sum-card{ padding: 1.05rem 1.05rem; }
+  .sum-title{
+    display:flex; align-items:center; gap:.6rem;
+    font-weight: 1100; color:#0f172a; margin-bottom:.6rem;
+  }
+  .sum-title i{
+    width:36px; height:36px; border-radius:14px;
+    display:grid; place-items:center;
+    background: rgba(14,165,233,.10);
+    border:1px solid rgba(14,165,233,.20);
+    color:#0369a1;
+  }
+  .sum-list{ display:flex; flex-direction:column; gap:.35rem; }
+  .sum-row{ display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.45rem .2rem; }
+  .sum-row .k{ color:rgba(15,23,42,.65); font-weight:900; }
+  .sum-row .v{ font-weight:1100; color:#0f172a; font-variant-numeric: tabular-nums; }
+  .sum-sep{ height:1px; background: rgba(15,23,42,.08); margin:.55rem 0; }
+  .sum-total{ display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.35rem .2rem; }
+  .sum-total .k{ font-weight:1100; color:#0f172a; }
+  .sum-total .v{ font-size:1.35rem; font-weight:1200; color:#0f172a; font-variant-numeric: tabular-nums; }
+
+  @media print{
+    .po-hero, #btnAddRow, .no-print, .btn, .btn-icon, .sup-card{ display:none !important; }
+    .po-card{ box-shadow:none !important; border:0 !important; }
+    .po-table{ border-spacing: 0 .25rem; }
+    .po-row{ box-shadow:none !important; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-
-<div class="st-card">
-  <!-- Toolbar -->
-  <div class="st-toolbar">
-    <h1 class="h5 m-0 d-flex align-items-center gap-2">
-      <i class="bi bi-plus-square"></i> สร้างใบสั่งซื้อ
-    </h1>
-
-    <div class="d-none d-md-flex align-items-center gap-3">
-      <!-- ประเภทภาษีแบบ segmented -->
-      <div class="seg">
-        <div class="form-check">
-          <input type="radio" name="tax_type" id="taxInc" value="inc" checked>
-          <label for="taxInc"><i class="bi bi-receipt"></i> รวม VAT</label>
+<div class="po-wrap">
+  <div class="po-hero">
+    <div class="ttl">
+      <i class="bi bi-receipt"></i>
+      <div>
+        <div style="font-size:1.1rem;">{{ title }}</div>
+        <div class="muted" style="font-size:.85rem;">
+          กรอกรายการสินค้า แล้วระบบจะคำนวณยอดรวมให้อัตโนมัติ
         </div>
-        <div class="form-check">
-          <input type="radio" name="tax_type" id="taxEx" value="ex">
-          <label for="taxEx"><i class="bi bi-receipt-cutoff"></i> ไม่รวม VAT</label>
-        </div>
-        <div class="form-check">
-          <input type="radio" name="tax_type" id="taxNone" value="none">
-          <label for="taxNone"><i class="bi bi-slash-circle"></i> ไม่คิดภาษี</label>
-        </div>
-      </div>
-
-      <div class="d-flex align-items-center gap-2">
-        <span class="small text-muted">VAT (%)</span>
-        <input type="number" class="form-control form-control-sm" style="width:100px"
-               id="vatRate" name="vat_rate" value="7">
       </div>
     </div>
   </div>
 
-  <!-- Body -->
-  <form method="post" id="poForm" class="p-3 p-md-4">
-    <div class="row g-3 align-items-end">
-      <div class="col-12 col-lg-7">
-        <label class="form-label">ผู้ขาย (Supplier)</label>
-        <div class="input-group">
-          <select class="form-select" name="supplier_id" id="supplierSelect" required>
-            {% for s in suppliers %}
-              <option value="{{ s.id }}" {% if selected_id and selected_id == s.id %}selected{% endif %}>{{ s.name }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalSupplier">
-            <i class="bi bi-building-add me-1"></i> เพิ่มซัพพลายเออร์
+  <form method="post" class="po-stack">
+
+    <!-- Supplier -->
+    <div class="po-card sup-card">
+      <div class="po-card-hd">
+        <div class="left">
+          <i class="bi bi-building"></i>
+          <span>ผู้ขาย (Supplier)</span>
+        </div>
+      </div>
+      <div class="po-card-bd">
+        <div class="sup-title">
+          <i class="bi bi-person-badge"></i>
+          <div>เลือกผู้ขาย</div>
+        </div>
+
+        <div class="sup-actions">
+          <div class="flex-grow-1">
+            <select class="form-select" name="supplier_id" id="supplierSelect" required>
+              <option value="">-- เลือกผู้ขาย --</option>
+              {% for s in suppliers %}
+                <option value="{{ s.id }}" {% if selected_id and selected_id==s.id %}selected{% endif %}>
+                  {{ s.name }}
+                </option>
+              {% endfor %}
+            </select>
+            <div class="muted" style="margin-top:.5rem;">ต้องเลือกผู้ขายก่อนจึงจะบันทึกได้</div>
+          </div>
+
+          <div class="col-auto no-print">
+            <button type="button" class="btn btn-outline-primary btn-sup-add"
+                    data-bs-toggle="modal" data-bs-target="#supplierModal">
+              <i class="bi bi-plus-circle me-1"></i> เพิ่มผู้ขาย
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Items -->
+    <div class="po-card">
+      <div class="po-card-hd">
+        <div class="left">
+          <i class="bi bi-cart-plus"></i>
+          <span>รายการสินค้า</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRow">
+          <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการ
+        </button>
+      </div>
+
+      <div class="po-card-bd">
+        <table class="po-table" id="itemsTable">
+          <thead>
+            <tr>
+              <th style="width:110px;">SKU</th>
+              <th style="width:220px;">รายการ</th>
+              <th style="width:220px;">ยี่ห้อ</th>
+              <th style="width:230px;">จำนวน (หน่วย)</th>
+              <th style="width:140px;" class="money">ราคา/หน่วย</th>
+              <th style="width:120px;" class="money">ส่วนลด (%)</th>
+              <th style="width:130px;" class="money">รวม</th>
+              <th style="width:60px;"></th>
+            </tr>
+          </thead>
+
+          <tbody id="itemsBody">
+            <!-- เริ่มต้น 1 แถว -->
+            <tr class="po-row">
+              <td>
+                <input class="form-control js-sku" name="item_sku[]" placeholder="SKU">
+              </td>
+
+              <td>
+                <input class="form-control js-name" name="item_name[]" placeholder="ชื่อรายการ" required>
+              </td>
+
+              <td>
+                <input class="form-control js-brand" name="item_brand[]" placeholder="ยี่ห้อ">
+              </td>
+
+              <td>
+                <div class="qty-unit">
+                  <input class="form-control js-qty" name="item_qty[]" type="number" step="1" min="0" value="1" required>
+                  <input class="form-control js-unit" name="item_unit[]" placeholder="หน่วย" value="ชิ้น">
+                </div>
+              </td>
+
+              <td>
+                <input class="form-control money js-cost" name="item_cost[]" type="number" step="0.01" min="0" value="0" required>
+              </td>
+
+              <td>
+                <input class="form-control money js-disc" name="item_disc[]" type="number" step="0.01" min="0" max="100" value="0">
+              </td>
+
+              <td class="money">
+                <span class="js-line-total">0.00</span>
+              </td>
+
+              <td class="text-center">
+                <button type="button" class="btn-icon js-remove" title="ลบรายการ">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="muted" style="font-weight:900; padding:.25rem .2rem;">
+          ยังไม่มีรายการ — กด “เพิ่มรายการ” เพื่อเริ่มต้น
+        </div>
+
+        <div class="d-flex gap-2 mt-3 no-print">
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-check2-circle me-1"></i> บันทึก
           </button>
-        </div>
-      </div>
-
-      <!-- ซ่อน (สำหรับจอเล็ก: คุมภาษีด้านบนอยู่แล้ว) -->
-      <div class="col-12 d-md-none">
-        <div class="d-flex align-items-center gap-3">
-          <div class="seg flex-grow-1">
-            <div class="form-check">
-              <input type="radio" name="tax_type" id="taxInc_m" value="inc" checked>
-              <label for="taxInc_m">รวม VAT</label>
-            </div>
-            <div class="form-check">
-              <input type="radio" name="tax_type" id="taxEx_m" value="ex">
-              <label for="taxEx_m">ไม่รวม VAT</label>
-            </div>
-            <div class="form-check">
-              <input type="radio" name="tax_type" id="taxNone_m" value="none">
-              <label for="taxNone_m">ไม่คิดภาษี</label>
-            </div>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <span class="small text-muted">VAT (%)</span>
-            <input type="number" step="0.01" class="form-control" style="width:90px"
-                   id="vatRate_m" value="7">
-          </div>
+          <a class="btn btn-outline-secondary" href="{{ url_for('po_list') }}">ยกเลิก</a>
         </div>
       </div>
     </div>
 
-    <hr class="my-4">
-
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <div class="fw-semibold">รายการ</div>
-      <button class="btn btn-sm btn-outline-primary" type="button" id="addRow">
-        <i class="bi bi-plus-lg me-1"></i> เพิ่มแถว
-      </button>
-    </div>
-
-    <div class="row g-4">
-      <div class="col-12 col-lg-8">
-        <div class="table-responsive">
-          <table class="table table-sm align-middle st-fancy" id="itemsTable">
-            <thead>
-              <tr>
-                <th style="width:12%">SKU</th>
-                <th>ชื่อรายการ</th>
-                <th style="width:10%">จำนวน</th>
-                <th style="width:10%">หน่วย</th>
-                <th style="width:12%">ราคาต่อหน่วย</th>
-                <th style="width:10%">ส่วนลด (%)</th>
-                <th class="text-end" style="width:12%">รวม</th>
-                <th style="width:1%"></th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
+    <!-- Summary -->
+    <div class="po-card sum-card">
+      <div class="sum-title">
+        <i class="bi bi-calculator"></i>
+        <div>สรุปยอด</div>
       </div>
 
-      <!-- Summary ด้านขวา -->
-      <div class="col-12 col-lg-4">
-        <div class="st-summary st-card">
-          <div class="st-kpi">
-            <div class="t text-muted">มูลค่าก่อนส่วนลด</div>
-            <div class="v text-mono" id="sumSub">0.00</div>
-          </div>
-          <div class="st-kpi">
-            <div class="t text-muted">ส่วนลดรวม</div>
-            <div class="v text-mono" id="sumDisc">0.00</div>
-          </div>
-          <div class="st-kpi">
-            <div class="t text-muted">มูลค่าไม่รวมภาษี</div>
-            <div class="v text-mono" id="sumNetEx">0.00</div>
-          </div>
-          <div class="st-kpi">
-            <div class="t text-muted">ภาษีมูลค่าเพิ่ม (<span id="vatPercentText">7</span>%)</div>
-            <div class="v text-mono" id="sumVat">0.00</div>
-          </div>
-          <hr class="my-2">
-          <div class="st-kpi" style="background:var(--st-bg-soft);">
-            <div class="t fw-semibold">รวมสุทธิ</div>
-            <div class="v fs-5" id="sumGrand">0.00</div>
-          </div>
+      <div class="sum-list">
+        <div class="sum-row">
+          <div class="k">มูลค่าก่อนส่วนลด</div>
+          <div class="v" id="sumBefore">0.00</div>
+        </div>
+        <div class="sum-row">
+          <div class="k">ส่วนลดรวม</div>
+          <div class="v" id="sumDiscount">0.00</div>
+        </div>
+        <div class="sum-row">
+          <div class="k">มูลค่าไม่รวมภาษี</div>
+          <div class="v" id="sumSubTotal">0.00</div>
+        </div>
+        <div class="sum-row">
+          <div class="k">ภาษีมูลค่าเพิ่ม (7%)</div>
+          <div class="v" id="sumVat">0.00</div>
+        </div>
+
+        <div class="sum-sep"></div>
+
+        <div class="sum-total">
+          <div class="k">รวมสุทธิ</div>
+          <div class="v" id="sumGrand">0.00</div>
         </div>
       </div>
     </div>
 
-    <div class="mt-4 d-flex gap-2">
-      <button class="btn btn-primary px-4" type="submit">
-        <i class="bi bi-check2-circle me-1"></i> บันทึก
-      </button>
-      <a class="btn btn-outline-secondary" href="{{ url_for('po_list') }}">ยกเลิก</a>
-    </div>
-
-    <!-- Hidden values (คงเดิม) -->
-    <input type="hidden" name="calc_subtotal" id="hidSub">
-    <input type="hidden" name="calc_discount" id="hidDisc">
-    <input type="hidden" name="calc_net_ex_vat" id="hidNetEx">
-    <input type="hidden" name="calc_vat" id="hidVat">
-    <input type="hidden" name="calc_grand" id="hidGrand">
   </form>
 </div>
 
-<!-- Modal: เพิ่มซัพพลายเออร์ (เดิม) -->
-<div class="modal fade" id="modalSupplier" tabindex="-1" aria-labelledby="modalSupplierLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <form method="post" action="{{ url_for('api_suppliers_create') }}">
+<!-- Supplier Modal -->
+<div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="border-radius:1.25rem; overflow:hidden;">
+      <form method="POST" action="{{ url_for('api_suppliers_create') }}">
         <div class="modal-header">
-          <h5 class="modal-title" id="modalSupplierLabel"><i class="bi bi-building-add me-2"></i>เพิ่มซัพพลายเออร์</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+          <h5 class="modal-title">
+            <i class="bi bi-building-add me-1"></i> เพิ่มผู้ขาย (Supplier)
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
+
         <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-md-8">
+          <div class="row g-2">
+            <div class="col-12">
               <label class="form-label">ชื่อบริษัท/ร้าน <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" name="name" required>
+              <input class="form-control" name="name" required>
             </div>
-            <div class="col-md-4">
-              <label class="form-label">เลขที่ผู้เสียภาษี</label>
-              <input type="text" class="form-control" name="tax_id">
+
+            <div class="col-md-6">
+              <label class="form-label">เลขผู้เสียภาษี</label>
+              <input class="form-control" name="tax_id" placeholder="ถ้ามี">
             </div>
+
+            <div class="col-md-6">
+              <label class="form-label">เบอร์โทร</label>
+              <input class="form-control" name="phone" placeholder="เช่น 08x-xxx-xxxx">
+            </div>
+
             <div class="col-12">
               <label class="form-label">ที่อยู่</label>
-              <textarea class="form-control" name="address" rows="2"></textarea>
+              <input class="form-control" name="address" placeholder="บ้านเลขที่ / ถนน / หมู่บ้าน">
             </div>
-            <div class="col-md-6">
-              <label class="form-label">แขวง/ตำบล</label>
-              <input type="text" class="form-control" name="district">
+
+            <div class="col-md-4">
+              <label class="form-label">ตำบล/แขวง</label>
+              <input class="form-control" name="district">
             </div>
-            <div class="col-md-6">
-              <label class="form-label">เขต/อำเภอ</label>
-              <input type="text" class="form-control" name="amphoe">
+            <div class="col-md-4">
+              <label class="form-label">อำเภอ/เขต</label>
+              <input class="form-control" name="amphoe">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label">จังหวัด</label>
-              <input type="text" class="form-control" name="province">
+              <input class="form-control" name="province">
             </div>
-            <div class="col-md-6">
+
+            <div class="col-md-4">
               <label class="form-label">รหัสไปรษณีย์</label>
-              <input type="text" class="form-control" name="postcode">
+              <input class="form-control" name="postcode">
             </div>
-            <div class="col-md-6">
-              <label class="form-label">โทรศัพท์</label>
-              <input type="text" class="form-control" name="phone">
+
+            <div class="col-12">
+              <div class="form-text">
+                เมื่อกดบันทึก ระบบจะเพิ่มผู้ขาย แล้วกลับมาหน้า PO พร้อมเลือกผู้ขายให้ทันที
+              </div>
             </div>
           </div>
         </div>
+
         <div class="modal-footer">
-          <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">ยกเลิก</button>
-          <button class="btn btn-primary" type="submit"><i class="bi bi-save me-1"></i> บันทึก</button>
+          <button class="btn btn-light" type="button" data-bs-dismiss="modal">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-save me-1"></i> บันทึกผู้ขาย
+          </button>
         </div>
       </form>
     </div>
   </div>
 </div>
 
-{% block scripts %}
 <script>
 (function(){
-  const tbody         = document.querySelector('#itemsTable tbody');
-  if (!tbody) return;  // เผื่อหน้าไหนหลุดมาใช้ script นี้
+  const VAT_RATE = 0.07;
 
-  const addRowBtn     = document.getElementById('addRow');
-  const vatRateInput  = document.getElementById('vatRate');
-  const vatRateMobile = document.getElementById('vatRate_m');
-  const vatPercentText = document.getElementById('vatPercentText');
-  const radios        = document.querySelectorAll('input[name="tax_type"]');
-
-  function getVatRate(){
-    const v = parseFloat(vatRateInput && vatRateInput.value || 0);
-    return isNaN(v) ? 0 : v;
+  function toNum(v){
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+  }
+  function fmt(n){
+    return (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2);
   }
 
-  function getTaxType(){
-    const checked = document.querySelector('input[name="tax_type"]:checked');
-    return checked ? checked.value : 'inc';
+  function calcRow(tr){
+    const qty  = toNum(tr.querySelector('.js-qty')?.value);
+    const cost = toNum(tr.querySelector('.js-cost')?.value);
+    const disc = toNum(tr.querySelector('.js-disc')?.value);
+
+    const before = qty * cost;
+    const discAmt = before * (disc/100);
+    const total = Math.max(0, before - discAmt);
+
+    const span = tr.querySelector('.js-line-total');
+    if(span) span.textContent = fmt(total);
+
+    return { before, discAmt, total };
   }
 
-  function recalc(){
-    let sub = 0, disc = 0, tot = 0;
+  function calcAll(){
+    const rows = document.querySelectorAll('#itemsBody tr.po-row');
+    let beforeSum = 0, discSum = 0, subSum = 0;
 
-    tbody.querySelectorAll('tr').forEach(function(tr){
-      const qtyEl  = tr.querySelector('[name="item_qty[]"]');
-      const costEl = tr.querySelector('[name="item_cost[]"]');
-      const discEl = tr.querySelector('[name="item_disc[]"]');
-
-      const qty  = parseFloat(qtyEl  && qtyEl.value  || 0);
-      const cost = parseFloat(costEl && costEl.value || 0);
-      const dpc  = parseFloat(discEl && discEl.value || 0);
-
-      const lsub  = qty * cost;
-      const ldisc = lsub * (dpc/100);
-      const ltot  = lsub - ldisc;
-
-      sub  += lsub;
-      disc += ldisc;
-      tot  += ltot;
-
-      const lineEl = tr.querySelector('.lineTotal');
-      if (lineEl) lineEl.textContent = ltot.toFixed(2);
+    rows.forEach(tr=>{
+      // ถ้าชื่อรายการว่าง ให้ไม่นับ
+      const name = (tr.querySelector('.js-name')?.value || '').trim();
+      const qty  = toNum(tr.querySelector('.js-qty')?.value);
+      if(!name || qty <= 0){
+        const span = tr.querySelector('.js-line-total');
+        if(span) span.textContent = "0.00";
+        return;
+      }
+      const r = calcRow(tr);
+      beforeSum += r.before;
+      discSum += r.discAmt;
+      subSum += r.total;
     });
 
-    const vatRate = getVatRate();
-    const type    = getTaxType();
+    const vat = subSum * VAT_RATE;
+    const grand = subSum + vat;
 
-    let netEx = 0, vat = 0, grand = 0;
-
-    if (type === 'none'){
-      netEx = tot; vat = 0; grand = tot;
-    } else if (type === 'ex'){
-      netEx = tot; vat = netEx * (vatRate/100); grand = netEx + vat;
-    } else { // inc
-      grand = tot;
-      vat   = grand * (vatRate / (100 + vatRate));
-      netEx = grand - vat;
-    }
-
-    document.getElementById('sumSub').textContent   = sub.toFixed(2);
-    document.getElementById('sumDisc').textContent  = disc.toFixed(2);
-    document.getElementById('sumNetEx').textContent = netEx.toFixed(2);
-    document.getElementById('sumVat').textContent   = vat.toFixed(2);
-    document.getElementById('sumGrand').textContent = grand.toFixed(2);
-
-    vatPercentText.textContent = (isNaN(vatRate) ? 0 : vatRate).toString();
-
-    document.getElementById('hidSub').value   = sub.toFixed(2);
-    document.getElementById('hidDisc').value  = disc.toFixed(2);
-    document.getElementById('hidNetEx').value = netEx.toFixed(2);
-    document.getElementById('hidVat').value   = vat.toFixed(2);
-    document.getElementById('hidGrand').value = grand.toFixed(2);
+    document.getElementById('sumBefore').textContent   = fmt(beforeSum);
+    document.getElementById('sumDiscount').textContent = fmt(discSum);
+    document.getElementById('sumSubTotal').textContent = fmt(subSum);
+    document.getElementById('sumVat').textContent      = fmt(vat);
+    document.getElementById('sumGrand').textContent    = fmt(grand);
   }
 
-  function bindRowEvents(tr){
-    const qtyEl  = tr.querySelector('[name="item_qty[]"]');
-    const costEl = tr.querySelector('[name="item_cost[]"]');
-    const discEl = tr.querySelector('[name="item_disc[]"]');
-    [qtyEl, costEl, discEl].forEach(function(el){
-      if (el) el.addEventListener('input', recalc);
+  function bindRow(tr){
+    tr.querySelectorAll('input').forEach(el=>{
+      el.addEventListener('input', calcAll);
+      el.addEventListener('change', calcAll);
     });
 
-    const delBtn = tr.querySelector('.js-remove-row');
-    if (delBtn){
-      delBtn.addEventListener('click', function(){
+    const rm = tr.querySelector('.js-remove');
+    if(rm){
+      rm.addEventListener('click', ()=>{
+        const rows = document.querySelectorAll('#itemsBody tr.po-row');
+        if(rows.length <= 1){
+          // เหลือแถวเดียว ให้เคลียร์แทน
+          tr.querySelectorAll('input').forEach(inp=>{
+            if(inp.classList.contains('js-qty')) inp.value = 1;
+            else if(inp.classList.contains('js-unit')) inp.value = "ชิ้น";
+            else if(inp.classList.contains('js-cost')) inp.value = 0;
+            else if(inp.classList.contains('js-disc')) inp.value = 0;
+            else inp.value = "";
+          });
+          calcAll();
+          return;
+        }
         tr.remove();
-        recalc();
+        calcAll();
       });
     }
   }
 
-  function makeRow(){
+  function addRow(){
+    const tbody = document.getElementById('itemsBody');
     const tr = document.createElement('tr');
+    tr.className = 'po-row';
     tr.innerHTML = `
-      <td><input class="form-control form-control-sm" name="item_sku[]"  placeholder="SKU"></td>
-      <td><input class="form-control form-control-sm" name="item_name[]" placeholder="ชื่อรายการ" required></td>
-      <td><input class="form-control form-control-sm text-end" name="item_qty[]"  type="number" step="0.01" value="1"></td>
-      <td><input class="form-control form-control-sm" name="item_unit[]" value="ชิ้น"></td>
-      <td><input class="form-control form-control-sm text-end" name="item_cost[]" type="number" step="0.01" value="0"></td>
-      <td><input class="form-control form-control-sm text-end" name="item_disc[]" type="number" step="0.01" value="0"></td>
-      <td class="text-end lineTotal">0.00</td>
-      <td><button class="btn btn-sm btn-ghost js-remove-row" type="button"><i class="bi bi-x-lg"></i></button></td>
+      <td>
+        <input class="form-control js-sku" name="item_sku[]" placeholder="SKU">
+      </td>
+      <td>
+        <input class="form-control js-name" name="item_name[]" placeholder="ชื่อรายการ" required>
+      </td>
+      <td>
+        <input class="form-control js-brand" name="item_brand[]" placeholder="ยี่ห้อ">
+      </td>
+      <td>
+        <div class="qty-unit">
+          <input class="form-control js-qty" name="item_qty[]" type="number" step="1" min="0" value="1" required>
+          <input class="form-control js-unit" name="item_unit[]" placeholder="หน่วย" value="ชิ้น">
+        </div>
+      </td>
+      <td>
+        <input class="form-control money js-cost" name="item_cost[]" type="number" step="0.01" min="0" value="0" required>
+      </td>
+      <td>
+        <input class="form-control money js-disc" name="item_disc[]" type="number" step="0.01" min="0" max="100" value="0">
+      </td>
+      <td class="money">
+        <span class="js-line-total">0.00</span>
+      </td>
+      <td class="text-center">
+        <button type="button" class="btn-icon js-remove" title="ลบรายการ">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </td>
     `;
     tbody.appendChild(tr);
-    bindRowEvents(tr);
-    recalc();
+    bindRow(tr);
+    calcAll();
   }
 
-  if (addRowBtn){
-    addRowBtn.addEventListener('click', makeRow);
-  }
+  document.querySelectorAll('#itemsBody tr.po-row').forEach(bindRow);
 
-  if (vatRateInput){
-    vatRateInput.addEventListener('input', function(){
-      if (vatRateMobile){
-        vatRateMobile.value = this.value;
-      }
-      recalc();
-    });
-  }
+  const btnAdd = document.getElementById('btnAddRow');
+  if(btnAdd) btnAdd.addEventListener('click', addRow);
 
-  if (vatRateMobile){
-    vatRateMobile.addEventListener('input', function(){
-      if (vatRateInput){
-        vatRateInput.value = this.value;
-      }
-      recalc();
-    });
-  }
-
-  radios.forEach(function(r){
-    r.addEventListener('change', recalc);
-  });
-
-  // สร้างแถวแรก
-  makeRow();
+  calcAll();
 })();
 </script>
-{% endblock %}
 {% endblock %}

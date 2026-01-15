@@ -118,14 +118,16 @@
   </div>
 
   <form class="row g-2 mt-3" method="get" action="{{ url_for('equip_list') }}">
-    <div class="col-12 col-md-7">
+    <div class="col-12 col-md-6">
       <div class="st-search">
         <i class="bi bi-search"></i>
-        <input name="q" value="{{ q }}" type="search" class="form-control form-control-lg"
+        <input name="q" value="{{ q or '' }}" type="search" class="form-control form-control-lg"
                placeholder="ค้นหา: SKU หรือชื่ออุปกรณ์">
       </div>
     </div>
-    <div class="col-12 col-md-3">
+
+    <div class="col-12 col-md-2">
+      <label class="form-label mb-1 small text-muted">สถานะ</label>
       <select class="form-select form-select-lg" name="status" onchange="this.form.submit()">
         <option value="" {{ ''==status and 'selected' or '' }}>ทุกสถานะ</option>
         <option value="READY"  {{ status=='READY'  and 'selected' or '' }}>พร้อมให้เช่า</option>
@@ -133,10 +135,36 @@
         <option value="REPAIR" {{ status=='REPAIR' and 'selected' or '' }}>รอซ่อม</option>
       </select>
     </div>
+
+    <div class="col-6 col-md-2">
+      <label class="form-label mb-1 small text-muted">เริ่ม</label>
+      <input type="date" class="form-control form-control-lg" name="start"
+             value="{{ start or request.args.get('start','') }}">
+    </div>
+
+    <div class="col-6 col-md-2">
+      <label class="form-label mb-1 small text-muted">สิ้นสุด</label>
+      <input type="date" class="form-control form-control-lg" name="end"
+             value="{{ end or request.args.get('end','') }}">
+    </div>
+
     <div class="col-12 col-md-2 d-grid">
       <button class="btn btn-outline-secondary btn-lg" type="submit">
         ค้นหา
       </button>
+    </div>
+
+    <div class="col-12 col-md-4 d-grid">
+      <a class="btn btn-outline-dark btn-lg"
+         href="{{ url_for('export_equipment_report_excel', q=(q or ''), status=(status or ''), start=(start or ''), end=(end or '')) }}">
+        <i class="bi bi-filetype-xlsx"></i> Export Excel
+      </a>
+    </div>
+
+    <div class="col-12 col-md-2 d-grid">
+      <a class="btn btn-light border btn-lg" href="{{ url_for('equip_list') }}">
+        ล้างตัวกรอง
+      </a>
     </div>
   </form>
 </div>

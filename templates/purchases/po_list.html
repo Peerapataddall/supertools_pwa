@@ -19,26 +19,44 @@
       <span class="st-chip">{{ pos|length }} รายการ</span>
     </div>
 
-    <div class="ms-auto d-flex flex-wrap gap-2">
-      <div class="input-group input-group-sm st-input-w">
-        <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
-        <input type="search" class="form-control" id="poSearch" placeholder="ค้นหาเลขที่ / ผู้ขาย">
-      </div>
+    <div class="ms-auto d-flex flex-wrap gap-2 align-items-end">
+      <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+        <div class="input-group input-group-sm st-input-w">
+          <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+          <input type="search" class="form-control" name="q" placeholder="ค้นหาเลขที่ / ผู้ขาย" value="{{ q or request.args.get('q','') }}">
+        </div>
 
-      {# แสดงชื่อไทย แต่ value เป็นโค้ดเดิม เพื่อใช้ filter ได้ #}
-      <select id="statusFilter" class="form-select form-select-sm st-input-w" style="max-width:220px">
-        <option value="">สถานะทั้งหมด</option>
-        <option value="DRAFT">{{ STATUS_LABEL['DRAFT'] }}</option>
-        <option value="APPROVED">{{ STATUS_LABEL['APPROVED'] }}</option>
-        <option value="ORDERED">{{ STATUS_LABEL['ORDERED'] }}</option>
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">เริ่ม</label>
+          <input class="form-control form-control-sm" type="date" name="start" value="{{ start or request.args.get('start','') }}">
+        </div>
+
+        <div style="min-width:140px;">
+          <label class="form-label mb-0 small text-muted">สิ้นสุด</label>
+          <input class="form-control form-control-sm" type="date" name="end" value="{{ end or request.args.get('end','') }}">
+        </div>
+
+        <button class="btn btn-outline-secondary btn-sm" type="submit" title="กรอง"><i class="bi bi-funnel"></i></button>
+      </form>
+
+      {# แสดงชื่อสถานะ + filter แบบเดิม #}
+      <select class="form-select form-select-sm st-input-w" id="poStatus">
+        <option value="">ทุกสถานะ</option>
+        {% for k, label in STATUS_LABEL.items() %}
+          <option value="{{ k }}">{{ label }}</option>
+        {% endfor %}
       </select>
 
       {% if can('purchases.create') %}
       <a href="{{ url_for('po_new') }}" class="btn btn-gradient btn-sm">
         <i class="bi bi-plus-lg me-1"></i> สร้างใบสั่งซื้อ
       </a>
+      <a href="{{ url_for('export_po_excel', q=(q or request.args.get('q','')), start=(start or request.args.get('start','')), end=(end or request.args.get('end',''))) }}" class="btn btn-outline-dark btn-sm">
+        <i class="bi bi-filetype-xlsx me-1"></i> Export Excel
+      </a>
+
       {% endif %}
-    </div>
+    </div>>
   </div>
 
   <!-- Table -->

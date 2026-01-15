@@ -133,6 +133,12 @@
   .rt-view-btn:hover{
     background:#eff6ff; border-color:#2563eb; color:#2563eb;
   }
+
+  .rt-filterbar .rt-field{ min-width: 140px; }
+  .rt-filterbar .rt-search{ min-width: 240px; max-width: 320px; }
+  .rt-filterbar .rt-search-input{ padding-left:2.25rem; }
+  .rt-filterbar .rt-search-icon{ position:absolute; left:.75rem; top:50%; transform:translateY(-50%); opacity:.65; }
+
 </style>
 {% endblock %}
 
@@ -158,22 +164,47 @@
       </div>
 
       <div class="rt-list-actions w-100 w-md-auto">
-        <form method="get"
-              class="rt-search-wrap">
-          <i class="bi bi-search rt-search-icon"></i>
-          <input type="text"
-                 name="q"
-                 class="form-control form-control-sm"
-                 placeholder="ค้นหา เลขที่คืน / ลูกค้า / ใบเสนอราคา"
-                 value="{{ request.args.get('q','') }}">
-        </form>
+        <form method="get" class="d-flex flex-wrap align-items-end gap-2 justify-content-end rt-filterbar">
+          <div class="rt-field rt-search">
+            <label class="form-label mb-0 small text-muted">ค้นหา</label>
+            <div class="position-relative">
+              <i class="bi bi-search rt-search-icon"></i>
+              <input type="text"
+                     name="q"
+                     class="form-control form-control-sm rt-search-input"
+                     placeholder="เลขที่คืน / ลูกค้า / ใบเสนอราคา"
+                     value="{{ request.args.get('q','') }}">
+            </div>
+          </div>
 
-        <a href="{{ url_for('returns_new') }}"
-           class="btn btn-rt-primary">
-          <i class="bi bi-plus-circle-fill"></i>
-          <span>สร้างใบคืนสินค้า</span>
-        </a>
-      </div>
+          <div class="rt-field">
+            <label class="form-label mb-0 small text-muted">เริ่ม</label>
+            <input class="form-control form-control-sm" type="date" name="start" value="{{ request.args.get('start','') }}">
+          </div>
+
+          <div class="rt-field">
+            <label class="form-label mb-0 small text-muted">สิ้นสุด</label>
+            <input class="form-control form-control-sm" type="date" name="end" value="{{ request.args.get('end','') }}">
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" type="submit" title="ค้นหา/กรอง">
+              <i class="bi bi-funnel"></i> กรอง
+            </button>
+
+            <a class="btn btn-sm btn-success"
+               href="{{ url_for('returns_export_excel', q=request.args.get('q',''), start=request.args.get('start',''), end=request.args.get('end','')) }}"
+               title="Export Excel ตามช่วงวันที่">
+              <i class="bi bi-file-earmark-excel"></i> Export
+            </a>
+
+            <a class="btn btn-sm btn-primary"
+               href="{{ url_for('returns_new') }}">
+              <i class="bi bi-plus-circle"></i> สร้างใบคืน
+            </a>
+          </div>
+        </form>
+      </div>>
     </div>
   </section>
 

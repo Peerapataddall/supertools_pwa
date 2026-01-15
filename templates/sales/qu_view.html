@@ -9,7 +9,6 @@
 {% block content %}
 
 <style>
-  /* ===== Soft / Gradient Cards ===== */
   .st-softcard{
     border:0; border-radius:1rem;
     background: radial-gradient(circle at 0% 0%, rgba(255,255,255,1) 0%, rgba(240,248,255,.7) 60%, rgba(235,244,255,.4) 100%);
@@ -28,7 +27,6 @@
   }
   .st-top-actions .btn{ border-radius:.75rem; }
 
-  /* ===== Chips ===== */
   .st-chip{
     display:inline-flex; align-items:center; gap:.45rem;
     border-radius:999px; padding:.35rem .65rem; font-weight:600; font-size:.8rem; border:1px solid;
@@ -44,11 +42,9 @@
   .chip-uniss{   background:#eff6ff; color:#1e3a8a; border-color:#bfdbfe; }
   .chip-iss{     background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
 
-  /* ===== Head meta ===== */
   .st-head-meta{ font-size:.8rem; color:#6b7280; line-height:1.1; }
   .st-head-value{ font-weight:600; font-size:1rem; color:#111; }
 
-  /* ===== Table ===== */
   .table-rounded thead th:first-child{ border-top-left-radius:.75rem; }
   .table-rounded thead th:last-child{  border-top-right-radius:.75rem; }
   .table-rounded tbody tr:last-child td:first-child{ border-bottom-left-radius:.75rem; }
@@ -62,7 +58,6 @@
   .st-total-grand{ font-size:1.15rem; font-weight:600; }
 </style>
 
-{# ================== Helpers ================== #}
 {% macro status_chip(s) -%}
   {% set s = (s or 'DRAFT')|upper %}
   {% if s in ['DRAFT','APPROVED','CANCELLED','REJECTED'] %}
@@ -125,12 +120,10 @@
   </div>
 
   <div class="st-top-actions d-flex flex-wrap gap-2 ms-lg-auto">
-    {# ปุ่มพรีวิว/ปริ้น (ทุกเอกสาร) #}
     <a class="btn btn-outline-primary btn-sm" href="{% if d.doc_type=='QU' %}{{ url_for('qu_preview', qid=d.id) }}{% elif d.doc_type=='BL' %}{{ url_for('bl_print', did=d.id) }}{% elif d.doc_type=='IV' %}{{ url_for('iv_print', did=d.id) }}{% else %}{{ url_for('rc_print', did=d.id) }}{% endif %}" target="_blank">
       <i class="bi bi-eye me-1"></i> พรีวิว/ปริ้น
     </a>
 
-    {# QU: ปุ่มอนุมัติ (ถ้ายังไม่อนุมัติ) #}
     {% if d.doc_type=='QU' and d.status!='APPROVED' and can('sales.manage') and not (hide_approve or false) %}
       <form method="post" action="{{ url_for('qu_approve', qid=d.id) }}" class="d-inline">
         <button class="btn btn-success btn-sm">
@@ -141,7 +134,6 @@
       <span class="badge bg-success align-self-center">อนุมัติแล้ว</span>
     {% endif %}
 
-    {# เอกสารลูก: ปุ่มเปลี่ยนสถานะ + ปริ้น #}
     {% if d.doc_type=='BL' and can('sales.manage') %}
       <form class="d-inline" method="post" action="{{ url_for('bl_toggle', did=d.id) }}">
         <button class="btn btn-outline-secondary btn-sm">
@@ -162,7 +154,6 @@
       </form>
     {% endif %}
 
-    {# ปุ่มกลับ #}
     {% if d.doc_type=='QU' %}
       <a href="{{ url_for('qu_list') }}" class="btn btn-light border btn-sm">กลับ</a>
     {% elif d.doc_type=='BL' %}
@@ -176,10 +167,8 @@
 </div>
 
 <div class="row g-3">
-  <!-- ซ้าย: ข้อมูลเอกสาร + รายการ -->
   <div class="col-lg-8 d-flex flex-column gap-3">
 
-    <!-- กล่องข้อมูลเอกสาร -->
     <div class="st-softcard">
       <div class="card-body p-3 p-md-4">
         <div class="row g-3">
@@ -229,29 +218,95 @@
           <table class="table table-sm align-middle mb-0 table-rounded">
             <thead>
               <tr>
-                <th>รายการ</th>
+                <th style="width:14%">รหัส</th>
+                <th style="width:32%">ชื่ออุปกรณ์ / หมวดหมู่</th>
                 <th class="text-end" style="width:10%">จำนวน</th>
                 <th style="width:18%">หน่วย/ระยะ</th>
-                <th class="text-end" style="width:15%">ราคา/หน่วย</th>
-                <th class="text-end" style="width:10%">%ลด</th>
-                <th class="text-end" style="width:15%">รวม</th>
+                <th class="text-end" style="width:12%">ราคา/หน่วย</th>
+                <th class="text-end" style="width:7%">%ลด</th>
+                <th class="text-end" style="width:12%">รวม</th>
               </tr>
             </thead>
             <tbody>
             {% if d.items %}
               {% for it in d.items %}
-              <tr>
-                <td>{{ it.name }}</td>
-                <td class="text-end">{{ '%.0f'|format(it.qty or 0) }}</td>
-                <td>{{ it.rent_unit|unit_th }} × {{ it.rent_duration or 1 }}</td>
-                <td class="text-end">{{ '%.2f'|format(it.unit_price or 0) }}</td>
-                <td class="text-end">{{ '%.2f'|format(it.discount_pct or 0) }}</td>
-                <td class="text-end">{{ '%.2f'|format(it.line_total or 0) }}</td>
-              </tr>
+                {# ==========================================================
+                   แสดง "รหัส" และ "ชื่อ" ให้ถูกต้องทุกกรณี
+
+                   - QU: แสดงรหัสเป็น Prefix SKU (เช่น SP-001)
+                     (เดิมบางรายการถูกแพ็ค name เป็น "[SKUเต็ม] ชื่อ" ก็ยังรองรับ)
+
+                   - BL/IV/RC: แสดงรหัสเป็น SKU เต็มของอุปกรณ์จริง
+                     โดยอ่านจาก it.allocated_skus (คั่นด้วย ,) ซึ่งถูกบันทึกตอน Allocate ใน BK
+                     และทำความสะอาดชื่อไม่ให้เอา [SP-001] หรือ [SKU] ไปปนในชื่อ
+                   ========================================================== #}
+
+                {% set raw_name = (it.name or '') %}
+                {% set display_name = raw_name %}
+
+                {# --- 1) ดึง SKU เต็มจาก allocated_skus ถ้ามี --- #}
+                {% set alloc_raw = (it.allocated_skus or '') %}
+                {% set alloc_list = [] %}
+                {% if alloc_raw %}
+                  {% set alloc_list = alloc_raw.split(',') %}
+                {% endif %}
+                {% set alloc_clean = [] %}
+                {% if alloc_list %}
+                  {% for s in alloc_list %}
+                    {% if (s or '').strip() %}
+                      {% set _ = alloc_clean.append((s or '').strip()) %}
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
+                {% set sku_full_from_alloc = (alloc_clean[0] if alloc_clean and (alloc_clean|length>0) else '') %}
+
+                {# --- 2) ถ้า name ถูกแพ็คเป็น "[SKU] ชื่อ" ให้แยกออก (รองรับของเดิม) --- #}
+                {% set sku_full_from_name = '' %}
+                {% if raw_name and raw_name.startswith('[') and ']' in raw_name %}
+                  {% set parts = raw_name.split(']', 1) %}
+                  {% set sku_full_from_name = parts[0][1:] %}
+                  {% set display_name = parts[1].strip() %}
+                {% endif %}
+
+                {# --- 3) ทำความสะอาดชื่อกรณีเป็น "ชื่อ [SP-001]" หรือ "ชื่อ [SKU]" --- #}
+                {% if display_name and display_name.endswith(']') and (' [' in display_name) %}
+                  {% set display_name = display_name.rsplit(' [', 1)[0].strip() %}
+                {% endif %}
+
+                {# --- 4) สรุป SKU ที่จะใช้ --- #}
+                {% set sku_full = sku_full_from_alloc or sku_full_from_name %}
+
+                {# --- 5) แสดงผลตามชนิดเอกสาร --- #}
+                {% if d.doc_type == 'QU' %}
+                  {# QU แสดงเป็น Prefix SKU (SP-001) #}
+                  {% set code_prefix = '' %}
+                  {% if sku_full %}
+                    {% set sku_parts = sku_full.split('-') %}
+                    {% if sku_parts|length >= 2 %}
+                      {% set code_prefix = sku_parts[0] ~ '-' ~ sku_parts[1] %}
+                    {% else %}
+                      {% set code_prefix = sku_full %}
+                    {% endif %}
+                  {% endif %}
+                  {% set code_show = code_prefix %}
+                {% else %}
+                  {# BL/IV/RC แสดงเป็น SKU เต็มของอุปกรณ์จริง #}
+                  {% set code_show = sku_full %}
+                {% endif %}
+
+                <tr>
+                  <td>{{ code_show or '—' }}</td>
+                  <td>{{ display_name or '—' }}</td>
+                  <td class="text-end">{{ '%.0f'|format(it.qty or 0) }}</td>
+                  <td>{{ it.rent_unit|unit_th }} × {{ it.rent_duration or 1 }}</td>
+                  <td class="text-end">{{ '%.2f'|format(it.unit_price or 0) }}</td>
+                  <td class="text-end">{{ '%.2f'|format(it.discount_pct or 0) }}</td>
+                  <td class="text-end">{{ '%.2f'|format(it.line_total or 0) }}</td>
+                </tr>
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="6" class="text-center text-muted py-4">ยังไม่มีรายการ</td>
+                <td colspan="7" class="text-center text-muted py-4">ยังไม่มีรายการ</td>
               </tr>
             {% endif %}
             </tbody>
@@ -262,7 +317,6 @@
 
   </div>
 
-  <!-- ขวา: สรุป -->
   <div class="col-lg-4">
     <div class="st-summary-card">
       <div class="card-body p-3 p-md-4">

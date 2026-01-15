@@ -3,8 +3,9 @@ from functools import wraps
 from sqlite3 import Connection as SQLite3Connection
 
 import os  # ← ใช้สำหรับอัปโหลดโลโก้
+import io  # ← ใช้ทำไฟล์ Excel ในหน่วยความจำ
 from typing import List, Dict, Optional
-from flask import Flask, render_template, redirect, url_for, request, flash, abort, jsonify, Blueprint,render_template_string
+from flask import Flask, render_template, redirect, url_for, request, flash, abort, jsonify, Blueprint, render_template_string, send_file
 import re
 from flask_sqlalchemy import SQLAlchemy
 from collections import defaultdict
@@ -32,7 +33,7 @@ from sqlalchemy import text
 import types
 from enum import Enum
 from flask import current_app
-
+import sys
 
 
 
@@ -42,22 +43,55 @@ app = Flask(__name__)
 # อ่าน SECRET_KEY จาก env ถ้ามี ถ้าไม่มีใช้ค่าเดิม
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me")
 
-# เลือก DB จาก DATABASE_URL ถ้ามี ไม่งั้นใช้ sqlite เดิม
-db_url = os.getenv("DATABASE_URL", "sqlite:///supertools.db")
+# เลือก DB จาก DATABASE_URL ถ้ามี ไม่งั้นใช้ sqlite เดิม (สำหรับ dev)
+db_url = os.getenv("DATABASE_URL")
 
-# บางผู้ให้บริการให้ prefix postgres:// ต้องแปลงเป็น postgresql+psycopg2://
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+if not db_url:
+    # โหมด dev ในเครื่อง → ใช้ sqlite
+    db_url = "sqlite:///supertools.db"
+else:
+    # บางผู้ให้บริการให้ prefix postgres:// ต้องแปลงเป็น postgresql+psycopg2://
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB เผื่อไฟล์ใหญ่กว่าค่าโลโก้ที่ตั้งไว้
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB เผื่อไฟล์โลโก้ / รูป
+
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 
 
+def _is_migration_command() -> bool:
+    """
+    คืนค่า True ถ้ากำลังรันคำสั่งเกี่ยวกับ flask db / alembic
+    เพื่อไม่ให้ create_all / seed ทำงาน
+    """
+    argv = " ".join(sys.argv).lower()
+    return (
+        ("flask" in argv and " db " in f" {argv} ")
+        or "alembic" in argv
+    )
+
+def _xlsx_response(workbook, filename: str):
+    """
+    แปลง openpyxl Workbook -> response สำหรับ download xlsx
+    """
+    bio = BytesIO()
+    workbook.save(bio)
+    bio.seek(0)
+
+    if not filename.lower().endswith(".xlsx"):
+        filename += ".xlsx"
+
+    return send_file(
+        bio,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 @app.context_processor
 def inject_template_helpers():
@@ -117,6 +151,12 @@ class Claim(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     quote_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), nullable=False)  # อ้าง QU
     remark = db.Column(db.Text, default="")
+
+    # ---- Contract / Installment billing ----
+    billing_mode = db.Column(db.String(12), default="ONCE")  # ONCE / INSTALLMENT
+    contract_start = db.Column(db.Date)  # วันที่เริ่มสัญญา (ใช้กับ QU/CT)
+    contract_end = db.Column(db.Date)    # วันที่สิ้นสุดสัญญา
+    installment_count = db.Column(db.Integer, default=0)     # จำนวนงวด (เช่น 12)
 
     customer = db.relationship("Customer", lazy="joined")
     quote = db.relationship("SalesDoc", lazy="joined", foreign_keys=[quote_id])
@@ -203,6 +243,8 @@ class POItem(db.Model):
     po_id = db.Column(db.Integer, db.ForeignKey("purchase_order.id"), index=True, nullable=False)
     sku = db.Column(db.String(80))
     name = db.Column(db.String(255), nullable=False)
+
+    brand = db.Column(db.String(120), default="")  # NEW: ยี่ห้อ
     qty = db.Column(db.Float, nullable=False, default=1.0)
     unit = db.Column(db.String(32), default="ชิ้น")
     unit_cost = db.Column(db.Float, nullable=False, default=0.0)
@@ -226,9 +268,36 @@ class GRNItem(db.Model):
     grn_id = db.Column(db.Integer, db.ForeignKey("goods_receipt.id"), index=True, nullable=False)
     sku = db.Column(db.String(80))
     name = db.Column(db.String(255), nullable=False)
+
+    brand = db.Column(db.String(120), default="")  # NEW: ยี่ห้อ
     qty = db.Column(db.Float, nullable=False, default=0.0)
     unit = db.Column(db.String(32), default="ชิ้น")
     unit_cost = db.Column(db.Float, nullable=False, default=0.0)
+
+
+# ---------- Incoming Equipments (Pending to add into system) ----------
+class IncomingEquipment(db.Model):
+    """
+    สเตจอุปกรณ์ที่ 'รับสินค้าเข้า (GRN)' แล้ว แต่ยังไม่ได้สร้างเป็น Equipment จริง
+    เพื่อให้ผู้ใช้เข้ามาหน้าเพิ่มอุปกรณ์แล้วกด "เพิ่ม" และให้ระบบเติมข้อมูลให้อัตโนมัติ
+    """
+    __tablename__ = "incoming_equipment"
+    id = db.Column(db.Integer, primary_key=True)
+
+    grn_id = db.Column(db.Integer, db.ForeignKey("goods_receipt.id"), index=True, nullable=False)
+    grn_item_id = db.Column(db.Integer, db.ForeignKey("grn_item.id"), index=True, nullable=False)
+
+    name = db.Column(db.String(255), nullable=False)
+    brand = db.Column(db.String(120), default="")
+    unit_cost = db.Column(db.Float, nullable=False, default=0.0)
+    received_date = db.Column(db.Date, nullable=False, default=date.today)
+
+    status = db.Column(db.String(20), nullable=False, default="PENDING")  # PENDING / DONE
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    grn = db.relationship("GoodsReceipt", lazy="joined")
+    grn_item = db.relationship("GRNItem", lazy="joined")
+
 
 # ---------- Company Profile ----------
 class CompanyProfile(db.Model):
@@ -305,6 +374,8 @@ class Equipment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sku = db.Column(db.String(40), nullable=False, unique=True, index=True)
     name = db.Column(db.String(255), nullable=False, index=True)
+
+    brand = db.Column(db.String(120), default="")  # NEW: ยี่ห้อ
 
     category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=False, index=True)
     category = db.relationship(Category, lazy="joined")
@@ -428,12 +499,21 @@ class SalesDoc(db.Model):
     doc_type = db.Column(db.String(2), nullable=False)
     status = db.Column(db.String(20), nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    project_name = db.Column(db.String(255), default="")
     po_customer = db.Column(db.String(64), default="")
     credit_days = db.Column(db.Integer, default=0)
     tax_mode = db.Column(db.String(4), default="EXC")
     wht_pct = db.Column(db.Integer, default=0)
     date = db.Column(db.Date, nullable=False, default=date.today)
     remark = db.Column(db.Text, default="")
+
+    # ---- Contract / Installment billing ----
+    # ONCE = ออกเอกสารปกติชุดเดียว (เดิม)
+    # INSTALLMENT = สร้างสัญญา/PO ใหญ่ (CT) + ตารางงวดรายเดือน แล้วออก BL/IV/RC แยกตามงวด
+    billing_mode = db.Column(db.String(12), default="ONCE")  # ONCE / INSTALLMENT
+    contract_start = db.Column(db.Date)  # วันที่เริ่มสัญญา (ใช้กับ QU/CT)
+    contract_end = db.Column(db.Date)    # วันที่สิ้นสุดสัญญา
+    installment_count = db.Column(db.Integer, default=0)     # จำนวนงวด (เช่น 12)
     amount_subtotal = db.Column(db.Float, default=0.0)
     amount_vat = db.Column(db.Float, default=0.0)
     amount_total = db.Column(db.Float, default=0.0)
@@ -448,6 +528,11 @@ class SalesItem(db.Model):
     __tablename__ = "sales_item"
     id = db.Column(db.Integer, primary_key=True)
     doc_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), index=True, nullable=False)
+    # เลือกเป็น "หมวดหมู่" (Category) ตอนทำใบเสนอราคา; เลือก "ตัวอุปกรณ์จริง" ตอนทำใบจอง (BK)
+    category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
+    category_prefix = db.Column(db.String(50), nullable=True)  # เก็บ prefix_sku ไว้เผื่อหมวดถูกแก้ชื่อ
+    allocated_skus = db.Column(db.Text, nullable=True)  # เก็บ SKU อุปกรณ์จริงที่ถูกเลือกตอนทำใบจอง (คั่นด้วย ,)
+
     image_path = db.Column(db.String(255), default="")
     name = db.Column(db.String(255), nullable=False)
     qty = db.Column(db.Float, default=1.0)
@@ -457,6 +542,46 @@ class SalesItem(db.Model):
     discount_pct = db.Column(db.Float, default=0.0)
     line_subtotal = db.Column(db.Float, default=0.0)
     line_total = db.Column(db.Float, default=0.0)
+
+
+class SalesInstallment(db.Model):
+    """
+    ตารางงวดรายเดือน (ลูกของสัญญา/PO ใหญ่)
+    contract = SalesDoc(doc_type="CT")
+    """
+    __tablename__ = "sales_installment"
+    id = db.Column(db.Integer, primary_key=True)
+
+    contract_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), index=True, nullable=False)
+    installment_no = db.Column(db.Integer, nullable=False)  # 1..N
+
+    period_start = db.Column(db.Date, nullable=False)
+    period_end = db.Column(db.Date, nullable=False)
+    bill_date = db.Column(db.Date, nullable=False)
+    due_date = db.Column(db.Date, nullable=False)
+
+    po_customer_sub = db.Column(db.String(64), default="")   # PO ย่อยของลูกค้า (ถ้ามี)
+
+    status = db.Column(db.String(20), default="PLANNED")     # PLANNED/READY/INVOICED/RECEIPTED/OVERDUE/CANCELLED
+
+    amount_subtotal = db.Column(db.Float, default=0.0)
+    amount_vat = db.Column(db.Float, default=0.0)
+    amount_total = db.Column(db.Float, default=0.0)
+    amount_wht = db.Column(db.Float, default=0.0)
+    amount_grand = db.Column(db.Float, default=0.0)
+
+    bill_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"))
+    invoice_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"))
+    receipt_id = db.Column(db.Integer, db.ForeignKey("sales_doc.id"))
+
+    contract = db.relationship("SalesDoc", foreign_keys=[contract_id], lazy="joined")
+    bill = db.relationship("SalesDoc", foreign_keys=[bill_id], lazy="joined")
+    invoice = db.relationship("SalesDoc", foreign_keys=[invoice_id], lazy="joined")
+    receipt = db.relationship("SalesDoc", foreign_keys=[receipt_id], lazy="joined")
+
+    __table_args__ = (
+        db.UniqueConstraint("contract_id", "installment_no", name="uq_sales_installment_contract_no"),
+    )
 
 # ---------- Spare parts (อะไหล่) ----------
 class SparePart(db.Model):
@@ -862,6 +987,36 @@ def _dec(x):
         return Decimal("0.00")
 
 
+def _sync_child_from_parent(parent: SalesDoc, child: SalesDoc):
+    """Sync child doc items/totals from parent (used after BK allocation/approval).
+    This fixes the case where BL/IV/RC were created before allocated_skus existed."""
+    if not child:
+        return
+    # ล้างรายการเดิมของลูก
+    SalesItem.query.filter_by(doc_id=child.id).delete(synchronize_session=False)
+    db.session.flush()
+    # คัดลอกรายการใหม่จาก parent -> child
+    _clone_items(parent, child)
+    # คัดลอกยอดรวม
+    for f in ["amount_subtotal", "amount_vat", "amount_total", "amount_wht", "amount_grand"]:
+        if hasattr(child, f) and hasattr(parent, f):
+            setattr(child, f, getattr(parent, f) or 0.0)
+
+
+def _ensure_children_for_booking(bk: SalesDoc):
+    children = {c.doc_type: c for c in SalesDoc.query.filter_by(parent_id=bk.id).all()}
+
+    # สร้างถ้ายังไม่มี
+    if "BL" not in children:
+        children["BL"] = _create_child_doc(bk, "BL", "UNPAID")
+    if "IV" not in children:
+        children["IV"] = _create_child_doc(bk, "IV", "UNISSUED")
+    if "RC" not in children:
+        children["RC"] = _create_child_doc(bk, "RC", "UNISSUED")
+
+    # สำคัญ: sync รายการทุกครั้ง (เพราะ BK อาจเพิ่งถูก allocate/approve)
+    for t in ["BL", "IV", "RC"]:
+        _sync_child_from_parent(bk, children.get(t))
 
 
 
@@ -1439,6 +1594,24 @@ def _save_delivery_photos(files, doc, kind: str) -> int:
 
 
 
+def _doc_amount(d):
+    """
+    คืนยอดรวมของเอกสารขายแบบปลอดภัย
+    ใช้ลำดับเดียวกับ dashboard
+    """
+    for attr in (
+        "amount_grand",
+        "amount_total",
+        "grand_total",
+        "total_amount",
+        "amount_subtotal",
+    ):
+        if hasattr(d, attr):
+            try:
+                return float(getattr(d, attr) or 0.0)
+            except Exception:
+                continue
+    return 0.0
 
 
 
@@ -1446,66 +1619,90 @@ def _save_delivery_photos(files, doc, kind: str) -> int:
 def recalc_gift_results(campaign: "GiftCampaign"):
     """
     คำนวณ GiftResult สำหรับแคมเปญที่กำหนด จากยอดขายลูกค้าในช่วง period_start–period_end
-    โดยดึงจากเอกสารขาย RC ที่ ISSUED เหมือนที่ใช้ใน Dashboard
+    - ใช้เอกสาร RC เป็นหลัก (กันยอดซ้ำ)
+    - นับสถานะเดียวกับที่ Dashboard ใช้ (PAID/DONE/RECEIPTED/ISSUED ฯลฯ)
+    - ถ้าไม่พบ RC เลยในช่วงนั้น ค่อย fallback ไปนับ BL ที่ PAID
     """
+    from collections import defaultdict
+    from sqlalchemy.orm import joinedload
+
     # 1) ดึง tier มาจัดเรียงจาก min_amount มาก -> น้อย
     tiers = sorted(campaign.tiers, key=lambda t: t.min_amount, reverse=True)
     if not tiers:
         return  # ไม่มี tier ก็ไม่ต้องทำอะไร
 
-    # 2) ดึงเอกสารขาย RC ที่ ISSUED ในช่วงแคมเปญ
+    # 2) สถานะ RC ที่ถือว่า "ยอดขายนับได้" (อิง Dashboard)
+    rc_statuses = [
+        "PAID", "Paid", "paid",
+        "PAID_FULL", "Paid_Full", "paid_full",
+        "DONE", "Done", "done",
+        "RECEIPTED", "Receipted", "receipted",
+        "ISSUED", "Issued", "issued",
+    ]
+
+    # 3) ดึงเอกสาร RC ในช่วงแคมเปญ
     rc_docs = (
         SalesDoc.query
         .options(joinedload(SalesDoc.customer))
         .filter(
             SalesDoc.doc_type == "RC",
-            SalesDoc.status.in_(["ISSUED", "Issued", "issued"]),
+            SalesDoc.status.in_(rc_statuses),
             SalesDoc.date.between(campaign.period_start, campaign.period_end),
         )
         .all()
     )
 
-    # 3) รวมยอดตามลูกค้า
-    customer_totals = defaultdict(Decimal)
-    for d in rc_docs:
-        if not d.customer_id:
-            continue
+    # 4) รวมยอดตามลูกค้า
+    customer_totals = defaultdict(float)
 
-        # ดึงยอดรวมจากเอกสารแบบปลอดภัย (ใช้ logic เดียวกับ dashboard)
-        amt_decimal = Decimal("0")
-        for attr in ("amount_grand", "amount_total", "amount_subtotal"):
-            if hasattr(d, attr):
-                raw = getattr(d, attr) or 0
-                try:
-                    amt_decimal = Decimal(str(raw))
-                    break
-                except Exception:
-                    continue
+    if rc_docs:
+        # ใช้ RC เป็นหลัก
+        for d in rc_docs:
+            if not d.customer_id:
+                continue
+            customer_totals[d.customer_id] += float(_doc_amount(d) or 0.0)
+    else:
+        # fallback: ถ้าไม่มี RC เลย ให้ใช้ BL ที่ PAID
+        bl_statuses = ["PAID", "Paid", "paid", "DONE", "Done", "done"]
+        bl_docs = (
+            SalesDoc.query
+            .options(joinedload(SalesDoc.customer))
+            .filter(
+                SalesDoc.doc_type == "BL",
+                SalesDoc.status.in_(bl_statuses),
+                SalesDoc.date.between(campaign.period_start, campaign.period_end),
+            )
+            .all()
+        )
+        for d in bl_docs:
+            if not d.customer_id:
+                continue
+            customer_totals[d.customer_id] += float(_doc_amount(d) or 0.0)
 
-        customer_totals[d.customer_id] += amt_decimal
-
-    # 4) สร้าง / อัปเดต GiftResult ต่อ customer
+    # 5) โหลดผลเดิมไว้ เพื่อไม่รีเซ็ตคนที่กด "ให้ของขวัญแล้ว"
     existing = {
-        (gr.customer_id): gr
-        for gr in GiftResult.query.filter_by(campaign_id=campaign.id).all()
+        r.customer_id: r
+        for r in GiftResult.query.filter_by(campaign_id=campaign.id).all()
     }
 
+    # 6) สร้าง/อัปเดต GiftResult ตาม tier
     for cust_id, total in customer_totals.items():
-        # หา tier ที่เหมาะสมที่สุด (ยอดถึง)
+        total = round(float(total or 0.0), 2)
+
         matched_tier = None
         for t in tiers:
-            if total >= t.min_amount:
+            if total >= float(t.min_amount or 0.0):
                 matched_tier = t
                 break
         if not matched_tier:
-            continue  # ยอดไม่ถึงเกณฑ์ใดเลย -> ไม่สร้าง GiftResult
+            continue  # ยอดไม่ถึงเกณฑ์ใดเลย
 
         gr = existing.get(cust_id)
         if not gr:
             gr = GiftResult(
                 campaign_id=campaign.id,
                 customer_id=cust_id,
-                status="PENDING",  # เริ่มต้นเป็นยังไม่ให้ของขวัญ
+                status="PENDING",
             )
             db.session.add(gr)
 
@@ -1516,6 +1713,308 @@ def recalc_gift_results(campaign: "GiftCampaign"):
 
     db.session.commit()
 
+
+def _create_booking_from_quote(qu: SalesDoc) -> SalesDoc:
+    bk = SalesDoc(
+        number=_gen_running("BK", SalesDoc),
+        doc_type="BK",
+        status="DRAFT",
+        customer_id=qu.customer_id,
+        project_name=qu.project_name,
+        po_customer=qu.po_customer,
+        credit_days=qu.credit_days or 0,
+        tax_mode=qu.tax_mode,
+        wht_pct=qu.wht_pct or 0,
+        date=date.today(),
+        remark=qu.remark,
+        parent=qu,
+        amount_subtotal=qu.amount_subtotal or 0.0,
+        amount_vat=qu.amount_vat or 0.0,
+        amount_total=qu.amount_total or 0.0,
+        amount_wht=qu.amount_wht or 0.0,
+        amount_grand=qu.amount_grand or 0.0,
+    )
+    db.session.add(bk)
+    db.session.flush()
+
+    # clone items จาก QU มาลง BK ก่อน (เวอร์ชันแรก)
+    for it in qu.items:
+        db.session.add(SalesItem(
+            doc_id=bk.id,
+            image_path=it.image_path,
+            name=it.name,
+            qty=it.qty,
+            rent_unit=it.rent_unit,
+            rent_duration=it.rent_duration,
+            unit_price=it.unit_price,
+            discount_pct=it.discount_pct,
+            line_subtotal=it.line_subtotal,
+            line_total=it.line_total,
+        ))
+
+    return bk
+
+
+
+
+
+
+# ================== Contract / Installment Helpers ==================
+
+def _add_months(dt: date, months: int) -> date:
+    """เพิ่มเดือนแบบปลอดภัย (ไม่ใช้ external lib)"""
+    y = dt.year + (dt.month - 1 + months) // 12
+    m = (dt.month - 1 + months) % 12 + 1
+    # clamp day
+    d = dt.day
+    # days in month
+    import calendar
+    last_day = calendar.monthrange(y, m)[1]
+    d = min(d, last_day)
+    return date(y, m, d)
+
+def _split_amount(total: float, n: int, decimals: int = 2) -> list[float]:
+    """แบ่งยอด total ออกเป็น n งวด โดยปรับเศษให้ไปอยู่ที่งวดสุดท้าย"""
+    if n <= 0:
+        return []
+    q = round(float(total) / n, decimals)
+    arr = [q for _ in range(n)]
+    s = round(sum(arr), decimals)
+    diff = round(float(total) - s, decimals)
+    if arr:
+        arr[-1] = round(arr[-1] + diff, decimals)
+    return arr
+
+def _create_contract_from_quote(qu: SalesDoc) -> SalesDoc:
+    """สร้างเอกสารสัญญา/PO ใหญ่ (CT) จาก QU ที่อนุมัติแล้ว"""
+    # กันซ้ำ
+    existing = SalesDoc.query.filter_by(parent_id=qu.id, doc_type="CT").first()
+    if existing:
+        return existing
+
+    start_dt = qu.contract_start or qu.date or date.today()
+    n = int(qu.installment_count or 0)
+    if n <= 0:
+        # infer: ถ้ามีรายการเดือน/ปี ให้แปลงเป็นจำนวนเดือน
+        n = 12
+        try:
+            for it in (qu.items or []):
+                if (it.rent_unit or "").upper() == "MONTH":
+                    n = max(n, int(it.rent_duration or 1))
+                elif (it.rent_unit or "").upper() == "YEAR":
+                    n = max(n, int(it.rent_duration or 1) * 12)
+        except Exception:
+            pass
+    end_dt = qu.contract_end
+    if not end_dt:
+        # end = start + n months - 1 day
+        end_dt = _add_months(start_dt, n) - timedelta(days=1)
+
+    ct = SalesDoc(
+        number=_gen_sales_running("CT"),
+        doc_type="CT",
+        status="ACTIVE",
+        customer_id=qu.customer_id,
+        project_name=qu.project_name,
+        po_customer=qu.po_customer,
+        credit_days=qu.credit_days or 0,
+        tax_mode=qu.tax_mode,
+        wht_pct=qu.wht_pct or 0,
+        date=start_dt,
+        remark=(qu.remark or "").strip(),
+        parent_id=qu.id,
+        billing_mode="INSTALLMENT",
+        contract_start=start_dt,
+        contract_end=end_dt,
+        installment_count=n,
+    )
+    db.session.add(ct)
+    db.session.flush()
+
+    # สร้างตารางงวด
+    _ensure_installments_for_contract(ct, qu)
+
+    return ct
+
+def _ensure_installments_for_contract(ct: SalesDoc, qu: SalesDoc | None = None):
+    """สร้างงวด (ถ้ายังไม่มี)"""
+    existing = SalesInstallment.query.filter_by(contract_id=ct.id).count()
+    if existing > 0:
+        return
+
+    n = int(ct.installment_count or 0) or 12
+    start_dt = ct.contract_start or ct.date or date.today()
+
+    # split amounts
+    if qu is None:
+        qu = SalesDoc.query.options(joinedload(SalesDoc.items)).get(ct.parent_id) if ct.parent_id else None
+
+    sub_list = _split_amount(qu.amount_subtotal if qu else ct.amount_subtotal, n)
+    vat_list = _split_amount(qu.amount_vat if qu else ct.amount_vat, n)
+    total_list = _split_amount(qu.amount_total if qu else ct.amount_total, n)
+    wht_list = _split_amount(qu.amount_wht if qu else ct.amount_wht, n)
+    grand_list = _split_amount(qu.amount_grand if qu else ct.amount_grand, n)
+
+    for i in range(1, n + 1):
+        period_start = _add_months(start_dt, i - 1)
+        period_end = _add_months(start_dt, i) - timedelta(days=1)
+        bill_date = period_start
+        due_date = bill_date + timedelta(days=int(ct.credit_days or 0))
+
+        inst = SalesInstallment(
+            contract_id=ct.id,
+            installment_no=i,
+            period_start=period_start,
+            period_end=period_end,
+            bill_date=bill_date,
+            due_date=due_date,
+            status="PLANNED",
+            amount_subtotal=sub_list[i-1] if i-1 < len(sub_list) else 0.0,
+            amount_vat=vat_list[i-1] if i-1 < len(vat_list) else 0.0,
+            amount_total=total_list[i-1] if i-1 < len(total_list) else 0.0,
+            amount_wht=wht_list[i-1] if i-1 < len(wht_list) else 0.0,
+            amount_grand=grand_list[i-1] if i-1 < len(grand_list) else 0.0,
+        )
+        db.session.add(inst)
+
+def _create_docs_for_installment(ct: SalesDoc, inst: SalesInstallment) -> tuple[SalesDoc, SalesDoc, SalesDoc]:
+    """สร้าง BL/IV/RC จากงวด (กันซ้ำ)"""
+    # ถ้ามีแล้ว คืนของเดิม
+    if inst.bill_id and inst.invoice_id and inst.receipt_id:
+        bl = SalesDoc.query.get(inst.bill_id)
+        iv = SalesDoc.query.get(inst.invoice_id)
+        rc = SalesDoc.query.get(inst.receipt_id)
+        return bl, iv, rc
+
+    # ใช้โครงสร้าง child docs ที่มีอยู่แล้ว (BL/IV/RC) แต่สร้างจาก CT เป็น parent
+    # หมายเหตุ: ใช้ _create_child_doc เพื่อ clone items เหมือน QU
+    bl = None
+    iv = None
+    rc = None
+
+    def _child_number(prefix: str) -> str:
+        return _gen_sales_running(prefix)
+
+    # สร้าง BL
+    if not inst.bill_id:
+        bl = SalesDoc(
+            number=_child_number("BL"),
+            doc_type="BL",
+            status="UNPAID",
+            customer_id=ct.customer_id,
+            project_name=ct.project_name,
+            po_customer=(inst.po_customer_sub or ct.po_customer or ""),
+            credit_days=ct.credit_days or 0,
+            tax_mode=ct.tax_mode,
+            wht_pct=ct.wht_pct or 0,
+            date=inst.bill_date,
+            remark=f"(งวดที่ {inst.installment_no}) {ct.number} : {inst.period_start.strftime('%d/%m/%Y')} - {inst.period_end.strftime('%d/%m/%Y')}",
+            parent_id=ct.id,
+            billing_mode="ONCE",
+        )
+        db.session.add(bl)
+        db.session.flush()
+
+        # clone items from CT parent quote (CT has no items) -> clone from QU
+        src = None
+        if ct.parent_id:
+            # ถ้ามีใบจอง (BK) ให้เอารายการจาก BK เพื่อพก allocated_skus / หมวดอุปกรณ์
+            src = (SalesDoc.query.options(joinedload(SalesDoc.items))
+                   .filter_by(parent_id=ct.parent_id, doc_type='BK')
+                   .first())
+            if not src:
+                # fallback: เอารายการจากใบเสนอราคา (QU)
+                src = SalesDoc.query.options(joinedload(SalesDoc.items)).get(ct.parent_id)
+        if src:
+            _clone_items(src, bl)
+        # override amounts to installment
+        bl.amount_subtotal = inst.amount_subtotal
+        bl.amount_vat = inst.amount_vat
+        bl.amount_total = inst.amount_total
+        bl.amount_wht = inst.amount_wht
+        bl.amount_grand = inst.amount_grand
+        inst.bill_id = bl.id
+
+    # สร้าง IV
+    if not inst.invoice_id:
+        # ต้อง flush ก่อนเพื่อมี bl
+        if not bl and inst.bill_id:
+            bl = SalesDoc.query.get(inst.bill_id)
+        iv = SalesDoc(
+            number=_child_number("IV"),
+            doc_type="IV",
+            status="UNISSUED",
+            customer_id=ct.customer_id,
+            project_name=ct.project_name,
+            po_customer=(inst.po_customer_sub or ct.po_customer or ""),
+            credit_days=ct.credit_days or 0,
+            tax_mode=ct.tax_mode,
+            wht_pct=ct.wht_pct or 0,
+            date=inst.bill_date,
+            remark=f"(งวดที่ {inst.installment_no}) {ct.number} : {inst.period_start.strftime('%d/%m/%Y')} - {inst.period_end.strftime('%d/%m/%Y')}",
+            parent_id=ct.id,
+            billing_mode="ONCE",
+        )
+        db.session.add(iv)
+        db.session.flush()
+        src = None
+        if ct.parent_id:
+            # ถ้ามีใบจอง (BK) ให้เอารายการจาก BK เพื่อพก allocated_skus / หมวดอุปกรณ์
+            src = (SalesDoc.query.options(joinedload(SalesDoc.items))
+                   .filter_by(parent_id=ct.parent_id, doc_type='BK')
+                   .first())
+            if not src:
+                # fallback: เอารายการจากใบเสนอราคา (QU)
+                src = SalesDoc.query.options(joinedload(SalesDoc.items)).get(ct.parent_id)
+        if src:
+            _clone_items(src, iv)
+        iv.amount_subtotal = inst.amount_subtotal
+        iv.amount_vat = inst.amount_vat
+        iv.amount_total = inst.amount_total
+        iv.amount_wht = inst.amount_wht
+        iv.amount_grand = inst.amount_grand
+        inst.invoice_id = iv.id
+
+    # สร้าง RC
+    if not inst.receipt_id:
+        rc = SalesDoc(
+            number=_child_number("RC"),
+            doc_type="RC",
+            status="UNISSUED",
+            customer_id=ct.customer_id,
+            project_name=ct.project_name,
+            po_customer=(inst.po_customer_sub or ct.po_customer or ""),
+            credit_days=ct.credit_days or 0,
+            tax_mode=ct.tax_mode,
+            wht_pct=ct.wht_pct or 0,
+            date=inst.bill_date,
+            remark=f"(งวดที่ {inst.installment_no}) {ct.number} : {inst.period_start.strftime('%d/%m/%Y')} - {inst.period_end.strftime('%d/%m/%Y')}",
+            parent_id=ct.id,
+            billing_mode="ONCE",
+        )
+        db.session.add(rc)
+        db.session.flush()
+        src = None
+        if ct.parent_id:
+            # ถ้ามีใบจอง (BK) ให้เอารายการจาก BK เพื่อพก allocated_skus / หมวดอุปกรณ์
+            src = (SalesDoc.query.options(joinedload(SalesDoc.items))
+                   .filter_by(parent_id=ct.parent_id, doc_type='BK')
+                   .first())
+            if not src:
+                # fallback: เอารายการจากใบเสนอราคา (QU)
+                src = SalesDoc.query.options(joinedload(SalesDoc.items)).get(ct.parent_id)
+        if src:
+            _clone_items(src, rc)
+        rc.amount_subtotal = inst.amount_subtotal
+        rc.amount_vat = inst.amount_vat
+        rc.amount_total = inst.amount_total
+        rc.amount_wht = inst.amount_wht
+        rc.amount_grand = inst.amount_grand
+        inst.receipt_id = rc.id
+
+    # update status
+    inst.status = "INVOICED"
+    return bl, iv, rc
 
 
 def _next_return_number_by_date_with_prefix(prefix: str = "RT",
@@ -1545,6 +2044,37 @@ def _next_return_number_by_date_with_prefix(prefix: str = "RT",
     seq = int(m.group(1)) + 1
     return f"{prefix_today}{seq:03d}"
 
+
+def _build_item_image_map(doc: SalesDoc) -> dict[int, str]:
+    img_map: dict[int, str] = {}
+
+    for it in doc.items:
+        # ดึง path จาก item ก่อน
+        img_path = getattr(it, "image_path", None)
+
+        # เผื่อในอนาคตมี it.equipment ก็ลองดึงต่อ แต่จะไม่ error ถ้าไม่มี attribute นี้
+        if not img_path:
+            eq = getattr(it, "equipment", None)
+            if eq is not None:
+                img_path = getattr(eq, "image_path", None)
+
+        if not img_path:
+            continue
+
+        # แปลง path เป็น URL
+        if "://" in img_path or img_path.startswith("data:"):
+            url = img_path
+        else:
+            rel = img_path.lstrip("/")
+            if rel.startswith("static/"):
+                rel = rel[7:]
+            url = url_for("static", filename=rel)
+
+        img_map[it.id] = url
+
+    return img_map
+
+
 # ================== SQLite PRAGMA ==================
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_conn, conn_record):
@@ -1569,6 +2099,7 @@ def home():
 def dashboard():
     from collections import defaultdict
     from datetime import datetime, time
+    from sqlalchemy.orm import joinedload
 
     today = date.today()
     rng = (request.args.get("range") or "7d").lower()
@@ -1622,15 +2153,21 @@ def dashboard():
         except Exception:
             return 0.0
 
-    # ---------- 2) รายรับจากใบเสร็จรับเงิน (RC, ISSUED) ----------
-    from sqlalchemy.orm import joinedload
+    # ---------- 2) รายรับจากใบเสร็จรับเงิน (RC) ----------
+    # รองรับสถานะได้หลายแบบ (ระบบคุณใช้คำว่า "ชำระแล้ว" บน UI)
+    # ถ้าต้องการ "นับเฉพาะจ่ายแล้วจริง" ให้เหลือแค่ ["PAID","RECEIPTED"]
+    rc_statuses = [
+        "PAID", "Paid", "paid",
+        "RECEIPTED", "Receipted", "receipted",
+        "ISSUED", "Issued", "issued",
+    ]
 
     rc_docs = (
         SalesDoc.query
         .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
         .filter(
             SalesDoc.doc_type == "RC",
-            (SalesDoc.status or "").in_(["ISSUED", "Issued", "issued"]),
+            SalesDoc.status.in_(rc_statuses),
             SalesDoc.date.between(start, end),
         )
         .all()
@@ -1757,7 +2294,7 @@ def dashboard():
     item_income = defaultdict(float)
     for d in rc_docs:
         for it in (d.items or []):
-            item_income[it.name] += _safe_num(it.line_total)
+            item_income[it.name] += _safe_num(getattr(it, "line_total", 0.0))
 
     top_items = sorted(
         [{"name": name, "amount": round(val, 2)} for name, val in item_income.items()],
@@ -1828,7 +2365,7 @@ def dashboard():
             SalesDoc.query
             .filter(
                 SalesDoc.doc_type == "RC",
-                (SalesDoc.status or "").in_(["ISSUED", "Issued", "issued"]),
+                SalesDoc.status.in_(rc_statuses),
                 SalesDoc.date.between(first, last),
             )
             .all()
@@ -2119,44 +2656,152 @@ def company_edit():
 @app.route("/purchases/po")
 @permission_required("purchases.view")
 def po_list():
-    pos = PurchaseOrder.query.order_by(PurchaseOrder.id.desc()).all()
-    return render_template("purchases/po_list.html", pos=pos)
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    qry = PurchaseOrder.query.options(joinedload(PurchaseOrder.supplier))
+
+    if start_d:
+        qry = qry.filter(PurchaseOrder.po_date >= start_d)
+    if end_d:
+        qry = qry.filter(PurchaseOrder.po_date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        qry = qry.outerjoin(PurchaseOrder.supplier).filter(
+            or_(
+                PurchaseOrder.number.ilike(like),
+                Supplier.name.ilike(like),
+            )
+        )
+
+    pos = qry.order_by(PurchaseOrder.id.desc()).all()
+    return render_template("purchases/po_list.html", pos=pos, q=q, start=start, end=end)
 
 @app.route("/purchases/po/new", methods=["GET", "POST"])
 @permission_required("purchases.create")
 def po_new():
     suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
-    if request.method == "POST":
-        supplier_id = request.form.get("supplier_id", type=int) or 0
-        names = request.form.getlist("item_name[]")
-        skus  = request.form.getlist("item_sku[]")
-        qtys  = request.form.getlist("item_qty[]")
-        units = request.form.getlist("item_unit[]")
-        costs = request.form.getlist("item_cost[]")
-        discs = request.form.getlist("item_disc[]")
-        rows = []
+
+    def _parse_items_any(form):
+        """
+        รองรับ 2 แบบ:
+        A) แบบใหม่: items-0-name, items-0-sku, items-0-brand, items-0-qty, items-0-unit,
+                    items-0-unit_price, items-0-discount_pct
+        B) แบบเดิม: item_name[], item_sku[], item_brand[], item_qty[], item_unit[], item_cost[], item_disc[]
+        คืน list ของ dict ที่ "มีรายการจริง"
+        """
+        # --- แบบใหม่: items-{i}-{field} ---
+        has_new = any(k.startswith("items-") for k in form.keys())
+        if has_new:
+            import re
+            pat = re.compile(r"^items-(\d+)-([a-zA-Z_]+)$")
+            rows_map = {}
+
+            for k, v in form.items():
+                m = pat.match(k)
+                if not m:
+                    continue
+                idx = int(m.group(1))
+                field = m.group(2)
+                rows_map.setdefault(idx, {})[field] = (v or "").strip()
+
+            out = []
+            for idx in sorted(rows_map.keys()):
+                r = rows_map[idx]
+                name = (r.get("name") or "").strip()
+                sku = (r.get("sku") or "").strip()
+                brand = (r.get("brand") or "").strip()
+                unit = (r.get("unit") or "").strip() or "ชิ้น"
+
+                try:
+                    qty = float(r.get("qty") or 0)
+                except:
+                    qty = 0.0
+
+                # template ใหม่ใช้ unit_price / discount_pct
+                try:
+                    unit_cost = float(r.get("unit_price") or 0)
+                except:
+                    unit_cost = 0.0
+
+                try:
+                    discount_pct = float(r.get("discount_pct") or 0)
+                except:
+                    discount_pct = 0.0
+
+                # ถือว่าเป็นรายการจริง: ต้องมี name หรือ sku และ qty > 0
+                if (name or sku) and qty > 0:
+                    out.append({
+                        "name": name,
+                        "sku": sku,
+                        "brand": brand,
+                        "qty": qty,
+                        "unit": unit,
+                        "unit_cost": unit_cost,
+                        "discount_pct": discount_pct,
+                    })
+            return out
+
+        # --- แบบเดิม: item_name[] ---
+        names = form.getlist("item_name[]")
+        skus  = form.getlist("item_sku[]")
+        brands = form.getlist("item_brand[]")
+        qtys  = form.getlist("item_qty[]")
+        units = form.getlist("item_unit[]")
+        costs = form.getlist("item_cost[]")
+        discs = form.getlist("item_disc[]")
+
+        out = []
         for i, name in enumerate(names):
             name = (name or "").strip()
             if not name:
                 continue
-            rows.append({
+            try:
+                qty = float(qtys[i] or 0)
+            except:
+                qty = 0.0
+            if qty <= 0:
+                continue
+
+            out.append({
                 "name": name,
-                "sku": (skus[i] or "").strip(),
-                "qty": float(qtys[i] or 0),
-                "unit": (units[i] or "ชิ้น"),
-                "unit_cost": float(costs[i] or 0),
-                "discount_pct": float(discs[i] or 0),
+                "sku": (skus[i] or "").strip() if i < len(skus) else "",
+                "brand": (brands[i] or "").strip() if i < len(brands) else "",
+                "qty": qty,
+                "unit": (units[i] or "ชิ้น") if i < len(units) else "ชิ้น",
+                "unit_cost": float(costs[i] or 0) if i < len(costs) else 0.0,
+                "discount_pct": float(discs[i] or 0) if i < len(discs) else 0.0,
             })
+        return out
+
+    if request.method == "POST":
+        supplier_id = request.form.get("supplier_id", type=int) or 0
+        rows = _parse_items_any(request.form)
+
         if not supplier_id:
             flash("กรุณาเลือกผู้ขาย (Supplier)", "danger")
-            return render_template("purchases/po_form.html",
-                                   suppliers=suppliers,
-                                   selected_id=None)
+            return render_template(
+                "purchases/po_form.html",
+                suppliers=suppliers,
+                doc=None,
+                mode="create",
+                selected_id=None,
+            ), 400
+
         if not rows:
             flash("กรุณาใส่รายการอย่างน้อย 1 รายการ", "danger")
-            return render_template("purchases/po_form.html",
-                                   suppliers=suppliers,
-                                   selected_id=supplier_id)
+            return render_template(
+                "purchases/po_form.html",
+                suppliers=suppliers,
+                doc=None,
+                mode="create",
+                selected_id=supplier_id,
+            ), 400
+
         po = PurchaseOrder(
             number=_gen_running("PO", PurchaseOrder),
             supplier_id=supplier_id,
@@ -2165,23 +2810,32 @@ def po_new():
         )
         db.session.add(po)
         db.session.flush()
+
         for r in rows:
             db.session.add(POItem(
                 po_id=po.id,
                 name=r["name"],
-                sku=r["sku"],
+                sku=r.get("sku") or "",
+                brand=r.get("brand") or "",
                 qty=r["qty"],
                 unit=r["unit"],
                 unit_cost=r["unit_cost"],
                 discount_pct=r["discount_pct"],
             ))
+
         db.session.commit()
         flash("สร้างใบสั่งซื้อเรียบร้อย", "success")
         return redirect(url_for("po_view", pid=po.id))
+
     selected_id = request.args.get("selected_id", type=int)
-    return render_template("purchases/po_form.html",
-                       suppliers=suppliers,
-                       selected_id=selected_id)
+    return render_template(
+        "purchases/po_form.html",
+        suppliers=suppliers,
+        doc=None,
+        mode="create",
+        selected_id=selected_id,
+    )
+
 
 @app.route("/purchases/po/<int:pid>")
 @permission_required("purchases.view")
@@ -2205,37 +2859,219 @@ def po_set_status(pid):
 @app.route("/purchases/grn")
 @permission_required("goods.receive")
 def grn_list():
-    grns = GoodsReceipt.query.order_by(GoodsReceipt.id.desc()).all()
-    return render_template("purchases/grn_list.html", grns=grns)
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
 
-@app.route("/purchases/po/<int:pid>/create_grn", methods=["POST"])
-@permission_required("goods.receive")
-def po_create_grn(pid):
-    po = PurchaseOrder.query.get_or_404(pid)
-    if po.status not in ("APPROVED", "ORDERED"):
-        flash("สร้าง GRN ได้เมื่อ PO อยู่ในสถานะ APPROVED หรือ ORDERED เท่านั้น", "warning")
-        return redirect(url_for("po_view", pid=po.id))
-    grn = GoodsReceipt(
-        number=_gen_running("GRN", GoodsReceipt),
-        po_id=po.id,
-        grn_date=date.today(),
-        status="RECEIVED",
+    qry = GoodsReceipt.query.options(
+        joinedload(GoodsReceipt.po).joinedload(PurchaseOrder.supplier),
+        joinedload(GoodsReceipt.po),
     )
-    db.session.add(grn)
-    db.session.flush()
-    for it in po.items:
-        db.session.add(GRNItem(
-            grn_id=grn.id, sku=it.sku, name=it.name, qty=it.qty, unit=it.unit, unit_cost=it.unit_cost
-        ))
-    db.session.commit()
-    flash("สร้างใบรับสินค้าแล้ว", "success")
-    return redirect(url_for("grn_view", gid=grn.id))
 
-@app.route("/purchases/grn/<int:gid>")
-@permission_required("goods.receive")
+    if start_d:
+        qry = qry.filter(GoodsReceipt.grn_date >= start_d)
+    if end_d:
+        qry = qry.filter(GoodsReceipt.grn_date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        qry = qry.outerjoin(GoodsReceipt.po).outerjoin(PurchaseOrder.supplier).outerjoin(GoodsReceipt.po).filter(
+            or_(
+                GoodsReceipt.number.ilike(like),
+                Supplier.name.ilike(like),
+                PurchaseOrder.number.ilike(like),
+            )
+        )
+
+    grns = qry.order_by(GoodsReceipt.id.desc()).all()
+    return render_template("purchases/grn_list.html", grns=grns, q=q, start=start, end=end)
+
+@app.post("/purchases/po/<int:pid>/create_grn")
+@permission_required("purchases.manage")
+def po_create_grn(pid):
+    # --- โหลด PO ---
+    po = (
+        PurchaseOrder.query
+        .options(
+            joinedload(PurchaseOrder.items),
+            joinedload(PurchaseOrder.supplier),
+        )
+        .get_or_404(pid)
+    )
+
+    # --- กันกดซ้ำ: ถ้ามี GRN ของ PO นี้แล้ว ให้พาไปใบเดิม ---
+    existing = GoodsReceipt.query.filter_by(po_id=po.id).order_by(GoodsReceipt.id.desc()).first()
+    if existing:
+        flash("มีใบรับสินค้า (GRN) ของใบสั่งซื้อนี้แล้ว", "info")
+        return redirect(url_for("grn_view", gid=existing.id))
+
+    # --- สร้างหัวเอกสาร GRN ---
+    grn = GoodsReceipt()
+
+    # ฟังก์ชันช่วย set attribute แบบปลอดภัย
+    def _set_if_has(obj, field, value):
+        try:
+            if hasattr(obj, field):
+                setattr(obj, field, value)
+                return True
+        except Exception:
+            pass
+        return False
+
+    # number
+    if hasattr(grn, "number"):
+        grn.number = _gen_running("GRN", GoodsReceipt)
+
+    # link PO
+    if hasattr(grn, "po_id"):
+        grn.po_id = po.id
+    elif hasattr(grn, "po"):
+        grn.po = po
+
+    # supplier
+    if hasattr(grn, "supplier_id"):
+        grn.supplier_id = po.supplier_id
+    elif hasattr(grn, "supplier"):
+        grn.supplier = po.supplier
+
+    # date (เก็บค่าวันที่จริงไว้ใช้ต่อ)
+    grn_date_val = date.today()
+    if hasattr(grn, "grn_date"):
+        grn.grn_date = grn_date_val
+    elif hasattr(grn, "receive_date"):
+        grn.receive_date = grn_date_val
+    elif hasattr(grn, "doc_date"):
+        grn.doc_date = grn_date_val
+
+    # status
+    if hasattr(grn, "status"):
+        grn.status = "RECEIVED"
+
+    try:
+        db.session.add(grn)
+        db.session.flush()  # ให้ได้ grn.id
+
+        # --- สร้างรายการ GRN จาก POItem ---
+        created = 0
+
+        for it in (po.items or []):
+            name = (getattr(it, "name", "") or "").strip()
+            sku = (getattr(it, "sku", "") or "").strip()
+            if not (name or sku):
+                continue
+
+            qty = float(getattr(it, "qty", 0) or 0)
+            if qty <= 0:
+                continue
+
+            unit_cost = float(getattr(it, "unit_cost", None) or getattr(it, "unit_price", 0) or 0)
+            discount_pct = float(getattr(it, "discount_pct", 0) or 0)
+
+            before = qty * unit_cost
+            disc_amt = before * (discount_pct / 100.0)
+            line_total = max(0.0, before - disc_amt)
+
+            gi = GRNItem()
+
+            # link grn
+            if hasattr(gi, "grn_id"):
+                gi.grn_id = grn.id
+            elif hasattr(gi, "grn"):
+                gi.grn = grn
+
+            # ข้อมูลสินค้า
+            _set_if_has(gi, "sku", sku)
+            _set_if_has(gi, "name", name)
+            _set_if_has(gi, "unit", getattr(it, "unit", "") or "ชิ้น")
+            _set_if_has(gi, "qty", getattr(it, "qty", qty))
+            _set_if_has(gi, "brand", getattr(it, "brand", "") or "")
+
+            # ราคา/ส่วนลด
+            if not _set_if_has(gi, "unit_cost", unit_cost):
+                _set_if_has(gi, "unit_price", unit_cost)
+
+            _set_if_has(gi, "discount_pct", discount_pct)
+            _set_if_has(gi, "line_total", line_total)
+
+            db.session.add(gi)
+            db.session.flush()  # ✅ ให้ได้ gi.id เพื่อเอาไปใส่ incoming.grn_item_id
+
+            # --- สร้างรายการ "รอเพิ่มเข้าระบบ" ตามจำนวนที่รับเข้า ---
+            try:
+                incoming_n = int(qty)
+            except Exception:
+                incoming_n = 0
+            if incoming_n < 0:
+                incoming_n = 0
+
+            for _ in range(incoming_n):
+                inc = IncomingEquipment(
+                    grn_id=grn.id,
+                    grn_item_id=gi.id,           # ✅ จำเป็นมาก
+                    name=(name or "").strip(),   # ✅ ใช้ name (ไม่ใช่ item_name)
+                    brand=(getattr(it, "brand", "") or "").strip(),
+                    unit_cost=float(unit_cost or 0),
+                    received_date=grn_date_val,  # ✅ ไม่อ้าง grn.date / grn.grn_date แบบมั่ว
+                    status="PENDING",
+                )
+                db.session.add(inc)
+
+            created += 1
+
+        if created <= 0:
+            db.session.rollback()
+            flash("ไม่พบรายการในใบสั่งซื้อ จึงไม่สามารถสร้าง GRN ได้", "danger")
+            return redirect(url_for("po_view", pid=po.id))
+
+        db.session.commit()
+        flash("สร้างใบรับสินค้า (GRN) เรียบร้อย", "success")
+        return redirect(url_for("grn_view", gid=grn.id))
+
+    except Exception as e:
+        db.session.rollback()
+        raise
+
+
+
+@app.get("/purchases/grn/<int:gid>")
+@permission_required("purchases.view")
 def grn_view(gid):
-    grn = GoodsReceipt.query.get_or_404(gid)
-    return render_template("purchases/grn_view.html", grn=grn)
+    grn = (
+        GoodsReceipt.query
+        .options(
+            joinedload(GoodsReceipt.po).joinedload(PurchaseOrder.supplier),
+            joinedload(GoodsReceipt.items),
+        )
+        .get_or_404(gid)
+    )
+    # ✅ ส่งทั้ง grn และ doc (เพื่อให้ template เดิมที่ใช้ doc ไม่พัง)
+    return render_template("purchases/grn_view.html", grn=grn, doc=grn)
+
+
+@app.get("/purchases/grn/<int:gid>/print")
+@permission_required("purchases.view")
+def grn_print(gid):
+    """พิมพ์ใบรับสินค้า (GRN)"""
+    grn = (
+        GoodsReceipt.query
+        .options(
+            joinedload(GoodsReceipt.po).joinedload(PurchaseOrder.supplier),
+            joinedload(GoodsReceipt.items),
+        )
+        .get_or_404(gid)
+    )
+
+    company = get_company()
+    return render_template(
+        "purchases/grn_print.html",
+        grn=grn,
+        doc=grn,
+        company=company,
+        today=date.today(),
+    )
+
 
 # ---------- Purchases: Supplier APIs ----------
 @app.get("/api/suppliers")
@@ -2387,21 +3223,59 @@ def cat_new():
 def equip_list():
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "").upper()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
     qry = Equipment.query
     if q:
         like = f"%{q}%"
         qry = qry.filter(or_(Equipment.sku.ilike(like), Equipment.name.ilike(like)))
     if status in EQUIP_STATUS:
-        qry = qry.filter(Equipment.status==status)
-    rows = qry.order_by(Equipment.created_at.desc()).all()
-    return render_template("equipment/equip_list.html", rows=rows, q=q, status=status, status_th=EQUIP_STATUS_THAI)
+        qry = qry.filter(Equipment.status == status)
+    # date range filter (received_date)
+    if start_d:
+        qry = qry.filter(Equipment.received_date >= start_d)
+    if end_d:
+        qry = qry.filter(Equipment.received_date <= end_d)
+
+    rows = qry.order_by(Equipment.received_date.desc(), Equipment.id.desc()).all()
+    return render_template(
+        "equipment/equip_list.html",
+        rows=rows,
+        q=q,
+        status=status,
+        start=start,
+        end=end,
+        status_th=EQUIP_STATUS_THAI,
+    )
 
 @app.route("/equipment/new", methods=["GET","POST"])
 @permission_required("equipment.manage")
 def equip_new():
     cats = Category.query.order_by(Category.name.asc()).all()
+
+    # รายการอุปกรณ์ "รอเพิ่มเข้าระบบ" (มาจากการรับสินค้าเข้า / GRN)
+    q = IncomingEquipment.query.filter_by(status="PENDING")
+    # ถ้ามาจากหน้า GRN จะส่ง ?grn_id=... มา เพื่อกรองรายการเฉพาะ GRN นั้น
+    grn_id = request.args.get("grn_id", type=int)
+    if grn_id:
+        q = q.filter(IncomingEquipment.grn_id == grn_id)
+    pending = q.order_by(IncomingEquipment.id.desc()).all()
+
+    # ถ้ามาจากปุ่ม "เพิ่ม" จะส่ง incoming_id มา
+    # NOTE: ฟอร์ม POST ของบางเทมเพลตอาจไม่ได้ส่ง incoming_id กลับมา ทำให้ mark DONE ไม่ทำงาน
+    # เราจึงอ่านจาก request.values (รวม args+form) และทำ fallback จับคู่จากข้อมูลที่กรอก
+    incoming_id = request.values.get("incoming_id", type=int)
+    inc = IncomingEquipment.query.get(incoming_id) if incoming_id else None
+    if inc and (inc.status or "").upper() != "PENDING":
+        inc = None
+
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
+        brand = (request.form.get("brand") or "").strip()
         cat_id = request.form.get("category_id", type=int)
         received = request.form.get("received_date")
         cost = request.form.get("cost", type=float) or 0.0
@@ -2411,9 +3285,11 @@ def equip_new():
         if not name or not cat_id or not received:
             flash("กรอกข้อมูลให้ครบ (ชื่อ/หมวดหมู่/วันที่รับเข้า)", "danger")
             return redirect(url_for("equip_new"))
+
         cat = Category.query.get_or_404(cat_id)
         rdate = datetime.fromisoformat(received).date()
         sku = gen_sku(cat.prefix_sku, rdate)
+
         img_path = ""
         f = request.files.get("image")
         if f and f.filename:
@@ -2422,24 +3298,65 @@ def equip_new():
             except ValueError as e:
                 flash(str(e), "warning")
                 return redirect(url_for("equip_new"))
+
         eq = Equipment(
-            sku=sku, name=name, category_id=cat.id,
+            sku=sku, name=name, brand=brand,
+            category_id=cat.id,
             received_date=rdate, cost=cost,
             life_years=ly, life_months=lm, life_days=ld,
             image_path=img_path, status="READY",
         )
         db.session.add(eq)
         db.session.flush()
+
+        # ถ้าสร้างจากรายการรอเพิ่ม -> ปิดรายการนั้น
+        # NOTE: บางเทมเพลตอาจไม่ได้ส่ง incoming_id ตอน POST
+        # เราจะพยายาม "เดา" รายการรอเพิ่มจากข้อมูลที่กรอก (name/brand/cost/date)
+        if not inc:
+            try:
+                q = IncomingEquipment.query.filter_by(status="PENDING")
+                if name:
+                    q = q.filter(IncomingEquipment.name == name)
+                if brand:
+                    q = q.filter(IncomingEquipment.brand == brand)
+                # match cost ใกล้เคียง
+                q = q.order_by(IncomingEquipment.id.asc())
+                cand = q.first()
+                if cand is not None:
+                    cand_cost = float(getattr(cand, "unit_cost", 0) or 0)
+                    # date match ถ้ามี
+                    ok_date = True
+                    if rdate and getattr(cand, "received_date", None):
+                        ok_date = (cand.received_date == rdate)
+                    if abs(cand_cost - float(cost or 0)) < 0.01 and ok_date:
+                        inc = cand
+            except Exception:
+                pass
+
+        if inc:
+            inc.status = "DONE"
+
         db.session.add(EquipmentLog(
             equipment_id=eq.id,
             action="ADD",
-            note="เพิ่มอุปกรณ์",
+            note=("เพิ่มอุปกรณ์ (มาจากรับสินค้าเข้า)" if inc else "เพิ่มอุปกรณ์"),
             user_id=(current_user.id if current_user.is_authenticated else None),
         ))
         db.session.commit()
         flash("เพิ่มอุปกรณ์แล้ว", "success")
         return redirect(url_for("equip_view", eid=eq.id))
-    return render_template("equipment/equip_form.html", cats=cats)
+
+    # GET: เตรียมค่า preset อัตโนมัติจากรายการรอเพิ่ม
+    preset = {}
+    if inc:
+        preset = {
+            "name": inc.name,
+            "brand": inc.brand,
+            "received_date": (inc.received_date.isoformat() if inc.received_date else date.today().isoformat()),
+            "cost": float(inc.unit_cost or 0),
+        }
+
+    return render_template("equipment/equip_form.html", cats=cats, pending=pending, preset=preset, incoming=inc)
 
 @app.route("/equipment/<int:eid>")
 @permission_required("equipment.view")
@@ -2455,6 +3372,7 @@ def equip_edit(eid):
     cats = Category.query.order_by(Category.name.asc()).all()
     if request.method == "POST":
         e.name = (request.form.get("name") or "").strip()
+        e.brand = (request.form.get("brand") or "").strip()
         e.category_id = request.form.get("category_id", type=int) or e.category_id
         received = request.form.get("received_date")
         e.cost = request.form.get("cost", type=float) or 0.0
@@ -2765,8 +3683,17 @@ def qu_check_promo(qid):
 def qu_list():
     q = (request.args.get("q") or "").strip()
 
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
     # เลือกเฉพาะเอกสาร QU + filter ชื่อลูกค้าตาม q เหมือนเดิม
     qry = SalesDoc.query.filter(SalesDoc.doc_type == "QU")
+    if start_d:
+        qry = qry.filter(SalesDoc.date >= start_d)
+    if end_d:
+        qry = qry.filter(SalesDoc.date <= end_d)
     if q:
         qry = qry.join(Customer).filter(Customer.name.ilike(f"%{q}%"))
 
@@ -2791,9 +3718,11 @@ def qu_list():
         "sales/qu_list.html",
         rows=rows,
         q=q,
-        deliveries_map=deliveries_map,   # ✅ ส่งไปให้ template ใช้เช็คว่ามีใบส่งแล้วหรือยัง
+        start=start,
+        end=end,
+        deliveries_map=deliveries_map,
+        doc_type="QU",   # ✅ ส่งไปให้ template ใช้เช็คว่ามีใบส่งแล้วหรือยัง
     )
-
 
 @app.route("/sales/quotes/new", methods=["GET", "POST"])
 @permission_required("sales.manage")
@@ -2810,6 +3739,15 @@ def qu_new():
         try: return int(x)
         except Exception: return int(default)
 
+    def _try_parse_date(s: str | None):
+        try:
+            s = (s or "").strip()
+            if not s:
+                return None
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
 
     if request.method == "POST":
         cid = request.form.get("customer_id", type=int) or 0
@@ -2821,12 +3759,17 @@ def qu_new():
             doc_type="QU",
             status="DRAFT",
             customer_id=cid,
+            project_name=(request.form.get("project_name") or "").strip(),
             po_customer=(request.form.get("po_customer") or "").strip(),
             credit_days=request.form.get("credit_days", type=int) or 0,
             tax_mode=(request.form.get("tax_mode") or "EXC").upper(),
             wht_pct=request.form.get("wht_pct", type=int) or 0,
             date=date.today(),
             remark=(request.form.get("remark") or "").strip(),
+            billing_mode=((request.form.get("billing_mode") or "ONCE").upper()),
+            installment_count=(request.form.get("installment_count", type=int) or 0),
+            contract_start=_try_parse_date(request.form.get("contract_start")),
+            contract_end=_try_parse_date(request.form.get("contract_end")),
         )
         db.session.add(doc)
         db.session.flush()
@@ -2842,15 +3785,24 @@ def qu_new():
             if not n:
                 continue
             image_path = ""
+            cat_id = None
+            cat_prefix = None
             sku = _extract_sku(n)
             if sku:
-                eq = Equipment.query.filter_by(sku=sku).first()
-                if eq and (eq.image_path or "").strip():
-                    image_path = eq.image_path.strip()
+                # ตอนทำ QU ให้เลือก "หมวดหมู่" จาก prefix_sku เท่านั้น (ยังไม่ล็อคตัวอุปกรณ์จริง)
+                cat = Category.query.filter_by(prefix_sku=sku).first()
+                if cat:
+                    cat_id = cat.id
+                    cat_prefix = (cat.prefix_sku or "").strip()
+                    # ปรับชื่อรายการให้เป็นชื่อหมวด (ไว้ให้ลูกค้าอ่านง่าย)
+                    n = f"{cat.name} [{cat_prefix}]" if cat_prefix else (cat.name or n)
+
             db.session.add(SalesItem(
                 doc_id=doc.id,
                 name=n,
                 image_path=image_path,
+                category_id=cat_id,
+                category_prefix=cat_prefix,
                 qty=_to_float(qtys[i] if i < len(qtys) else 0),
                 rent_unit=((units[i] if i < len(units) else "DAY") or "DAY").upper(),
                 rent_duration=_to_int(durs[i] if i < len(durs) else 1),
@@ -3017,49 +3969,154 @@ def api_equipment_search():
     return jsonify(out)
 
 def _build_item_img_map(d: SalesDoc) -> dict[int, str]:
+    """คืน mapping item_id -> static url ของรูปสินค้า (รองรับหลายรูปแบบ path)
+
+    ลำดับความพยายาม:
+      1) it.image_path (ถ้าเป็น path ใน static)
+      2) it.allocated_skus (SKU จริงที่เลือกจาก BK) -> หาไฟล์ใน static/uploads/equipment/
+         - ชื่อไฟล์รองรับ: <sku>.<ext>, equip_<sku>.<ext>, equipment_<sku>.<ext>, img_<sku>.<ext>
+         - ถ้าไม่เจอ จะ fallback แบบ "รุ่นเดียวกัน" โดยตัดเลขท้าย (เช่น ...-002) แล้วหาไฟล์ที่ขึ้นต้นด้วย prefix นั้น
+      3) SKU ในชื่อแบบ [SKU] ชื่อ (ของเดิม)
+    """
     import os, re
     from flask import current_app, url_for
-    def _extract_sku(title: str) -> str | None:
-        m = re.search(r"\[([^\[\]]+?)\]", title or "")
-        return m.group(1).strip() if m else None
-    def _exists_static(relpath: str) -> bool:
-        abs_path = os.path.join(current_app.root_path, "static", relpath.replace("/", os.sep))
-        return os.path.exists(abs_path)
+
     def _url(relpath: str) -> str:
         return url_for("static", filename=relpath)
+
+    def _abs_static(relpath: str) -> str:
+        return os.path.join(current_app.root_path, "static", relpath.replace("/", os.sep))
+
+    def _normalize_static_rel(p: str) -> str:
+        p = (p or "").strip()
+        if not p:
+            return ""
+        # ถ้าเก็บมาเป็น URL เต็ม / data: ให้ข้าม (template handle เอง)
+        if "://" in p or p.startswith("data:"):
+            return ""
+        p = p.lstrip("/")
+        if p.startswith("static/"):
+            p = p[7:]
+        return p
+
+    def _exists(relpath: str) -> bool:
+        return bool(relpath) and os.path.exists(_abs_static(relpath))
+
+    def _extract_sku_from_name(title: str) -> str | None:
+        m = re.search(r"\[([^\[\]]+?)\]", title or "")
+        return m.group(1).strip() if m else None
+
+    # เตรียม index ชื่อไฟล์ใน uploads/equipment สำหรับ fallback แบบ prefix
+    equip_dir_rel = "uploads/equipment"
+    equip_dir_abs = _abs_static(equip_dir_rel)
+    equip_files = []
+    try:
+        if os.path.isdir(equip_dir_abs):
+            equip_files = [f for f in os.listdir(equip_dir_abs) if os.path.isfile(os.path.join(equip_dir_abs, f))]
+    except Exception:
+        equip_files = []
+
+    exts = (".jpg", ".jpeg", ".png", ".webp")
+    prefixes = ("", "equip_", "equipment_", "img_")
+
+    def _find_by_sku(sku: str) -> str | None:
+        sku = (sku or "").strip()
+        if not sku:
+            return None
+
+        # 1) ตรงตัว
+        for px in prefixes:
+            for ext in exts:
+                cand = f"{equip_dir_rel}/{px}{sku}{ext}"
+                if _exists(cand):
+                    return _url(cand)
+
+        # 2) fallback: ตัดเลขท้ายหลัง '-' แล้วหาไฟล์ที่ขึ้นต้นด้วย prefix นั้น
+        #    เช่น SP-001-070126-002 -> SP-001-070126-
+        base_prefix = sku
+        if "-" in sku:
+            base_prefix = sku.rsplit("-", 1)[0] + "-"
+
+        # หาไฟล์ในโฟลเดอร์ที่เริ่มด้วย base_prefix
+        # ตัวอย่างชื่อไฟล์: equip_SP-001-070126-001.jpg
+        for px in prefixes:
+            start = f"{px}{base_prefix}"
+            found = None
+            for fn in equip_files:
+                low = fn.lower()
+                if not low.endswith(exts):
+                    continue
+                if fn.startswith(start):
+                    found = fn
+                    break
+            if found:
+                cand = f"{equip_dir_rel}/{found}"
+                if _exists(cand):
+                    return _url(cand)
+
+        return None
+
     img_map: dict[int, str] = {}
-    exts = [".jpg", ".jpeg", ".png", ".webp"]
-    prefixes = ["", "equip_", "equipment_", "img_"]
-    for it in d.items:
-        rel = (it.image_path or "").strip()
-        if rel and _exists_static(rel):
+
+    for it in getattr(d, "items", []) or []:
+        # (A) image_path ตรง ๆ
+        rel = _normalize_static_rel(getattr(it, "image_path", "") or "")
+        if rel and _exists(rel):
             img_map[it.id] = _url(rel)
             continue
-        eq_rel = ""
-        try:
-            eq_rel = (getattr(it, "equipment", None) and (it.equipment.image_path or "").strip()) or ""
-        except Exception:
-            eq_rel = ""
-        if eq_rel and _exists_static(eq_rel):
-            img_map[it.id] = _url(eq_rel)
-            continue
-        sku = _extract_sku(it.name or "")
+
+        # (B) allocated_skus -> ใช้ SKU ตัวแรก
+        alloc = (getattr(it, "allocated_skus", "") or "").strip()
+        if alloc:
+            sku_first = None
+            for s in alloc.split(","):
+                s = (s or "").strip()
+                if s:
+                    sku_first = s
+                    break
+            if sku_first:
+                u = _find_by_sku(sku_first)
+                if u:
+                    img_map[it.id] = u
+                    continue
+
+        # (C) [SKU] ชื่อ (ของเดิม)
+        sku = _extract_sku_from_name(getattr(it, "name", "") or "")
         if sku:
-            cand = f"uploads/equipment/{sku}.jpg"
-            if _exists_static(cand):
-                img_map[it.id] = _url(cand)
+            u = _find_by_sku(sku)
+            if u:
+                img_map[it.id] = u
                 continue
-            found = None
-            for px in prefixes:
-                for ext in exts:
-                    cand = f"uploads/equipment/{px}{sku}{ext}"
-                    if _exists_static(cand):
-                        found = _url(cand); break
-                if found: break
-            if found:
-                img_map[it.id] = found
-                continue
+
     return img_map
+
+@app.get("/api/categories/search")
+@permission_required("sales.manage")
+def api_categories_search():
+    """ค้นหาหมวดหมู่อุปกรณ์ (Category) ด้วย prefix_sku หรือชื่อหมวด
+    ใช้สำหรับหน้าสร้างใบเสนอราคา (QU) เพื่อให้เลือก "หมวดหมู่" เท่านั้น ไม่ล็อคตัวอุปกรณ์จริง
+    """
+    q = (request.args.get("q") or "").strip()
+    out = []
+    qs = Category.query
+    if q:
+        like = f"%{q}%"
+        qs = qs.filter(
+            db.or_(
+                Category.prefix_sku.ilike(like),
+                Category.name.ilike(like),
+            )
+        )
+    cats = qs.order_by(Category.prefix_sku.asc()).limit(50).all()
+    for c in cats:
+        out.append({
+            "sku": (c.prefix_sku or "").strip(),  # ให้ฟิลด์ชื่อ sku เพื่อ reuse UI เดิม
+            "prefix_sku": (c.prefix_sku or "").strip(),
+            "name": (c.name or "").strip(),
+            "category_name": (c.name or "").strip(),
+        })
+    return jsonify(out)
+
 
 @app.route("/sales/quotes/<int:qid>/preview")
 @permission_required("sales.view")
@@ -3125,18 +4182,50 @@ def _update_equipment_from_quote(d, target_status: str):
     return changed, missing
 
 def _clone_items(from_doc: SalesDoc, to_doc: SalesDoc):
+    """คัดลอกรายการจากเอกสารหนึ่งไปอีกเอกสารหนึ่ง
+    - รองรับ field เพิ่มเติมแบบปลอดภัย (จะใส่เฉพาะคอลัมน์ที่มีจริงใน SalesItem)
+    - ต้องคัดลอก field ที่ใช้ล็อคของ/แสดง SKU ด้วย (category_id, category_prefix, allocated_skus)
+    """
+    # รายชื่อคอลัมน์จริงของ SalesItem (กัน TypeError: invalid keyword argument)
+    item_cols = set(getattr(SalesItem, "__table__").columns.keys())
+
+    def _val(obj, key, default=None):
+        return getattr(obj, key, default)
+
     for it in (from_doc.items or []):
-        db.session.add(SalesItem(
-            doc=to_doc,
-            image_path=it.image_path or "",
-            name=it.name,
-            qty=it.qty or 1,
-            rent_unit=it.rent_unit,
-            rent_duration=it.rent_duration or 1,
-            unit_price=it.unit_price or 0.0,
-            discount_pct=it.discount_pct or 0.0,
-            line_total=it.line_total or 0.0,
-        ))
+        data = {}
+
+        # --- core fields ---
+        for k, default in [
+            ("image_path", ""),
+            ("name", ""),
+            ("qty", 1),
+            ("rent_unit", None),
+            ("rent_duration", 1),
+            ("unit_price", 0),
+            ("discount_pct", 0),
+            ("line_total", 0),
+            ("line_subtotal", None),
+        ]:
+            if k in item_cols:
+                v = _val(it, k, default)
+                if v is None and default is not None:
+                    v = default
+                data[k] = v
+
+        # --- lock/SKU fields ---
+        for k in ["category_id", "category_prefix", "allocated_skus"]:
+            if k in item_cols:
+                data[k] = _val(it, k, None)
+
+        # --- equipment link (ถ้ามีในรุ่นนี้) ---
+        for k in ["equipment_id", "equipment_sku", "equipment_code", "equipment_name"]:
+            if k in item_cols:
+                data[k] = _val(it, k, None)
+
+        db.session.add(SalesItem(doc=to_doc, **data))
+
+
 
 def _create_child_doc(parent: SalesDoc, doc_type: str, init_status: str) -> SalesDoc:
     prefix = {"BL": "BL", "IV": "IV", "RC": "RC"}[doc_type]
@@ -3173,35 +4262,87 @@ def _ensure_children_for_quote(qu: SalesDoc):
         _create_child_doc(qu, "RC", "UNISSUED")
 
 @app.post("/sales/quotes/<int:qid>/approve")
+@login_required
 @permission_required("sales.manage")
 def qu_approve(qid):
-    d = SalesDoc.query.options(
-        joinedload(SalesDoc.items),
-        joinedload(SalesDoc.customer),
-    ).get_or_404(qid)
+    # โหลดใบเสนอราคาที่จะอนุมัติ
+    d = (
+        SalesDoc.query.options(
+            joinedload(SalesDoc.items),
+            joinedload(SalesDoc.customer),
+        )
+        .get_or_404(qid)
+    )
+
+    # กันกดอนุมัติซ้ำ
     if (d.status or "").upper() == "APPROVED":
         flash("เอกสารนี้อนุมัติแล้ว", "info")
+        # ถ้าเป็นสัญญา ให้พาไปหน้า CT (ถ้ามี)
+        ct = SalesDoc.query.filter_by(parent_id=d.id, doc_type="CT").first()
+        if ct:
+            return redirect(url_for("contract_view", cid=ct.id))
         return redirect(url_for("qu_view", qid=d.id))
+
+    # เปลี่ยนสถานะใบเสนอราคา
     d.status = "APPROVED"
-    changed, missing = _update_equipment_from_quote(d, "RENTED")
-    _ensure_children_for_quote(d)
+
+    # โหมดสัญญา/แบ่งงวดรายเดือน
+    # โหมดสัญญา/แบ่งงวดรายเดือน
+    if (d.billing_mode or '').upper() == 'INSTALLMENT':
+        # 1) ต้องมีใบจองเพื่อใช้ล็อคของ (BK) เหมือนโหมดปกติ
+        bk = SalesDoc.query.filter_by(parent_id=d.id, doc_type='BK').first()
+        if not bk:
+            bk = _create_booking_from_quote(d)
+
+        # 2) ต้องมีสัญญา/PO ใหญ่ (CT) เพื่อสร้างตารางงวด
+        ct = SalesDoc.query.filter_by(parent_id=d.id, doc_type='CT').first()
+        if not ct:
+            ct = _create_contract_from_quote(d)
+
+        db.session.commit()
+        flash('อนุมัติใบเสนอราคาแล้ว: สร้างใบจองเพื่อไปล็อคของ และสร้างสัญญา/งวดรายเดือนแล้ว', 'success')
+        # พาไปหน้าใบจองก่อน เพื่อให้กดจัดสรร/อนุมัติ (ล็อคของ -> อุปกรณ์เปลี่ยนเป็นถูกเช่า)
+        return redirect(url_for('bk_view', doc_id=bk.id))
+
+    # โหมดปกติ (เดิม): สร้างใบจอง (BK) ถ้ายังไม่มี
+    existing_bk = SalesDoc.query.filter_by(parent_id=d.id, doc_type="BK").first()
+    if not existing_bk:
+        bk = _create_booking_from_quote(d)
+    else:
+        bk = existing_bk
+
     db.session.commit()
-    if changed:
-        flash(f"อัปเดตสถานะอุปกรณ์เป็น ‘ถูกเช่า’ แล้ว {changed} รายการ", "success")
-    if missing:
-        preview = ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else "")
-        flash(f"ไม่พบอุปกรณ์ตาม SKU บางรายการ: {preview}", "warning")
-    flash("สร้าง ใบวางบิล / ใบกำกับภาษี / ใบเสร็จรับเงิน ให้เรียบร้อยแล้ว", "success")
-    return redirect(url_for("qu_view", qid=d.id))
+    flash("อนุมัติใบเสนอราคา และสร้างใบจองเรียบร้อยแล้ว", "success")
+
+    # ไปหน้าใบจอง (param ชื่อ doc_id)
+    return redirect(url_for("bk_view", doc_id=bk.id))
+
 
 # ---------- Sales: Lists/View/Toggle/Print ----------
 def _doc_list(doc_type: str, title_th: str):
     q = (request.args.get("q") or "").strip()
-    qry = SalesDoc.query.filter(SalesDoc.doc_type==doc_type)
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+    qry = SalesDoc.query.filter(SalesDoc.doc_type == doc_type)
+    if start_d:
+        qry = qry.filter(SalesDoc.date >= start_d)
+    if end_d:
+        qry = qry.filter(SalesDoc.date <= end_d)
     if q:
         qry = qry.join(Customer).filter(Customer.name.ilike(f"%{q}%"))
     rows = qry.order_by(SalesDoc.id.desc()).all()
-    return render_template("sales/qu_list.html", rows=rows, q=q, page_title=title_th, show_new=False)
+    return render_template(
+        "sales/qu_list.html",
+        rows=rows,
+        q=q,
+        start=start,
+        end=end,
+        doc_type=doc_type,
+        page_title=title_th,
+        show_new=False,
+    )
 
 @app.route("/sales/bills")
 @permission_required("sales.view")
@@ -3218,11 +4359,466 @@ def iv_list():
 def rc_list():
     return _doc_list("RC", "ใบเสร็จรับเงิน")
 
+
+
+# ================== Sales: Contracts / Installments ==================
+
+@app.route("/sales/contracts")
+@permission_required("sales.view")
+def contract_list():
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    qry = SalesDoc.query.options(joinedload(SalesDoc.customer)).filter(SalesDoc.doc_type == "CT")
+
+    if start_d:
+        qry = qry.filter(SalesDoc.date >= start_d)
+    if end_d:
+        qry = qry.filter(SalesDoc.date <= end_d)
+
+    if q:
+        qry = qry.join(Customer).filter(Customer.name.ilike(f"%{q}%"))
+
+    rows = qry.order_by(SalesDoc.id.desc()).all()
+
+    # summary per contract
+    stats = {}
+    for ct in rows:
+        total = SalesInstallment.query.filter_by(contract_id=ct.id).count()
+        receipted = SalesInstallment.query.filter_by(contract_id=ct.id, status="RECEIPTED").count()
+        invoiced = SalesInstallment.query.filter(
+            SalesInstallment.contract_id == ct.id,
+            SalesInstallment.invoice_id.isnot(None)
+        ).count()
+        stats[ct.id] = {"total": total, "receipted": receipted, "invoiced": invoiced}
+
+    return render_template(
+        "sales/contracts_list.html",
+        rows=rows,
+        q=q,
+        start=start,
+        end=end,
+        stats=stats,
+    )
+
+@app.route("/sales/contracts/<int:cid>")
+@permission_required("sales.view")
+def contract_view(cid):
+    ct = SalesDoc.query.options(joinedload(SalesDoc.customer)).get_or_404(cid)
+    if ct.doc_type != "CT":
+        abort(404)
+
+    # ensure installments exist (กรณีย้าย DB/เพิ่มฟีเจอร์ทีหลัง)
+    if SalesInstallment.query.filter_by(contract_id=ct.id).count() == 0 and ct.parent_id:
+        qu = SalesDoc.query.options(joinedload(SalesDoc.items)).get(ct.parent_id)
+        _ensure_installments_for_contract(ct, qu)
+        db.session.commit()
+
+    insts = SalesInstallment.query.filter_by(contract_id=ct.id).order_by(SalesInstallment.installment_no.asc()).all()
+
+    # summary
+    total = len(insts)
+    receipted = len([x for x in insts if (x.status or "").upper() == "RECEIPTED"])
+    invoiced = len([x for x in insts if x.invoice_id])
+
+    return render_template(
+        "sales/contract_view.html",
+        ct=ct,
+        insts=insts,
+        summary={"total": total, "receipted": receipted, "invoiced": invoiced},
+    )
+
+@app.post("/sales/contracts/<int:cid>/installments/<int:iid>/set_po")
+@permission_required("sales.manage")
+def contract_installment_set_po(cid, iid):
+    ct = SalesDoc.query.get_or_404(cid)
+    if ct.doc_type != "CT":
+        abort(404)
+    inst = SalesInstallment.query.filter_by(contract_id=cid, id=iid).first_or_404()
+    inst.po_customer_sub = (request.form.get("po_customer_sub") or "").strip()
+    db.session.commit()
+    flash("บันทึก PO ย่อยของลูกค้าแล้ว", "success")
+    return redirect(url_for("contract_view", cid=cid))
+
+@app.post("/sales/contracts/<int:cid>/installments/<int:iid>/create_docs")
+@permission_required("sales.manage")
+def contract_installment_create_docs(cid, iid):
+    ct = SalesDoc.query.get_or_404(cid)
+    if ct.doc_type != "CT":
+        abort(404)
+    inst = SalesInstallment.query.filter_by(contract_id=cid, id=iid).first_or_404()
+
+    # กันสร้างซ้ำ
+    if inst.bill_id or inst.invoice_id or inst.receipt_id:
+        flash("งวดนี้มีเอกสารถูกสร้างแล้ว", "info")
+        return redirect(url_for("contract_view", cid=cid))
+
+    _create_docs_for_installment(ct, inst)
+    db.session.commit()
+    flash("สร้างเอกสารงวดนี้เรียบร้อยแล้ว (BL/IV/RC)", "success")
+    return redirect(url_for("contract_view", cid=cid))
+
+@app.post("/sales/contracts/<int:cid>/installments/<int:iid>/mark_paid")
+@permission_required("sales.manage")
+def contract_installment_mark_paid(cid, iid):
+    ct = SalesDoc.query.get_or_404(cid)
+    if ct.doc_type != "CT":
+        abort(404)
+    inst = SalesInstallment.query.filter_by(contract_id=cid, id=iid).first_or_404()
+    if not inst.receipt_id:
+        flash("ยังไม่มีใบเสร็จของงวดนี้", "warning")
+        return redirect(url_for("contract_view", cid=cid))
+    rc = SalesDoc.query.get_or_404(inst.receipt_id)
+    rc.status = "PAID"
+    inst.status = "RECEIPTED"
+    db.session.commit()
+    flash("บันทึกว่าชำระแล้ว (อัปเดตสถานะงวดเป็น RECEIPTED)", "success")
+    return redirect(url_for("contract_view", cid=cid))
+
+@app.route("/sales/contracts/<int:cid>/export.xlsx")
+@permission_required("sales.view")
+def contract_export_xlsx(cid):
+    ct = SalesDoc.query.options(joinedload(SalesDoc.customer)).get_or_404(cid)
+    if ct.doc_type != "CT":
+        abort(404)
+    insts = SalesInstallment.query.filter_by(contract_id=ct.id).order_by(SalesInstallment.installment_no.asc()).all()
+
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Schedule"
+
+    headers = [
+        "Contract No", "Customer", "Project", "Start", "End",
+        "Installment No", "Period Start", "Period End", "Bill Date", "Due Date",
+        "Status", "PO Sub",
+        "Subtotal", "VAT", "Total", "WHT", "Grand",
+        "BL No", "IV No", "RC No"
+    ]
+    ws.append(headers)
+
+    for inst in insts:
+        bl_no = inst.bill.number if inst.bill else ""
+        iv_no = inst.invoice.number if inst.invoice else ""
+        rc_no = inst.receipt.number if inst.receipt else ""
+        ws.append([
+            ct.number,
+            (ct.customer.name if ct.customer else ""),
+            ct.project_name,
+            (ct.contract_start.strftime("%Y-%m-%d") if ct.contract_start else ""),
+            (ct.contract_end.strftime("%Y-%m-%d") if ct.contract_end else ""),
+            inst.installment_no,
+            inst.period_start.strftime("%Y-%m-%d"),
+            inst.period_end.strftime("%Y-%m-%d"),
+            inst.bill_date.strftime("%Y-%m-%d"),
+            inst.due_date.strftime("%Y-%m-%d"),
+            inst.status,
+            inst.po_customer_sub,
+            inst.amount_subtotal,
+            inst.amount_vat,
+            inst.amount_total,
+            inst.amount_wht,
+            inst.amount_grand,
+            bl_no, iv_no, rc_no
+        ])
+
+    # autosize
+    for col in range(1, len(headers) + 1):
+        max_len = 10
+        for row in range(1, ws.max_row + 1):
+            v = ws.cell(row=row, column=col).value
+            if v is None:
+                continue
+            max_len = max(max_len, len(str(v)))
+        ws.column_dimensions[get_column_letter(col)].width = min(max_len + 2, 45)
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    filename = f"{ct.number}_schedule.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 def _doc_view(doc_id: int, doc_type: str, title_th: str):
-    d = SalesDoc.query.options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer)).get_or_404(doc_id)
+    d = SalesDoc.query.options(
+        joinedload(SalesDoc.items),
+        joinedload(SalesDoc.customer),
+    ).get_or_404(doc_id)
     if d.doc_type != doc_type:
         abort(404)
     return render_template("sales/qu_view.html", d=d, page_title=title_th, hide_approve=True, is_child_doc=True)
+
+# -------------------------
+# Excel Exports (Reports)
+# -------------------------
+def _xlsx_send(wb, filename: str):
+    """ส่งไฟล์ Excel (openpyxl Workbook) ออกเป็น attachment"""
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return send_file(
+        stream,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+@app.get("/sales/docs/<int:doc_id>/export.xlsx")
+@permission_required("sales.view")
+def sales_doc_export_xlsx(doc_id):
+    """Export เอกสารขาย 1 ใบ (QU/BK/BL/IV/RC/...)"""
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+    d: SalesDoc = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
+        .get_or_404(doc_id)
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Document"
+
+    # Header
+    ws.append(["Doc Type", d.doc_type])
+    ws.append(["Number", d.number])
+    ws.append(["Status", d.status])
+    ws.append(["Date", d.date.strftime("%Y-%m-%d") if d.date else ""])
+    ws.append(["Customer", d.customer.name if d.customer else ""])
+    ws.append(["Project", getattr(d, "project_name", "") or ""])
+    ws.append(["PO(Customer)", getattr(d, "po_customer", "") or ""])
+    ws.append(["Tax Mode", getattr(d, "tax_mode", "") or ""])
+    ws.append(["WHT %", getattr(d, "wht_pct", "") or ""])
+    ws.append(["Billing Mode", getattr(d, "billing_mode", "") or ""])
+    ws.append(["Contract Start", getattr(d, "contract_start", None).strftime("%Y-%m-%d") if getattr(d, "contract_start", None) else ""])
+    ws.append(["Contract End", getattr(d, "contract_end", None).strftime("%Y-%m-%d") if getattr(d, "contract_end", None) else ""])
+    ws.append(["Installments", getattr(d, "installment_count", "") or ""])
+    ws.append(["Remark", getattr(d, "remark", "") or ""])
+    ws.append([])
+
+    # Items
+    ws.append(["#", "Item", "Category Prefix", "Allocated SKUs", "Qty", "Unit", "Duration", "Unit Price", "Disc %", "Line Subtotal", "Line Total"])
+    for i, it in enumerate(d.items or [], start=1):
+        ws.append([
+            i,
+            it.name,
+            getattr(it, "category_prefix", "") or "",
+            getattr(it, "allocated_skus", "") or "",
+            float(it.qty or 0),
+            (it.rent_unit or ""),
+            float(getattr(it, "rent_duration", 0) or 0),
+            float(it.unit_price or 0),
+            float(it.discount_pct or 0),
+            float(it.line_subtotal or 0),
+            float(it.line_total or 0),
+        ])
+
+    ws.append([])
+    ws.append(["Subtotal", float(getattr(d, "amount_subtotal", 0) or 0)])
+    ws.append(["VAT", float(getattr(d, "amount_vat", 0) or 0)])
+    ws.append(["Total", float(getattr(d, "amount_total", 0) or 0)])
+    ws.append(["WHT", float(getattr(d, "amount_wht", 0) or 0)])
+    ws.append(["Grand", float(getattr(d, "amount_grand", 0) or 0)])
+
+    # column widths
+    for col in range(1, 12):
+        ws.column_dimensions[get_column_letter(col)].width = 18
+
+    return _xlsx_send(wb, f"{(d.doc_type or 'DOC')}_{d.number or d.id}.xlsx")
+
+@app.get("/purchases/po/<int:pid>/export.xlsx")
+@permission_required("purchases.view")
+def po_export_xlsx(pid):
+    """Export ใบสั่งซื้อ (PO) 1 ใบ"""
+    from openpyxl import Workbook
+    po: PurchaseOrder = (
+        PurchaseOrder.query
+        .options(joinedload(PurchaseOrder.items), joinedload(PurchaseOrder.supplier))
+        .get_or_404(pid)
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PO"
+
+    ws.append(["Number", po.number])
+    ws.append(["Status", po.status])
+    ws.append(["Date", po.po_date.strftime("%Y-%m-%d") if po.po_date else ""])
+    ws.append(["Supplier", po.supplier.name if po.supplier else ""])
+    ws.append(["Remark", getattr(po, "remark", "") or ""])
+    ws.append([])
+
+    ws.append(["#", "SKU", "Item", "Brand", "Qty", "Unit", "Cost", "Disc %", "Line Total"])
+    for i, it in enumerate(po.items or [], start=1):
+        ws.append([
+            i,
+            getattr(it, "sku", "") or "",
+            getattr(it, "name", "") or "",
+            getattr(it, "brand", "") or "",
+            float(getattr(it, "qty", 0) or 0),
+            getattr(it, "unit", "") or "",
+            float(getattr(it, "cost", 0) or 0),
+            float(getattr(it, "disc_pct", 0) or 0),
+            float(getattr(it, "line_total", 0) or 0),
+        ])
+
+    ws.append([])
+    ws.append(["Subtotal", float(getattr(po, "amount_subtotal", 0) or 0)])
+    ws.append(["VAT", float(getattr(po, "amount_vat", 0) or 0)])
+    ws.append(["Grand", float(getattr(po, "amount_grand", 0) or 0)])
+
+    return _xlsx_send(wb, f"PO_{po.number or po.id}.xlsx")
+
+@app.get("/purchases/grn/<int:gid>/export.xlsx")
+@permission_required("purchases.view")
+def grn_export_xlsx(gid):
+    """Export ใบรับสินค้า (GRN) 1 ใบ"""
+    from openpyxl import Workbook
+    g: GoodsReceipt = (
+        GoodsReceipt.query
+        .options(joinedload(GoodsReceipt.items), joinedload(GoodsReceipt.po), joinedload(GoodsReceipt.po).joinedload(PurchaseOrder.supplier))
+        .get_or_404(gid)
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "GRN"
+
+    ws.append(["Number", g.number])
+    ws.append(["Status", g.status])
+    ws.append(["Date", g.grn_date.strftime("%Y-%m-%d") if g.grn_date else ""])
+    ws.append(["Supplier", g.supplier.name if g.supplier else ""])
+    ws.append(["PO", g.po.number if getattr(g, "po", None) else ""])
+    ws.append([])
+
+    ws.append(["#", "SKU", "Item", "Brand", "Qty", "Unit", "Cost", "Disc %", "Line Total"])
+    for i, it in enumerate(g.items or [], start=1):
+        ws.append([
+            i,
+            getattr(it, "sku", "") or "",
+            getattr(it, "name", "") or "",
+            getattr(it, "brand", "") or "",
+            float(getattr(it, "qty", 0) or 0),
+            getattr(it, "unit", "") or "",
+            float(getattr(it, "cost", 0) or 0),
+            float(getattr(it, "disc_pct", 0) or 0),
+            float(getattr(it, "line_total", 0) or 0),
+        ])
+
+    ws.append([])
+    ws.append(["Subtotal", float(getattr(g, "amount_subtotal", 0) or 0)])
+    ws.append(["VAT", float(getattr(g, "amount_vat", 0) or 0)])
+    ws.append(["Grand", float(getattr(g, "amount_grand", 0) or 0)])
+
+    return _xlsx_send(wb, f"GRN_{g.number or g.id}.xlsx")
+
+@app.get("/deliveries/<int:did>/export.xlsx")
+@permission_required("transport.view")
+def delivery_export_xlsx(did):
+    """Export ใบส่งสินค้า (Delivery) 1 ใบ"""
+    from openpyxl import Workbook
+    d: DeliveryDoc = (
+        DeliveryDoc.query
+        .options(joinedload(DeliveryDoc.items), joinedload(DeliveryDoc.customer))
+        .get_or_404(did)
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Delivery"
+
+    ws.append(["Number", d.number])
+    ws.append(["Status", d.status])
+    ws.append(["Date", d.date.strftime("%Y-%m-%d") if d.date else ""])
+    ws.append(["Customer", d.customer.name if d.customer else ""])
+    ws.append(["Type", getattr(d, "delivery_type", "") or ""])
+    ws.append([])
+
+    ws.append(["#", "Item", "Qty", "Unit", "Remark"])
+    for i, it in enumerate(d.items or [], start=1):
+        ws.append([
+            i,
+            getattr(it, "name", "") or "",
+            float(getattr(it, "qty", 0) or 0),
+            getattr(it, "unit", "") or "",
+            getattr(it, "remark", "") or "",
+        ])
+
+    return _xlsx_send(wb, f"DN_{d.number or d.id}.xlsx")
+
+@app.get("/claims/<int:cid>/export.xlsx")
+@permission_required("claims.view")
+def claim_export_xlsx(cid):
+    """Export งานเคลม 1 รายการ"""
+    from openpyxl import Workbook
+    c: Claim = (
+        Claim.query
+        .options(joinedload(Claim.items), joinedload(Claim.customer))
+        .get_or_404(cid)
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Claim"
+
+    ws.append(["Number", c.number])
+    ws.append(["Status", c.status])
+    ws.append(["Date", c.date.strftime("%Y-%m-%d") if c.date else ""])
+    ws.append(["Customer", c.customer.name if c.customer else ""])
+    ws.append(["Remark", getattr(c, "remark", "") or ""])
+    ws.append([])
+
+    ws.append(["#", "Item", "Qty", "Unit", "Reason", "Status"])
+    for i, it in enumerate(c.items or [], start=1):
+        ws.append([
+            i,
+            getattr(it, "name", "") or "",
+            float(getattr(it, "qty", 0) or 0),
+            getattr(it, "unit", "") or "",
+            getattr(it, "reason", "") or "",
+            getattr(it, "status", "") or "",
+        ])
+
+    return _xlsx_send(wb, f"CLAIM_{c.number or c.id}.xlsx")
+
+@app.get("/repairs/<int:jid>/export.xlsx")
+@permission_required("repairs.view")
+def repair_export_xlsx(jid):
+    """Export ใบงานซ่อม 1 ใบ"""
+    from openpyxl import Workbook
+    job: RepairJob = (
+        RepairJob.query
+        .options(joinedload(RepairJob.items), joinedload(RepairJob.equipment), joinedload(RepairJob.customer))
+        .get_or_404(jid)
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Repair"
+
+    ws.append(["Number", job.number])
+    ws.append(["Status", job.status])
+    ws.append(["Opened", job.opened_at.strftime("%Y-%m-%d %H:%M") if job.opened_at else ""])
+    ws.append(["Closed", job.closed_at.strftime("%Y-%m-%d %H:%M") if job.closed_at else ""])
+    ws.append(["Equipment", job.equipment.sku if job.equipment else ""])
+    ws.append(["Customer", job.customer.name if job.customer else ""])
+    ws.append(["Total Cost", float(getattr(job, "total_cost", 0) or 0)])
+    ws.append(["Note", getattr(job, "note", "") or ""])
+    ws.append([])
+
+    ws.append(["#", "Part/Item", "Qty", "Unit", "Cost", "Line Total"])
+    for i, it in enumerate(job.items or [], start=1):
+        ws.append([
+            i,
+            getattr(it, "name", "") or "",
+            float(getattr(it, "qty", 0) or 0),
+            getattr(it, "unit", "") or "",
+            float(getattr(it, "cost", 0) or 0),
+            float(getattr(it, "line_total", 0) or 0),
+        ])
+
+    return _xlsx_send(wb, f"REPAIR_{job.number or job.id}.xlsx")
+
 
 @app.route("/sales/bills/<int:did>")
 @permission_required("sales.view")
@@ -3812,6 +5408,10 @@ def claims_print(cid):
 def returns_list():
     ep = "returns_list"
     q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
 
     # ดึงใบคืน + ลูกค้า + ใบเสนอราคา + รายการ
     query = ReturnDoc.query.options(
@@ -3824,6 +5424,12 @@ def returns_list():
     is_del_col = getattr(ReturnDoc, "is_deleted", None)
     if is_del_col is not None:
         query = query.filter(is_del_col.is_(False))
+
+    # เลือกช่วงวันที่ (ตาม ReturnDoc.date)
+    if start_d:
+        query = query.filter(ReturnDoc.date >= start_d)
+    if end_d:
+        query = query.filter(ReturnDoc.date <= end_d)
 
     # ค้นหาจาก เลขที่ใบคืน / เลขที่ใบเสนอราคา / ชื่อลูกค้า
     if q:
@@ -3852,10 +5458,10 @@ def returns_list():
         ep=ep,
         docs=docs,
         q=q,
+        start=start,
+        end=end,
     )
 
-
-# ===== ใบคืนสินค้า: หน้าเลือกใบเสนอราคาที่จะคืน =====
 @app.route("/returns/new", methods=["GET", "POST"])
 @login_required
 @permission_required("sales.manage")
@@ -4799,7 +6405,7 @@ def print_doc(did):
 
 
 
-bp_delivery = Blueprint("delivery", __name__, url_prefix="/delivery")
+
 
 def permission_required(code):
     def decorator(f):
@@ -4822,27 +6428,27 @@ def permission_required(code):
     return decorator
 
 
-@bp_delivery.route("/")
+
 @permission_required("transport.view")
 def list_():
     flash("(สตับ) หน้ารายการใบส่งสินค้า — ยังไม่ได้ทำ UI list จริง", "info")
     return redirect(url_for("dashboard"))
 
-@bp_delivery.route("/create-from-quote/<int:qid>")
+
 @permission_required("transport.manage")
 def create_from_quote(qid):
     # TODO: สร้างเอกสารขนส่งจากใบเสนอราคา qid
     flash(f"(สตับ) สร้างใบส่งสินค้าจาก QU #{qid} แล้ว (จำลอง)", "success")
     return redirect(url_for("qu_view", qid=qid))
 
-@bp_delivery.route("/create-from-claim/<int:claim_id>")
+
 @permission_required("transport.manage")
 def create_from_claim(claim_id):
     # TODO: สร้างเอกสารขนส่งเคลมจากใบเคลม claim_id
     flash(f"(สตับ) สร้างใบส่งสินค้าเคลมจากเคลม #{claim_id} แล้ว (จำลอง)", "success")
     return redirect(url_for("claim_view", claim_id=claim_id))
 
-@bp_delivery.route("/<int:did>")
+
 @permission_required("transport.view")
 def view(did):
     flash(f"(สตับ) เปิดใบส่งสินค้า DID={did} (ยังไม่มีหน้าจอจริง)", "info")
@@ -4896,10 +6502,10 @@ def seed_transport_perms():
 # ================== DELIVERY / TRANSPORT BLUEPRINT (PLACEHOLDER) ==================
 
 
-bp_delivery = Blueprint("delivery", __name__, url_prefix="/delivery")
+
 
 # เมนูรายการใบส่งสินค้า
-@bp_delivery.route("/")
+
 @permission_required("transport.view")
 def list_():
     return render_template_string("""
@@ -4912,7 +6518,7 @@ def list_():
     """)
 
 # สร้างใบส่งสินค้า (ปกติ)
-@bp_delivery.route("/new")
+
 @permission_required("transport.manage")
 def new_normal():
     return render_template_string("""
@@ -4922,7 +6528,7 @@ def new_normal():
     """)
 
 # สร้างใบส่งสินค้าเคลม
-@bp_delivery.route("/new-claim")
+
 @permission_required("transport.manage")
 def new_claim():
     return render_template_string("""
@@ -4932,7 +6538,7 @@ def new_claim():
     """)
 
 # จัดสายรถ / วางแผน
-@bp_delivery.route("/plan")
+
 @permission_required("transport.manage")
 def plan():
     return render_template_string("""
@@ -4942,7 +6548,7 @@ def plan():
     """)
 
 # รถขนส่ง
-@bp_delivery.route("/vehicles")
+
 @permission_required("transport.manage")
 def vehicles():
     # ตัวอย่างข้อมูล mock ให้หน้าไม่โล่ง (ภายหลังเปลี่ยนเป็น query จาก DB ได้)
@@ -5008,7 +6614,7 @@ def vehicles():
     {% endblock %}
     """, rows=rows)
 
-@bp_delivery.route("/vehicles/new")
+
 @permission_required("transport.manage")
 def vehicles_new():
     # แบบฟอร์มตัวอย่าง รอเชื่อม DB จริง
@@ -5041,7 +6647,7 @@ def vehicles_new():
     """)
 
 # คนขับ
-@bp_delivery.route("/drivers")
+
 @permission_required("transport.manage")
 def drivers():
     rows = [
@@ -5088,7 +6694,7 @@ def drivers():
     """, rows=rows)
 
 # เส้นทาง / โซน
-@bp_delivery.route("/zones")
+
 @permission_required("transport.manage")
 def zones():
     rows = [
@@ -5224,7 +6830,7 @@ def create_from_quotation(qid):
     )
 
 
-@bp_delivery.route("/create-from-quote/<int:qid>")
+
 def create_from_qu(qid):
     """
     Wrapper endpoint สำหรับปุ่ม 'สร้างใบส่งสินค้า' จากใบเสนอราคา
@@ -5236,7 +6842,7 @@ def create_from_qu(qid):
     except BuildError:
         return redirect(f"/delivery/new?from=quote&qid={qid}")
 
-@bp_delivery.route("/create-from-claim/<int:claim_id>")
+
 def create_from_claim(claim_id):
     """
     Wrapper endpoint สำหรับปุ่ม 'สร้างใบส่งสินค้าเคลม' จากใบเคลม
@@ -5251,7 +6857,7 @@ def create_from_claim(claim_id):
 
 
 # ลงทะเบียน blueprint
-app.register_blueprint(bp_delivery, url_prefix="/delivery")
+
 
 # debug: พิมพ์รายการเส้นทางที่เรามี
 try:
@@ -5495,13 +7101,40 @@ def gifts_new():
         db.session.add(campaign)
         db.session.flush()  # ให้ได้ campaign.id ก่อน
 
-        # อ่าน tier จากฟอร์ม (รองรับ A/B/C 3 แถว)
-        for idx in range(1, 4):
-            code = (request.form.get(f"tier{idx}_code") or "").strip()
-            tname = (request.form.get(f"tier{idx}_name") or "").strip()
-            min_amount_str = (request.form.get(f"tier{idx}_min") or "").strip()
+                # อ่าน tier จากฟอร์ม (รองรับหลายรูปแบบของชื่อ field)
+        # - tier_code_1 / tier_name_1 / tier_min_amount_1  (ตาม template)
+        # - tier1_code / tier1_name / tier1_min           (ของเก่า)
+        tier_indexes = set()
+        for k in request.form.keys():
+            m = re.match(r"tier_(?:code|name|min_amount)_(\d+)$", k)
+            if m:
+                tier_indexes.add(int(m.group(1)))
+                continue
+            m2 = re.match(r"tier(\d+)_(?:code|name|min|min_amount)$", k)
+            if m2:
+                tier_indexes.add(int(m2.group(1)))
 
-            if not code or not tname or not min_amount_str:
+        # เผื่อกรณี template ส่งมาเป็นแถวคงที่ A/B/C แต่ไม่มี key ตาม regex
+        if not tier_indexes:
+            tier_indexes = {1, 2, 3}
+
+        saved_tiers = 0
+        for idx in sorted(tier_indexes)[:20]:
+            code = (request.form.get(f"tier_code_{idx}") or request.form.get(f"tier{idx}_code") or "").strip()
+            tname = (request.form.get(f"tier_name_{idx}") or request.form.get(f"tier{idx}_name") or "").strip()
+            min_amount_str = (
+                request.form.get(f"tier_min_amount_{idx}")
+                or request.form.get(f"tier{idx}_min_amount")
+                or request.form.get(f"tier{idx}_min")
+                or ""
+            ).strip()
+
+            # ถ้าแถวว่าง -> ข้าม
+            if not code and not tname and not min_amount_str:
+                continue
+
+            # ต้องมีครบ
+            if not code or not tname or min_amount_str == "":
                 continue
 
             try:
@@ -5517,9 +7150,10 @@ def gifts_new():
                 sort_order=idx,
             )
             db.session.add(tier)
+            saved_tiers += 1
 
         db.session.commit()
-        flash("สร้างแคมเปญของขวัญเรียบร้อย", "success")
+        flash(f"สร้างแคมเปญของขวัญเรียบร้อย (บันทึก Tier = {saved_tiers})", "success")
         return redirect(url_for("gifts_campaign_view", cid=campaign.id))
 
     return render_template("gifts/new.html")
@@ -5678,6 +7312,9 @@ app.register_blueprint(bp_repairs)
 app.register_blueprint(bp_deliveries)
 print("REPAIRS ROUTES:",
       [r.rule for r in app.url_map.iter_rules() if "repairs" in r.rule])
+print("DELIVERY ROUTES:",
+      [r.rule for r in app.url_map.iter_rules() if "deliveries" in r.rule])
+
 
 
 
@@ -5716,20 +7353,28 @@ def seed_default_admin():
 
 # ==== run startup tasks (create tables + seed) =====================
 def run_startup_tasks():
-    """รันตอนแอปถูก import (เช่นบน Render) เพื่อสร้างตารางและ seed ข้อมูลพื้นฐาน"""
+    """
+    รันตอนแอปถูก import (เช่นบน Render)
+    แต่จะข้าม create_all / seed ถ้าเป็นโหมด migration
+    """
     from sqlalchemy.exc import OperationalError
 
+    # 👉 ข้ามทันที ถ้าเป็นคำสั่ง flask db / alembic
+    if os.environ.get("ST_SKIP_INIT") == "1" or _is_migration_command():
+        print("[init] skip create_all/seed (migration mode)")
+        return
+
     with app.app_context():
-        # สร้างตารางทั้งหมด
+        # สร้างตารางทั้งหมด (เฉพาะตอนรันแอปจริง)
         try:
             db.create_all()
             print("[init] db.create_all completed")
         except OperationalError as e:
             print(f"[init] db.create_all failed: {e}")
 
-        # ใช้ bootstrap() ตัวเดียวกับที่ใช้เวลา run บนเครื่อง
+        # seed ข้อมูลพื้นฐาน
         try:
-            bootstrap()  # ภายในมีการสร้างสิทธิ์/ตำแหน่ง/บริษัท/admin ฯลฯ ให้ครบ
+            bootstrap()  # สร้างสิทธิ์/ตำแหน่ง/บริษัท/admin ฯลฯ
             print("[seed] bootstrap completed")
         except Exception as e:
             print(f"[seed] startup tasks failed: {e}")
@@ -5738,6 +7383,867 @@ def run_startup_tasks():
 # เรียกตอน import app ครั้งแรก (ทั้งตอน dev และบน Render)
 run_startup_tasks()
 
+@app.get("/sales/bookings")
+@login_required
+@permission_required("sales.view")
+def bk_list():
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    qry = SalesDoc.query.options(joinedload(SalesDoc.customer)).filter_by(doc_type="BK")
+
+    if start_d:
+        qry = qry.filter(SalesDoc.date >= start_d)
+    if end_d:
+        qry = qry.filter(SalesDoc.date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        qry = qry.join(Customer).filter(or_(SalesDoc.number.ilike(like), Customer.name.ilike(like)))
+
+    docs = (
+        qry
+        .order_by(SalesDoc.date.desc(), SalesDoc.id.desc())
+        .all()
+    )
+    return render_template("sales/bk_list.html", docs=docs, q=q, start=start, end=end)
+
+@app.get("/sales/bookings/<int:doc_id>")
+@login_required
+@permission_required("sales.view")
+def bk_view(doc_id):
+    d: SalesDoc = (
+        SalesDoc.query
+        .options(
+            joinedload(SalesDoc.customer),
+            joinedload(SalesDoc.items),
+        )
+        .filter_by(doc_type="BK", id=doc_id)   # กรองทั้ง doc_type และ id
+        .first_or_404()                        # ใช้ first_or_404 แทน get_or_404
+    )
+    return render_template("sales/bk_view.html", d=d, page_title="ใบจอง")
+
+
+
+
+
+@app.route("/sales/bookings/<int:bid>/allocate", methods=["GET", "POST"])
+@permission_required("sales.manage")
+def bk_allocate(bid):
+    """หน้าเลือกตัวอุปกรณ์จริงให้ใบจอง (BK)
+    - ใบเสนอราคา (QU): เก็บเป็น "หมวดหมู่" (Category/prefix_sku)
+    - ใบจอง (BK): ผู้ใช้เลือก SKU อุปกรณ์จริงที่ READY เพื่อ "ล็อคของ" และเปลี่ยนเป็น RENTED
+    """
+    doc: SalesDoc = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
+        .get_or_404(bid)
+    )
+    if (doc.doc_type or "").upper() != "BK":
+        flash("เอกสารนี้ไม่ใช่ใบจอง (BK)", "warning")
+        return redirect(url_for("sales_doc_view", doc_id=doc.id) if "sales_doc_view" in current_app.view_functions else url_for("bk_view", doc_id=doc.id))
+
+    # helper: parse prefix from item.name "[SP-001]" หรือใช้ item.category_prefix
+    import re as _re
+    def _extract_prefix(title: str) -> str | None:
+        m = _re.search(r"\[([^\[\]]+?)\]", title or "")
+        return m.group(1).strip() if m else None
+
+    if request.method == "POST":
+        any_selected = False
+        used_skus = set()
+
+        # กันเลือก SKU ซ้ำในฟอร์มเดียวกัน
+        for it in (doc.items or []):
+            chosen = request.form.getlist(f"alloc_{it.id}")
+            for sku in chosen:
+                sku = (sku or "").strip()
+                if not sku:
+                    continue
+                if sku in used_skus:
+                    flash(f"เลือกอุปกรณ์ซ้ำกันในฟอร์ม: {sku}", "danger")
+                    return redirect(url_for("bk_allocate", bid=doc.id))
+                used_skus.add(sku)
+
+        for it in (doc.items or []):
+            chosen = [ (x or "").strip() for x in request.form.getlist(f"alloc_{it.id}") if (x or "").strip() ]
+            prefix = (it.category_prefix or "").strip() or (_extract_prefix(it.name) or "")
+            qty_need = int(round(float(it.qty or 0))) if it.qty is not None else 0
+            qty_need = max(qty_need, 1)
+
+            if not chosen:
+                # อนุญาตให้ยังไม่เลือกครบทุกบรรทัดได้ แต่จะเตือน
+                continue
+
+            any_selected = True
+
+            if len(chosen) < qty_need:
+                flash(f"รายการ '{it.name}' ต้องเลือกอย่างน้อย {qty_need} ตัว (ตอนนี้เลือก {len(chosen)} ตัว)", "danger")
+                return redirect(url_for("bk_allocate", bid=doc.id))
+
+            # ตรวจอุปกรณ์จริงว่าพร้อมให้เช่า + ตรง prefix
+            eqs = Equipment.query.filter(Equipment.sku.in_(chosen)).all()
+            eq_by_sku = {e.sku: e for e in eqs}
+
+            for sku in chosen:
+                eq = eq_by_sku.get(sku)
+                if not eq:
+                    flash(f"ไม่พบอุปกรณ์ SKU: {sku}", "danger")
+                    return redirect(url_for("bk_allocate", bid=doc.id))
+                if (eq.status or "").upper() != "READY":
+                    flash(f"อุปกรณ์ {sku} ไม่ได้อยู่สถานะ READY (สถานะปัจจุบัน: {eq.status})", "danger")
+                    return redirect(url_for("bk_allocate", bid=doc.id))
+                if prefix and not (eq.sku or "").startswith(prefix):
+                    flash(f"อุปกรณ์ {sku} ไม่ตรงหมวด (ต้องขึ้นต้นด้วย {prefix})", "danger")
+                    return redirect(url_for("bk_allocate", bid=doc.id))
+
+            # บันทึกลง item
+            it.allocated_skus = ",".join(chosen)
+            it.category_prefix = prefix or it.category_prefix
+
+            # เปลี่ยนสถานะอุปกรณ์เป็น RENTED + log
+            cust_name = doc.customer.name if getattr(doc, "customer", None) else ""
+            for sku in chosen:
+                eq = eq_by_sku[sku]
+                eq.status = "RENTED"
+                _equip_log(eq, "RENT_OUT", f"จองจาก {doc.number} | ลูกค้า: {cust_name} | หมวด: {prefix}")
+
+        db.session.commit()
+        if any_selected:
+            flash("บันทึกการเลือกอุปกรณ์เรียบร้อยแล้ว (อุปกรณ์ถูกเปลี่ยนสถานะเป็น RENTED)", "success")
+        else:
+            flash("ยังไม่ได้เลือกอุปกรณ์ (สามารถกลับมาเลือกภายหลังได้)", "info")
+        return redirect(url_for("bk_view", doc_id=doc.id))
+
+
+    # GET: เตรียมรายการอุปกรณ์ READY แยกตาม prefix เพื่อให้เลือกง่าย
+    items_vm = []
+    for it in (doc.items or []):
+        prefix = (it.category_prefix or "").strip() or (_extract_prefix(it.name) or "")
+        qty_need = int(round(float(it.qty or 0))) if it.qty is not None else 0
+        qty_need = max(qty_need, 1)
+
+        q = Equipment.query.filter(Equipment.status == "READY")
+        if prefix:
+            q = q.filter(Equipment.sku.like(f"{prefix}%"))
+        eqs = q.order_by(Equipment.sku.asc()).limit(200).all()
+
+        already = [s.strip() for s in (it.allocated_skus or "").split(",") if s.strip()]
+        items_vm.append({
+            "item": it,
+            "prefix": prefix,
+            "qty_need": qty_need,
+            "equipments": eqs,
+            "already": already,
+        })
+
+    return render_template("sales/bk_allocate.html", doc=doc, items_vm=items_vm)
+
+@app.post("/sales/bookings/<int:bid>/approve")
+@login_required
+@permission_required("sales.manage")
+def bk_approve(bid):
+    d = (
+        SalesDoc.query.options(
+            joinedload(SalesDoc.items),
+            joinedload(SalesDoc.customer),
+        )
+        .get_or_404(bid)
+    )
+
+    # กันกดซ้ำ
+    if (d.status or "").upper() == "APPROVED":
+        flash("ใบจองนี้อนุมัติแล้ว", "info")
+        ct = SalesDoc.query.filter_by(parent_id=d.parent_id, doc_type='CT').first()
+        if ct:
+            return redirect(url_for('contract_view', cid=ct.id))
+        return redirect(url_for('bk_view', doc_id=d.id))  # <-- ตรงนี้ใช้ doc_id=
+
+    d.status = "APPROVED"
+
+    # เปลี่ยนสถานะอุปกรณ์เป็น RENTED
+    changed, missing = _update_equipment_from_quote(d, "RENTED")
+
+    # ให้แน่ใจว่ามี BL/IV/RC ผูกกับ BK แล้ว
+    _ensure_children_for_booking(d)
+
+    db.session.commit()
+
+    if missing:
+        flash(f"อุปกรณ์บางตัวไม่มีในระบบ หรือไม่พร้อมให้เช่า: {', '.join(missing)}", "warning")
+    else:
+        flash("อนุมัติใบจองเรียบร้อยแล้ว", "success")
+
+    ct = SalesDoc.query.filter_by(parent_id=d.parent_id, doc_type='CT').first()
+    if ct:
+        flash('ล็อคของแล้ว — ไปจัดการงวดในสัญญา/PO ใหญ่ต่อได้เลย', 'success')
+        return redirect(url_for('contract_view', cid=ct.id))
+    return redirect(url_for('bk_view', doc_id=d.id))  # <-- ตรงนี้ก็ใช้ doc_id=
+
+
+@app.get("/sales/bookings/<int:doc_id>/print")
+@login_required
+@permission_required("sales.view")
+def bk_print(doc_id):
+    # โหลด BK + customer + รายการ
+    bk: SalesDoc = (
+        SalesDoc.query
+        .options(
+            joinedload(SalesDoc.customer),
+            joinedload(SalesDoc.items),   # ← เอา .joinedload(SalesItem.equipment) ออก
+        )
+        .filter(
+            SalesDoc.id == doc_id,
+            SalesDoc.doc_type == "BK",
+        )
+        .first_or_404()
+    )
+
+    # โปรไฟล์บริษัท (ใช้ตัวเดียวกับ QU print)
+    company = CompanyProfile.query.first()
+
+    # map รูปภาพอุปกรณ์ (ใช้ helper เดิม ถ้ามี)
+    img_map = _build_item_image_map(bk) if "_build_item_image_map" in globals() else {}
+
+    # parent QU (ถ้ามี) ไว้ใช้แสดงข้อความอ้างอิง
+    parent_qu = bk.parent if bk.parent and bk.parent.doc_type == "QU" else None
+
+    return render_template(
+        "sales/bk_print.html",
+        d=bk,
+        company=company,
+        img_map=img_map,
+        parent_qu=parent_qu,
+    )
+
+
+
+
+# ================== Export Excel (Reports) ==================
+from io import BytesIO
+
+def _excel_response(filename: str, headers: list[str], rows: list[list]):
+    """สร้างไฟล์ .xlsx แล้วส่งกลับเป็น response"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+    from flask import send_file
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report"
+
+    header_font = Font(bold=True)
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=c, value=h)
+        cell.font = header_font
+        cell.alignment = Alignment(vertical="center")
+
+    for r, row in enumerate(rows, start=2):
+        for c, v in enumerate(row, start=1):
+            ws.cell(row=r, column=c, value=v)
+
+    # ปรับความกว้างคอลัมน์แบบง่าย ๆ
+    for col_idx in range(1, len(headers) + 1):
+        col_letter = get_column_letter(col_idx)
+        max_len = len(str(headers[col_idx - 1] or ""))
+        for rr in range(2, min(len(rows) + 2, 502)):  # จำกัดการวนเพื่อไม่ให้ช้า
+            val = ws.cell(row=rr, column=col_idx).value
+            if val is None:
+                continue
+            max_len = max(max_len, len(str(val)))
+        ws.column_dimensions[col_letter].width = min(max(10, max_len + 2), 45)
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return send_file(
+        bio,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+@app.get("/export/purchases/po.xlsx")
+@login_required
+@permission_required("purchases.view")
+def export_po_excel():
+    """Export รายการใบสั่งซื้อ (PO) ตามช่วงวันที่ (po_date) และค้นหา (q)"""
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    qry = PurchaseOrder.query.options(joinedload(PurchaseOrder.supplier))
+
+    if start_d:
+        qry = qry.filter(PurchaseOrder.po_date >= start_d)
+    if end_d:
+        qry = qry.filter(PurchaseOrder.po_date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        qry = qry.outerjoin(PurchaseOrder.supplier).filter(
+            or_(PurchaseOrder.number.ilike(like), Supplier.name.ilike(like))
+        )
+
+    pos = qry.order_by(PurchaseOrder.id.desc()).all()
+
+    headers = [
+        "PO No", "Date", "Supplier", "Status",
+        "Subtotal", "VAT", "Total",
+        "Remark",
+    ]
+    rows = []
+    for d in pos:
+        supplier_name = ""
+        try:
+            supplier_name = d.supplier.name if getattr(d, "supplier", None) else ""
+        except Exception:
+            supplier_name = ""
+
+        rows.append([
+            getattr(d, "number", "") or "",
+            getattr(d, "po_date", None) or "",
+            supplier_name,
+            getattr(d, "status", "") or "",
+            float(getattr(d, "subtotal", 0.0) or 0.0),
+            float(getattr(d, "vat", 0.0) or 0.0),
+            float(getattr(d, "total", 0.0) or 0.0),
+            getattr(d, "remark", "") or "",
+        ])
+
+    return _excel_response("purchase_orders.xlsx", headers, rows)
+
+@app.get("/export/purchases/grn.xlsx")
+@login_required
+@permission_required("goods.receive")
+def export_grn_excel():
+    """Export รายการใบรับสินค้า (GRN) ตามช่วงวันที่ (grn_date) และค้นหา (q)"""
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    qry = GoodsReceipt.query.options(
+        joinedload(GoodsReceipt.po).joinedload(PurchaseOrder.supplier),
+        joinedload(GoodsReceipt.po),
+    )
+
+    if start_d:
+        qry = qry.filter(GoodsReceipt.grn_date >= start_d)
+    if end_d:
+        qry = qry.filter(GoodsReceipt.grn_date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        qry = qry.outerjoin(GoodsReceipt.po).outerjoin(PurchaseOrder.supplier).outerjoin(GoodsReceipt.po).filter(
+            or_(
+                GoodsReceipt.number.ilike(like),
+                Supplier.name.ilike(like),
+                PurchaseOrder.number.ilike(like),
+            )
+        )
+
+    grns = qry.order_by(GoodsReceipt.id.desc()).all()
+
+    headers = [
+        "GRN No", "Date", "Supplier", "PO No",
+        "Remark",
+    ]
+    rows = []
+    for g in grns:
+        supplier_name = ""
+        try:
+            supplier_name = g.supplier.name if getattr(g, "supplier", None) else ""
+        except Exception:
+            supplier_name = ""
+
+        po_no = ""
+        try:
+            po_no = g.po.number if getattr(g, "po", None) else ""
+        except Exception:
+            po_no = ""
+
+        rows.append([
+            getattr(g, "number", "") or "",
+            getattr(g, "grn_date", None) or "",
+            supplier_name,
+            po_no,
+            getattr(g, "remark", "") or "",
+        ])
+
+    return _excel_response("goods_receipts.xlsx", headers, rows)
+
+@app.get("/export/sales/<string:doc_type>.xlsx")
+@login_required
+@permission_required("sales.view")
+def export_sales_doc_excel(doc_type: str):
+    """Export เอกสารขายจากตาราง SalesDoc ตาม doc_type (เช่น QU/BK/BL/IV/RC/CT/...)"""
+    dt = (doc_type or "").upper()
+    docs = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.customer))
+        .filter(SalesDoc.doc_type == dt)
+        .order_by(SalesDoc.id.desc())
+        .all()
+    )
+    headers = [
+        "Doc Type", "Number", "Date", "Customer", "Status",
+        "Subtotal", "VAT", "Total", "WHT", "Grand",
+        "Project", "PO Customer", "Credit Days",
+        "Billing Mode", "Installments", "Contract Start", "Contract End",
+        "Remark",
+    ]
+    rows = []
+    for d in docs:
+        cust_name = ""
+        try:
+            cust_name = d.customer.name if getattr(d, "customer", None) else ""
+        except Exception:
+            cust_name = ""
+        rows.append([
+            getattr(d, "doc_type", "") or "",
+            getattr(d, "number", "") or "",
+            getattr(d, "date", None) or "",
+            cust_name,
+            getattr(d, "status", "") or "",
+            float(getattr(d, "amount_subtotal", 0) or 0),
+            float(getattr(d, "amount_vat", 0) or 0),
+            float(getattr(d, "amount_total", 0) or 0),
+            float(getattr(d, "amount_wht", 0) or 0),
+            float(getattr(d, "amount_grand", 0) or 0),
+            getattr(d, "project_name", "") or "",
+            getattr(d, "po_customer", "") or "",
+            int(getattr(d, "credit_days", 0) or 0),
+            getattr(d, "billing_mode", "") or "",
+            int(getattr(d, "installment_count", 0) or 0),
+            getattr(d, "contract_start", None) or "",
+            getattr(d, "contract_end", None) or "",
+            getattr(d, "remark", "") or "",
+        ])
+    return _excel_response(f"sales_{dt.lower()}.xlsx", headers, rows)
+
+
+
+
+# =========================
+# Export Reports (Excel)
+# =========================
+def _parse_date_yyyy_mm_dd(s: str):
+    """Parse YYYY-MM-DD -> date or None."""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+@app.get("/export/sales_report/<doc_type>.xlsx")
+@login_required
+@permission_required("sales.view")
+def export_sales_docs_report_excel(doc_type: str):
+    """
+    Export summary report of SalesDoc by doc_type with optional date range.
+    Query params:
+      - start=YYYY-MM-DD
+      - end=YYYY-MM-DD
+      - status=... (optional exact match, case-insensitive)
+      - q=... (optional, search in number / customer name)
+    """
+    from datetime import datetime as _dt
+    from sqlalchemy.orm import joinedload
+    from openpyxl import Workbook
+
+    start_s = (request.args.get("start") or "").strip()
+    end_s = (request.args.get("end") or "").strip()
+    status_q = (request.args.get("status") or "").strip()
+    q = (request.args.get("q") or "").strip()
+
+    start_d = _parse_date_yyyy_mm_dd(start_s)
+    end_d = _parse_date_yyyy_mm_dd(end_s)
+    if start_d and end_d and start_d > end_d:
+        start_d, end_d = end_d, start_d
+    if start_d and not end_d:
+        end_d = start_d
+    if end_d and not start_d:
+        start_d = end_d
+
+    # base query
+    query = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.customer))
+        .filter(SalesDoc.doc_type == (doc_type or "").upper())
+    )
+
+    # optional date filter (by document date)
+    if start_d and end_d:
+        query = query.filter(SalesDoc.date.between(start_d, end_d))
+
+    # optional status filter
+    if status_q:
+        query = query.filter(func.upper(SalesDoc.status) == status_q.upper())
+
+    # optional keyword search
+    if q:
+        query = query.outerjoin(Customer, SalesDoc.customer_id == Customer.id).filter(
+            or_(
+                SalesDoc.number.ilike(f"%{q}%"),
+                Customer.name.ilike(f"%{q}%"),
+            )
+        )
+
+    docs = query.order_by(SalesDoc.date.desc().nullslast(), SalesDoc.id.desc()).all()
+
+    def _safe_float(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    def _doc_amount(d: "SalesDoc") -> float:
+        for attr in ("amount_grand", "amount_total", "amount_subtotal"):
+            if hasattr(d, attr):
+                v = getattr(d, attr) or 0
+                try:
+                    return float(v)
+                except Exception:
+                    continue
+        return 0.0
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{(doc_type or '').upper()}"
+
+    ws.append([
+        "วันที่",
+        "เลขที่เอกสาร",
+        "ประเภท",
+        "ชื่อลูกค้า",
+        "สถานะ",
+        "ยอดก่อนภาษี",
+        "VAT",
+        "ยอดสุทธิ",
+        "หมายเหตุ",
+    ])
+
+    for d in docs:
+        cust_name = d.customer.name if getattr(d, "customer", None) else "-"
+        ws.append([
+            d.date.strftime("%Y-%m-%d") if d.date else "",
+            d.number or "",
+            d.doc_type or "",
+            cust_name,
+            d.status or "",
+            _safe_float(getattr(d, "amount_subtotal", 0)),
+            _safe_float(getattr(d, "amount_vat", 0)),
+            _doc_amount(d),
+            getattr(d, "remark", "") or "",
+        ])
+
+    # autosize
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            v = "" if cell.value is None else str(cell.value)
+            if len(v) > max_len:
+                max_len = len(v)
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 48)
+
+    filename = f"{(doc_type or 'sales').upper()}_report"
+    if start_d and end_d:
+        filename += f"_{start_d.strftime('%Y%m%d')}_{end_d.strftime('%Y%m%d')}"
+    return _xlsx_response(wb, filename=filename)
+
+
+@app.get("/returns/export.xlsx")
+@login_required
+@permission_required("sales.manage")
+def returns_export_excel():
+    """Export รายการใบคืนสินค้า ตามช่วงวันที่ (ReturnDoc.date) + ค้นหา (q)
+
+คอลัมน์: วันที่, เลขที่ใบคืน, เลขที่ใบเสนอราคา, ชื่อลูกค้า, ยอดคืนรวม, สถานะ, หมายเหตุ
+ยอดคืนรวม = รวม (line_total/qty จาก QU item ตามหมวดหมู่) * จำนวนที่คืน
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    q = (request.args.get("q") or "").strip()
+    start = (request.args.get("start") or "").strip()
+    end = (request.args.get("end") or "").strip()
+    start_d = _parse_date_yyyy_mm_dd(start)
+    end_d = _parse_date_yyyy_mm_dd(end)
+
+    query = ReturnDoc.query.options(
+        joinedload(ReturnDoc.customer),
+        joinedload(ReturnDoc.quote).joinedload(SalesDoc.items),
+        joinedload(ReturnDoc.items).joinedload(ReturnItem.equipment),
+    )
+
+    # soft delete
+    is_del_col = getattr(ReturnDoc, "is_deleted", None)
+    if is_del_col is not None:
+        query = query.filter(is_del_col.is_(False))
+
+    if start_d:
+        query = query.filter(ReturnDoc.date >= start_d)
+    if end_d:
+        query = query.filter(ReturnDoc.date <= end_d)
+
+    if q:
+        like = f"%{q}%"
+        query = (
+            query.outerjoin(ReturnDoc.customer)
+            .outerjoin(ReturnDoc.quote)
+            .filter(
+                or_(
+                    ReturnDoc.number.ilike(like),
+                    SalesDoc.number.ilike(like),
+                    Customer.name.ilike(like),
+                )
+            )
+        )
+
+    docs = query.order_by(ReturnDoc.date.desc(), ReturnDoc.id.desc()).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Returns"
+
+    ws.append([
+        "วันที่",
+        "เลขที่ใบคืน",
+        "เลขที่ใบเสนอราคา",
+        "ชื่อลูกค้า",
+        "ยอดคืนรวม",
+        "สถานะ",
+        "หมายเหตุ",
+    ])
+
+    def _remark_of(d):
+        for k in ("remark", "note", "notes", "comment"):
+            v = getattr(d, k, None)
+            if v:
+                return str(v)
+        return ""
+
+    for d in docs:
+        cust_name = d.customer.name if getattr(d, "customer", None) else ""
+        qu_no = d.quote.number if getattr(d, "quote", None) else ""
+
+        # build unit_value per category from quote items: sum(line_total)/sum(qty)
+        unit_by_cat = {}
+        if getattr(d, "quote", None) and getattr(d.quote, "items", None):
+            sums = {}
+            qtys = {}
+            for it in d.quote.items:
+                cid = getattr(it, "category_id", None)
+                if not cid:
+                    continue
+                lt = float(getattr(it, "line_total", 0.0) or 0.0)
+                qit = float(getattr(it, "qty", 0.0) or 0.0)
+                if qit <= 0:
+                    continue
+                sums[cid] = sums.get(cid, 0.0) + lt
+                qtys[cid] = qtys.get(cid, 0.0) + qit
+            for cid, total in sums.items():
+                qsum = qtys.get(cid, 0.0) or 0.0
+                unit_by_cat[cid] = (total / qsum) if qsum > 0 else 0.0
+
+        total_return = 0.0
+        for ri in (getattr(d, "items", None) or []):
+            eq = getattr(ri, "equipment", None)
+            cid = getattr(eq, "category_id", None) if eq else None
+            unit = float(unit_by_cat.get(cid, 0.0) or 0.0)
+            qty = float(getattr(ri, "qty", 0.0) or 0.0)
+            total_return += unit * qty
+
+        ws.append([
+            getattr(d, "date", None) or "",
+            getattr(d, "number", "") or "",
+            qu_no,
+            cust_name,
+            float(total_return),
+            getattr(d, "status", "") or "",
+            _remark_of(d),
+        ])
+
+    # auto width
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            v = cell.value
+            if v is None:
+                continue
+            try:
+                max_len = max(max_len, len(str(v)))
+            except Exception:
+                pass
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
+
+    return _xlsx_send(wb, "returns.xlsx")
+
+@app.get("/sales/contracts/export.xlsx")
+@login_required
+@permission_required("sales.view")
+def contracts_export_excel():
+    """
+    Export summary report for Contracts (SalesDoc doc_type=CT) by date range.
+    Includes:
+      - customer, PO ใหญ่ (po_customer), amount
+      - contract_start/end, installment_count
+      - paid_installments count
+      - related document numbers from SalesInstallment.related_doc_id
+    Query params:
+      - start=YYYY-MM-DD
+      - end=YYYY-MM-DD
+      - q=... (optional)
+      - status=... (optional exact match, case-insensitive)
+    """
+    from sqlalchemy.orm import joinedload
+    from openpyxl import Workbook
+
+    start_s = (request.args.get("start") or "").strip()
+    end_s = (request.args.get("end") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    status_q = (request.args.get("status") or "").strip()
+
+    start_d = _parse_date_yyyy_mm_dd(start_s)
+    end_d = _parse_date_yyyy_mm_dd(end_s)
+    if start_d and end_d and start_d > end_d:
+        start_d, end_d = end_d, start_d
+    if start_d and not end_d:
+        end_d = start_d
+    if end_d and not start_d:
+        start_d = end_d
+
+    query = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.customer), joinedload(SalesDoc.installments))
+        .filter(SalesDoc.doc_type == "CT")
+    )
+
+    if start_d and end_d:
+        query = query.filter(SalesDoc.date.between(start_d, end_d))
+
+    if status_q:
+        query = query.filter(func.upper(SalesDoc.status) == status_q.upper())
+
+    if q:
+        query = query.outerjoin(Customer, SalesDoc.customer_id == Customer.id).filter(
+            or_(
+                SalesDoc.number.ilike(f"%{q}%"),
+                Customer.name.ilike(f"%{q}%"),
+                SalesDoc.po_customer.ilike(f"%{q}%"),
+                SalesDoc.project_name.ilike(f"%{q}%"),
+            )
+        )
+
+    contracts = query.order_by(SalesDoc.date.desc().nullslast(), SalesDoc.id.desc()).all()
+
+    # map related doc ids -> number
+    related_ids = set()
+    for c in contracts:
+        for inst in (getattr(c, "installments", None) or []):
+            if getattr(inst, "related_doc_id", None):
+                related_ids.add(inst.related_doc_id)
+
+    related_map = {}
+    if related_ids:
+        rel_docs = SalesDoc.query.filter(SalesDoc.id.in_(list(related_ids))).all()
+        related_map = {d.id: (d.number or "") for d in rel_docs}
+
+    def _safe_float(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    def _doc_amount(d: "SalesDoc") -> float:
+        for attr in ("amount_grand", "amount_total", "amount_subtotal"):
+            if hasattr(d, attr):
+                v = getattr(d, attr) or 0
+                try:
+                    return float(v)
+                except Exception:
+                    continue
+        return 0.0
+
+    def _is_paid(inst: "SalesInstallment") -> bool:
+        st = (getattr(inst, "status", "") or "").upper()
+        if st in ("PAID", "PAID_FULL", "DONE"):
+            return True
+        if getattr(inst, "paid_at", None):
+            return True
+        return False
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "CONTRACTS"
+
+    ws.append([
+        "วันที่สร้าง",
+        "เลขที่สัญญา/PO ใหญ่",
+        "ชื่อลูกค้า",
+        "PO ลูกค้า",
+        "ยอดสุทธิ",
+        "เริ่มสัญญา",
+        "สิ้นสุดสัญญา",
+        "แบ่งงวด",
+        "ชำระแล้ว(งวด)",
+        "เลขที่เอกสารที่เกี่ยวข้อง",
+        "สถานะ",
+    ])
+
+    for c in contracts:
+        insts = list(getattr(c, "installments", None) or [])
+        inst_count = int(getattr(c, "installment_count", 0) or len(insts) or 0)
+        paid_cnt = sum(1 for it in insts if _is_paid(it))
+
+        related_nums = []
+        for it in insts:
+            rid = getattr(it, "related_doc_id", None)
+            if rid and related_map.get(rid):
+                related_nums.append(related_map[rid])
+        related_str = ", ".join([x for x in related_nums if x])
+
+        ws.append([
+            c.date.strftime("%Y-%m-%d") if c.date else "",
+            c.number or "",
+            (c.customer.name if getattr(c, "customer", None) else "-"),
+            c.po_customer or "",
+            _doc_amount(c),
+            c.contract_start.strftime("%Y-%m-%d") if getattr(c, "contract_start", None) else "",
+            c.contract_end.strftime("%Y-%m-%d") if getattr(c, "contract_end", None) else "",
+            inst_count,
+            paid_cnt,
+            related_str,
+            c.status or "",
+        ])
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            v = "" if cell.value is None else str(cell.value)
+            if len(v) > max_len:
+                max_len = len(v)
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 70)
+
+    filename = "contracts_report"
+    if start_d and end_d:
+        filename += f"_{start_d.strftime('%Y%m%d')}_{end_d.strftime('%Y%m%d')}"
+    return _xlsx_response(wb, filename=filename)
+
 
 
 # --- 403 Forbidden page ---
@@ -5745,13 +8251,82 @@ run_startup_tasks()
 def forbidden(e):
     return render_template("errors/403.html"), 403
 
-@app.route("/purchases/grn/<int:gid>/print")
-@permission_required("goods.receive")
-def grn_print(gid):
-    grn = GoodsReceipt.query.get_or_404(gid)
-    return render_template("purchases/grn_print.html", grn=grn, today=date.today())
-
 # ================== Main ==================
+
+
+@app.get("/export/equipment_report.xlsx")
+@login_required
+@permission_required("equipment.view")
+def export_equipment_report_excel():
+    """
+    Export equipment report with optional filters.
+    Query params:
+      - start=YYYY-MM-DD (filter by received_date >= start)
+      - end=YYYY-MM-DD (filter by received_date <= end)
+      - status=READY|RENTED|... (optional exact match)
+      - q=... (optional, search in sku / name)
+    Columns:
+      - รหัสสินค้า (SKU เต็ม)
+      - ชื่อ
+      - หมวดหมู่
+      - สถานะ
+      - รับเข้า (received_date)
+    """
+    from openpyxl import Workbook
+    from sqlalchemy.orm import joinedload
+
+    start_s = (request.args.get("start") or "").strip()
+    end_s = (request.args.get("end") or "").strip()
+    status_q = (request.args.get("status") or "").strip().upper()
+    q = (request.args.get("q") or "").strip()
+
+    start_d = _parse_date_yyyy_mm_dd(start_s)
+    end_d = _parse_date_yyyy_mm_dd(end_s)
+
+    query = Equipment.query.options(joinedload(Equipment.category))
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Equipment.sku.ilike(like), Equipment.name.ilike(like)))
+    if status_q and status_q in EQUIP_STATUS:
+        query = query.filter(Equipment.status == status_q)
+    if start_d:
+        query = query.filter(Equipment.received_date >= start_d)
+    if end_d:
+        query = query.filter(Equipment.received_date <= end_d)
+
+    rows = query.order_by(Equipment.received_date.desc(), Equipment.id.desc()).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Equipment Report"
+
+    headers = ["รหัสสินค้า", "ชื่อ", "หมวดหมู่", "สถานะ", "รับเข้า"]
+    ws.append(headers)
+
+    for e in rows:
+        ws.append([
+            e.sku or "",
+            e.name or "",
+            (e.category.name if getattr(e, "category", None) else ""),
+            (e.status_th if hasattr(e, "status_th") else (e.status or "")),
+            (e.received_date.strftime("%d/%m/%Y") if getattr(e, "received_date", None) else ""),
+        ])
+
+    # basic column width
+    try:
+        ws.column_dimensions["A"].width = 22
+        ws.column_dimensions["B"].width = 40
+        ws.column_dimensions["C"].width = 22
+        ws.column_dimensions["D"].width = 16
+        ws.column_dimensions["E"].width = 14
+    except Exception:
+        pass
+
+    return _xlsx_response(wb, "equipment_report.xlsx")
+
+
+
 if __name__ == "__main__":
     bootstrap()
     app.run(host="127.0.0.1", port=8000, debug=True)

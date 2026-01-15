@@ -102,6 +102,12 @@
     font-weight:600;
     border:1px solid #bbf7d0;
   }
+
+  .st-field{ min-width: 140px; }
+  .st-search{ min-width: 240px; max-width: 340px; }
+  .st-search-input{ padding-left:2.2rem; }
+  .st-search-ic{ position:absolute; left:.75rem; top:50%; transform:translateY(-50%); opacity:.6; }
+
 </style>
 {% endblock %}
 
@@ -148,16 +154,57 @@
     </h1>
     <div class="sub">{{ sub }}</div>
   </div>
+
   <div class="d-flex gap-2 align-items-center">
-    <form class="st-search" method="get">
-      <i class="bi bi-search"></i>
-      <input type="text" class="form-control" name="q" value="{{ q or '' }}" placeholder="ค้นหาลูกค้า...">
+
+    <form class="d-flex flex-wrap align-items-end gap-2" method="get">
+      <div class="st-field st-search">
+        <label class="form-label mb-0 small text-muted">ค้นหา</label>
+        <div class="position-relative">
+          <i class="bi bi-search st-search-ic"></i>
+          <input type="text" class="form-control form-control-sm st-search-input"
+                 name="q" value="{{ q or '' }}" placeholder="ค้นหาเลขที่/ลูกค้า...">
+        </div>
+      </div>
+
+      <div class="st-field">
+        <label class="form-label mb-0 small text-muted">เริ่ม</label>
+        <input type="date" class="form-control form-control-sm" name="start"
+               value="{{ start or request.args.get('start','') }}">
+      </div>
+
+      <div class="st-field">
+        <label class="form-label mb-0 small text-muted">สิ้นสุด</label>
+        <input type="date" class="form-control form-control-sm" name="end"
+               value="{{ end or request.args.get('end','') }}">
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm st-btn" type="submit" title="กรองข้อมูล">
+          <i class="bi bi-funnel"></i>
+        </button>
+      </div>
     </form>
+
+    {# ===== ปุ่มสร้างใบเสนอราคา (คงเดิม) ===== #}
     {% if can('sales.manage') and (show_new is not defined or show_new) %}
       <a class="btn btn-primary btn-sm st-btn" href="{{ url_for('qu_new') }}">
         <i class="bi bi-plus-lg"></i> สร้างใบเสนอราคา
       </a>
     {% endif %}
+
+    {# ===== ปุ่ม Export Excel (แยกออกมา เพื่อให้ BL/IV/RC เห็นด้วย) ===== #}
+    {% if (can('sales.view') or can('sales.manage')) %}
+      <a class="btn btn-outline-dark btn-sm st-btn"
+         href="{{ url_for('export_sales_docs_report_excel',
+                          doc_type=(doc_type or 'QU'),
+                          q=(q or ''),
+                          start=(start or ''),
+                          end=(end or '')) }}">
+        <i class="bi bi-filetype-xlsx"></i> Export Excel
+      </a>
+    {% endif %}
+
   </div>
 </div>
 
@@ -228,7 +275,7 @@
                     <i class="bi bi-check-circle-fill me-1"></i> สร้างใบส่งสินค้าแล้ว
                   </span>
                   <span class="d-none d-lg-inline">
-                    ใบส่ง: 
+                    ใบส่ง:
                     <a href="{{ url_for('deliveries.view_doc', did=dl.id) }}"
                        class="link-success text-decoration-none">
                       {{ dl.number }}

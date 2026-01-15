@@ -54,6 +54,7 @@
 <div class="d-flex align-items-center gap-2 mb-3">
   <div class="fs-5 fw-semibold">รายละเอียดอุปกรณ์</div>
   <div class="muted">SKU {{ e.sku }}</div>
+  {% if e.brand %}<div class="muted">ยี่ห้อ {{ e.brand }}</div>{% endif %}
   <span class="chip {{ 'warn' if e.status=='REPAIR' else ('bad' if e.status=='RENTED' else '') }}">
     {% if e.status=='RENTED' %}<i class="bi bi-box-arrow-right"></i>{% elif e.status=='REPAIR' %}<i class="bi bi-tools"></i>{% else %}<i class="bi bi-check2-circle"></i>{% endif %}
     {{ e.status_th }}

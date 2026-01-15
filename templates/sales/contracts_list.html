@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}สัญญา/PO ใหญ่ (รายงวด){% endblock %}
+
+{% block head %}
+<style>
+  .ct-hero{
+    background: radial-gradient(1200px 600px at -10% -20%, rgba(59,130,246,.18) 0%, rgba(59,130,246,0) 60%),
+                linear-gradient(135deg, #0b1220 0%, #0f172a 100%);
+    border:1px solid rgba(148,163,184,.18);
+    border-radius:1.25rem;
+    box-shadow:0 22px 45px rgba(2,6,23,.35);
+    color:#e2e8f0;
+    padding:1rem 1.2rem;
+    margin-bottom:1rem;
+  }
+  .ct-hero .title{display:flex; align-items:center; gap:.65rem; font-weight:800; letter-spacing:.2px;}
+  .ct-hero .title i{
+    background:rgba(255,255,255,.10);
+    border:1px solid rgba(255,255,255,.15);
+    width:42px;height:42px;border-radius:14px;
+    display:grid; place-items:center;
+  }
+  .ct-muted{ color:rgba(226,232,240,.75); }
+
+  .ct-filter{
+    display:flex; flex-wrap:wrap; gap:.5rem;
+    align-items:end;
+  }
+  .ct-filter .form-control,
+  .ct-filter .form-select{
+    border-radius:999px;
+  }
+  .ct-filter label{
+    font-size:.78rem;
+    color:rgba(226,232,240,.75);
+  }
+
+  .ct-card{
+    border:1px solid rgba(15,23,42,.10);
+    border-radius:1.25rem;
+    box-shadow:0 20px 40px rgba(2,6,23,.08);
+    overflow:hidden;
+  }
+  .ct-table th{font-size:.82rem; color:#475569; background:#f8fafc;}
+  .ct-badge{
+    display:inline-flex; align-items:center; gap:.35rem;
+    padding:.25rem .65rem; border-radius:999px;
+    font-size:.78rem; font-weight:700;
+    border:1px solid rgba(15,23,42,.12);
+    background:#f8fafc;
+  }
+  .ct-badge-active{ background:#ecfeff; color:#155e75; border-color:#a5f3fc; }
+  .ct-badge-closed{ background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+
+  .btn-pill{
+    border-radius:999px;
+    display:inline-flex; align-items:center; gap:.35rem;
+    font-weight:700;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl">
+
+  <div class="ct-hero">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div class="title">
+        <i class="bi bi-journal-bookmark"></i>
+        <div>
+          <div style="font-size:1.15rem;">สัญญา/PO ใหญ่ (รายงวด)</div>
+          <div class="ct-muted" style="font-size:.88rem;">
+            ดูสถานะงวด + เปิดเอกสารรายเดือน (BL/IV/RC) + Export Excel
+          </div>
+        </div>
+      </div>
+
+      <!-- FILTER BAR -->
+      <form class="ct-filter" method="get" action="{{ url_for('contract_list') }}">
+        <div style="min-width:240px;">
+          <label class="form-label mb-1">ค้นหาชื่อลูกค้า</label>
+          <input class="form-control form-control-sm"
+                 type="text"
+                 name="q"
+                 value="{{ request.args.get('q','') }}"
+                 placeholder="ค้นหาชื่อลูกค้า...">
+        </div>
+
+        <div>
+          <label class="form-label mb-1">เริ่ม</label>
+          <input class="form-control form-control-sm"
+                 type="date"
+                 name="start"
+                 value="{{ request.args.get('start','') }}">
+        </div>
+
+        <div>
+          <label class="form-label mb-1">ถึง</label>
+          <input class="form-control form-control-sm"
+                 type="date"
+                 name="end"
+                 value="{{ request.args.get('end','') }}">
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-light btn-pill" type="submit" title="ค้นหา/กรองตามช่วงวันที่">
+            <i class="bi bi-search"></i> ค้นหา
+          </button>
+
+          <a class="btn btn-sm btn-success btn-pill"
+             href="{{ url_for('contracts_export_excel',
+                              q=request.args.get('q',''),
+                              start=request.args.get('start',''),
+                              end=request.args.get('end','')) }}"
+             title="Export Excel ตามช่วงวันที่">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+          </a>
+        </div>
+      </form>
+      <!-- END FILTER BAR -->
+
+    </div>
+  </div>
+
+  <div class="ct-card">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 ct-table">
+        <thead>
+          <tr>
+            <th style="width:60px;">#</th>
+            <th style="width:170px;">เลขที่สัญญา</th>
+            <th>ลูกค้า</th>
+            <th style="width:160px;" class="text-end">ยอดเงิน</th>
+            <th style="width:260px;">ระยะเวลา</th>
+            <th style="width:180px;">งวด</th>
+            <th style="width:120px;">สถานะ</th>
+            <th style="width:90px;" class="text-end"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ct in rows %}
+            {% set s = (stats.get(ct.id) if stats is defined else None) %}
+            {% set total_inst = (s.total if s and s.total is defined else (s.get('total') if s else 0)) %}
+            {% set paid_inst  = (s.receipted if s and s.receipted is defined else (s.get('receipted') if s else 0)) %}
+
+            <tr>
+              <td class="text-muted small">{{ loop.index }}</td>
+
+              <td>
+                <a class="fw-semibold text-decoration-none"
+                   href="{{ url_for('contract_view', cid=ct.id) }}">
+                  {{ ct.number }}
+                </a>
+                <div class="text-muted small">
+                  {{ ct.date.strftime("%d/%m/%Y") if ct.date else "-" }}
+                </div>
+              </td>
+
+              <td>
+                <div class="fw-semibold">{{ ct.customer.name if ct.customer else "-" }}</div>
+                <div class="text-muted small">
+                  PO ใหญ่: {{ ct.po_customer or "-" }}
+                </div>
+              </td>
+
+              <td class="text-end">
+                <div class="fw-semibold">
+                  {{ "{:,.2f}".format(ct.total_amount or 0) }}
+                </div>
+              </td>
+
+              <td>
+                <div class="small">
+                  เริ่ม: {{ ct.contract_start.strftime("%d/%m/%Y") if ct.contract_start else "-" }}
+                  &nbsp;|&nbsp;
+                  สิ้นสุด: {{ ct.contract_end.strftime("%d/%m/%Y") if ct.contract_end else "-" }}
+                </div>
+              </td>
+
+              <td>
+                <span class="ct-badge">
+                  <i class="bi bi-list-check"></i>
+                  {{ paid_inst }}/{{ total_inst }} งวด
+                </span>
+              </td>
+
+              <td>
+                {% set st = (ct.status or '')|upper %}
+                {% if st in ['CLOSED','DONE','FINISHED'] %}
+                  <span class="ct-badge ct-badge-closed"><i class="bi bi-lock"></i> {{ ct.status }}</span>
+                {% else %}
+                  <span class="ct-badge ct-badge-active"><i class="bi bi-lightning"></i> {{ ct.status or "ACTIVE" }}</span>
+                {% endif %}
+              </td>
+
+              <td class="text-end">
+                <a class="btn btn-sm btn-primary btn-pill"
+                   href="{{ url_for('contract_view', cid=ct.id) }}">
+                  <i class="bi bi-eye"></i> เปิด
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">ยังไม่มีสัญญา (CT)</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
