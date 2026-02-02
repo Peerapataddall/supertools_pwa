@@ -107,6 +107,7 @@
           <th style="width:28%">ชื่อลูกค้า</th>
           <th style="width:22%">ผู้ติดต่อ</th>
           <th style="width:14%">เบอร์โทร</th>
+          <th style="width:10%">เครดิต</th>
           <th style="width:16%">เลขผู้เสียภาษี</th>
           <th class="addr">ที่อยู่</th>
           <th class="text-center" style="width:110px">การทำงาน</th>
@@ -132,6 +133,9 @@
             </div>
           </td>
           <td class="text-center">
+            <a href="{{ url_for('customers_aging', cid=c.id) }}" class="btn btn-icon btn-outline-lightBlue me-1" data-bs-toggle="tooltip" title="ระยะเวลาหนี้">
+              <i class="bi bi-hourglass-split"></i>
+            </a>
             <a href="{{ url_for('customers_edit', cid=c.id) }}"
                class="btn btn-icon btn-outline-lightBlue me-1" data-bs-toggle="tooltip" title="แก้ไข">
               <i class="bi bi-pencil"></i>

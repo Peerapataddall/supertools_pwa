@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}ประวัติการเช่า - {{ customer.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .rh-hero{
+    background:
+      radial-gradient(1200px 220px at 10% -60%, rgba(99,102,241,.14), transparent),
+      radial-gradient(900px 260px at 90% -70%, rgba(16,185,129,.12), transparent),
+      linear-gradient(180deg,#f7fbff,#ffffff 60%);
+    border:1px solid rgba(0,0,0,.05);
+    box-shadow:0 10px 30px rgba(24,39,75,.06);
+    border-radius:1.25rem;
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+  }
+  .kpi-card{
+    border:1px solid rgba(0,0,0,.06);
+    border-radius:1rem;
+    padding: .9rem 1rem;
+    background: rgba(255,255,255,.80);
+  }
+  .kpi-card .label{ font-size:.85rem; color:#64748b; }
+  .kpi-card .value{ font-weight:950; font-size:1.25rem; color:#0f172a; line-height:1.1; }
+</style>
+
+<div class="container-xxl py-3" style="max-width:1100px;">
+
+  <div class="rh-hero">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <i class="bi bi-person-badge text-primary fs-4"></i>
+          <h1 class="h5 m-0">ประวัติการเช่า: {{ customer.name }}</h1>
+        </div>
+        <div class="small text-muted mt-1">
+          {% if customer.phone %}<span class="me-2"><i class="bi bi-telephone me-1"></i>{{ customer.phone }}</span>{% endif %}
+          {% if customer.tax_id %}<span class="me-2"><i class="bi bi-card-text me-1"></i>{{ customer.tax_id }}</span>{% endif %}
+          {% if customer.address %}<span><i class="bi bi-geo-alt me-1"></i>{{ customer.address }}</span>{% endif %}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('rent_history_list') }}">
+          <i class="bi bi-arrow-left me-1"></i> กลับรายชื่อลูกค้า
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-md-4">
+      <div class="kpi-card">
+        <div class="label"><i class="bi bi-repeat me-1"></i>เช่าทั้งหมด</div>
+        <div class="value">{{ kpi_count or 0 }} ครั้ง</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="kpi-card">
+        <div class="label"><i class="bi bi-cash-stack me-1"></i>ยอดรวม</div>
+        <div class="value">{{ '%.2f'|format(kpi_total or 0) }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="kpi-card">
+        <div class="label"><i class="bi bi-graph-up me-1"></i>เฉลี่ย/ครั้ง</div>
+        <div class="value">{{ '%.2f'|format(kpi_avg or 0) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card st-softcard border-0">
+    <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+      <div class="fw-semibold"><i class="bi bi-list-ul me-2 text-primary"></i>รายการเอกสาร (IV)</div>
+      <div class="small text-muted">ไม่นับที่ถูกยกเลิก</div>
+    </div>
+
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle m-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:16%">วันที่</th>
+              <th style="width:22%">เลขที่</th>
+              <th>โครงการ</th>
+              <th style="width:18%" class="text-end">ยอดสุทธิ</th>
+              <th style="width:14%" class="text-center">สถานะ</th>
+              <th style="width:14%" class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if docs and docs|length > 0 %}
+              {% for d in docs %}
+                {% set st = (d.status or 'DRAFT')|upper %}
+                <tr>
+                  <td>{{ d.date.strftime('%d/%m/%Y') if d.date else '-' }}</td>
+                  <td class="fw-semibold">{{ d.number or '-' }}</td>
+                  <td>{{ d.project_name or '-' }}</td>
+                  <td class="text-end fw-semibold">{{ '%.2f'|format(d.amount_grand or 0) }}</td>
+                  <td class="text-center">
+                    <span class="badge bg-light text-dark border">{{ th_status(d.status) }}</span>
+                  </td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('iv_view', did=d.id) }}">
+                      <i class="bi bi-file-earmark-text me-1"></i> ดูใบกำกับ
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">ยังไม่มีประวัติการเช่า (IV) สำหรับลูกค้านี้</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

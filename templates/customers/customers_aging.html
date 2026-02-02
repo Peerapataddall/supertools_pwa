@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}ระยะเวลาหนี้ · {{ c.name }}{% endblock %}
+
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>ระยะเวลาหนี้</h1>
+    <div class="muted">{{ c.name }} • {{ th_credit_term(c.credit_term_days, c.payment_terms) }}</div>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ url_for('customers_list') }}">กลับ</a>
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <form class="row g-2 align-items-end" method="get">
+    <div class="col-sm-4 col-md-3">
+      <label class="form-label">คลัง/สาขา</label>
+      <select class="form-select" name="warehouse">
+        <option value="" {% if not warehouse %}selected{% endif %}>ทุกคลัง</option>
+        <option value="MAIN" {% if warehouse=='MAIN' %}selected{% endif %}>MAIN</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" type="submit">กรอง</button>
+    </div>
+  </form>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-4">
+    <div class="card p-3">
+      <div class="fw-semibold mb-2">สรุปลูกหนี้</div>
+      <div class="d-flex justify-content-between"><span>ยังไม่ถึงกำหนด</span><b>{{ '%.2f'|format(summary['CURRENT']) }}</b></div>
+      <div class="d-flex justify-content-between"><span>1-30 วัน</span><b>{{ '%.2f'|format(summary['1-30']) }}</b></div>
+      <div class="d-flex justify-content-between"><span>31-60 วัน</span><b>{{ '%.2f'|format(summary['31-60']) }}</b></div>
+      <div class="d-flex justify-content-between"><span>61-90 วัน</span><b>{{ '%.2f'|format(summary['61-90']) }}</b></div>
+      <div class="d-flex justify-content-between"><span>มากกว่า 90 วัน</span><b>{{ '%.2f'|format(summary['90+']) }}</b></div>
+      <hr>
+      <div class="d-flex justify-content-between fs-5"><span>รวม</span><b>{{ '%.2f'|format(summary['TOTAL']) }}</b></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-8">
+    <div class="card p-3">
+      <div class="fw-semibold mb-2">รายการเอกสารค้างชำระ</div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>เลขที่</th>
+              <th>ประเภท</th>
+              <th>คลัง</th>
+              <th>วันที่</th>
+              <th>กำหนดชำระ</th>
+              <th class="text-end">ยอด</th>
+              <th class="text-end">เกินกำหนด</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td>
+                {% if r.url %}<a href="{{ r.url }}" class="text-decoration-none">{{ r.number }}</a>{% else %}{{ r.number }}{% endif %}
+              </td>
+              <td>{{ r.doc_type }}</td>
+              <td>{{ r.warehouse }}</td>
+              <td>{{ r.date }}</td>
+              <td>{{ r.due_date }}</td>
+              <td class="text-end">{{ '%.2f'|format(r.amount) }}</td>
+              <td class="text-end">
+                {% if r.overdue_days > 0 %}
+                  <span class="badge text-bg-danger">{{ r.overdue_days }} วัน</span>
+                {% else %}
+                  <span class="badge text-bg-success">ยังไม่ถึงกำหนด</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">ไม่มีเอกสารค้างชำระ</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

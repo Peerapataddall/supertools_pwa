@@ -9,7 +9,7 @@ from flask import Flask, render_template, redirect, url_for, request, flash, abo
 import re
 from flask_sqlalchemy import SQLAlchemy
 from collections import defaultdict
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.exc import OperationalError
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, current_user, login_required
@@ -21,7 +21,7 @@ from sqlalchemy import event, select, or_, CheckConstraint, UniqueConstraint, in
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload, selectinload, relationship, Mapped, mapped_column, foreign
+from sqlalchemy.orm import joinedload, selectinload, relationship, Mapped, mapped_column, foreign, aliased
 
 from urllib.parse import urlparse
 from decimal import Decimal
@@ -60,6 +60,14 @@ app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB เผื่อไฟ�
 
 
 db = SQLAlchemy(app)
+
+@app.context_processor
+def inject_global_helpers():
+    return {
+        "th_status": th_status,
+        "th_credit_term": th_credit_term,
+    }
+
 migrate = Migrate(app, db)
 
 
@@ -353,15 +361,61 @@ class Customer(db.Model):
     tax_id = db.Column(db.String(32), default="")
     contact_name = db.Column(db.String(120), default="")
     contact_phone = db.Column(db.String(64), default="")
+    credit_term_days = db.Column(db.Integer, default=0)  # เครดิตลูกค้า (วัน) / 0=เงินสด
+    payment_terms = db.Column(db.String(120), default="")  # เงื่อนไขชำระเงิน (ข้อความ)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 # ---------- Equipment Module ----------
 EQUIP_STATUS = ("READY", "RENTED", "REPAIR")
 EQUIP_STATUS_THAI = {
     "READY": "พร้อมให้เช่า",
+    "RESERVED": "จองไว้",
     "RENTED": "ถูกเช่า",
     "REPAIR": "รอซ่อม",
+    "LOST": "สูญหาย",
 }
+
+
+# ---------- Global Status Thai Mapping ----------
+DOC_STATUS_THAI = {
+    # SalesDoc / DeliveryDoc / Repair / etc.
+    "DRAFT": "ร่าง",
+    "PENDING": "รอดำเนินการ",
+    "APPROVED": "อนุมัติแล้ว",
+    "CANCELLED": "ยกเลิก",
+    "CLOSED": "ปิดงาน",
+    "OPEN": "เปิดงาน",
+    "PAID": "ชำระแล้ว",
+    "UNPAID": "ค้างชำระ",
+    "OVERDUE": "เกินกำหนด",
+    "PLANNED": "วางแผน",
+    "READY": "พร้อม",
+    "INVOICED": "ออกใบกำกับแล้ว",
+    "RECEIPTED": "ออกใบเสร็จแล้ว",
+    "ACTIVE": "ใช้งาน",
+    "RELEASED": "คืนแล้ว",
+}
+
+def th_status(value: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if v in EQUIP_STATUS_THAI:
+        return EQUIP_STATUS_THAI.get(v, v)
+    return DOC_STATUS_THAI.get(v, v)
+
+
+def th_credit_term(days: int | None, terms: str = "") -> str:
+    """แสดงเครดิต/เงื่อนไขชำระเงินภาษาไทยแบบสั้น ๆ"""
+    try:
+        d = int(days or 0)
+    except Exception:
+        d = 0
+    t = (terms or "").strip()
+    if d <= 0:
+        return t if t else "เงินสด"
+    base = f"เครดิต {d} วัน"
+    return f"{base} • {t}" if t else base
 
 class Category(db.Model):
     __tablename__ = "category"
@@ -376,6 +430,8 @@ class Equipment(db.Model):
     name = db.Column(db.String(255), nullable=False, index=True)
 
     brand = db.Column(db.String(120), default="")  # NEW: ยี่ห้อ
+
+    warehouse = db.Column(db.String(60), default="MAIN", index=True)  # NEW: คลัง/สาขา
 
     category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=False, index=True)
     category = db.relationship(Category, lazy="joined")
@@ -499,6 +555,7 @@ class SalesDoc(db.Model):
     doc_type = db.Column(db.String(2), nullable=False)
     status = db.Column(db.String(20), nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    warehouse = db.Column(db.String(60), default="MAIN", index=True)  # NEW: คลัง/สาขา
     project_name = db.Column(db.String(255), default="")
     po_customer = db.Column(db.String(64), default="")
     credit_days = db.Column(db.Integer, default=0)
@@ -524,6 +581,11 @@ class SalesDoc(db.Model):
     parent = db.relationship("SalesDoc", remote_side=[id])
     items = db.relationship("SalesItem", backref="doc", cascade="all, delete-orphan")
 
+
+    @property
+    def status_th(self) -> str:
+        return th_status(self.status)
+
 class SalesItem(db.Model):
     __tablename__ = "sales_item"
     id = db.Column(db.Integer, primary_key=True)
@@ -531,7 +593,10 @@ class SalesItem(db.Model):
     # เลือกเป็น "หมวดหมู่" (Category) ตอนทำใบเสนอราคา; เลือก "ตัวอุปกรณ์จริง" ตอนทำใบจอง (BK)
     category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
     category_prefix = db.Column(db.String(50), nullable=True)  # เก็บ prefix_sku ไว้เผื่อหมวดถูกแก้ชื่อ
+    brand = db.Column(db.String(120), nullable=True)  # NEW: ยี่ห้อ/รุ่น (ใช้สำหรับจองสต็อก)
     allocated_skus = db.Column(db.Text, nullable=True)  # เก็บ SKU อุปกรณ์จริงที่ถูกเลือกตอนทำใบจอง (คั่นด้วย ,)
+    line_status = db.Column(db.String(12), nullable=False, default="APPROVED", index=True)  # NEW: สถานะระดับรายการ (APPROVED/REJECTED)
+    source_qu_item_id = db.Column(db.Integer, nullable=True, index=True)  # อ้างอิง SalesItem.id ของ QU แม่ (ใช้ sync SKU กลับไป QU)
 
     image_path = db.Column(db.String(255), default="")
     name = db.Column(db.String(255), nullable=False)
@@ -543,6 +608,20 @@ class SalesItem(db.Model):
     line_subtotal = db.Column(db.Float, default=0.0)
     line_total = db.Column(db.Float, default=0.0)
 
+
+
+class StockReservation(db.Model):
+    __tablename__ = "stock_reservation"
+    id = db.Column(db.Integer, primary_key=True)
+    doc_type = db.Column(db.String(4), nullable=False)   # QU/BK/...
+    doc_id = db.Column(db.Integer, nullable=False, index=True)
+    sales_item_id = db.Column(db.Integer, nullable=True) # อ้างอิง SalesItem.id (ถ้ามี)
+    category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=False, index=True)
+    brand = db.Column(db.String(120), nullable=True, index=True)
+    warehouse = db.Column(db.String(60), default="MAIN", index=True)  # NEW: คลัง/สาขา
+    qty = db.Column(db.Float, nullable=False, default=0.0)
+    status = db.Column(db.String(12), nullable=False, default="ACTIVE")  # ACTIVE/RELEASED
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 class SalesInstallment(db.Model):
     """
@@ -831,7 +910,11 @@ class GiftResult(db.Model):
 
 class ReturnDoc(db.Model):
     """
-    เอกสารใบคืนสินค้า (อ้างอิงใบเสนอราคา + ลูกค้า)
+    เอกสารใบคืนสินค้า
+
+    - คืน "ขาย/เช่า" ได้ 2 แบบ
+      1) อ้างอิงใบเสนอราคา (QU)  -> quote_id
+      2) อ้างอิงใบจอง (BK)        -> booking_id
     """
     __tablename__ = "return_docs"
 
@@ -839,9 +922,12 @@ class ReturnDoc(db.Model):
     number = db.Column(db.String(32), unique=True, nullable=False)  # รูปแบบ RTYYYYMMDD001
     date = db.Column(db.Date, nullable=False, default=date.today)
 
-    # FK ไปยัง customer และ sales_doc (ใบเสนอราคา)
+    # FK ไปยัง customer และเอกสารอ้างอิง (QU/BK)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
-    quote_id    = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), nullable=False)
+    quote_id    = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), nullable=True)
+    booking_id  = db.Column(db.Integer, db.ForeignKey("sales_doc.id"), nullable=True)
+
+    ref_type = db.Column(db.String(2), default="QU")  # QU/BK
 
     remark = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -849,7 +935,8 @@ class ReturnDoc(db.Model):
 
     # relation เอาไว้ดึงชื่อไปโชว์
     customer = db.relationship("Customer", lazy="joined")
-    quote    = db.relationship("SalesDoc", lazy="joined")
+    quote    = db.relationship("SalesDoc", foreign_keys=[quote_id], lazy="joined")
+    booking  = db.relationship("SalesDoc", foreign_keys=[booking_id], lazy="joined")
 
     items = db.relationship(
         "ReturnItem",
@@ -875,6 +962,11 @@ class ReturnItem(db.Model):
         nullable=False,
     )
     qty = db.Column(db.Integer, nullable=False, default=1)
+
+    # NEW: สภาพ/ผลลัพธ์หลังคืน
+    condition = db.Column(db.String(16), default="GOOD")  # GOOD/REPAIR/LOST
+    damage_note = db.Column(db.Text, default="")
+    damage_cost = db.Column(db.Float, default=0.0)
 
     # ความสัมพันธ์
     doc = db.relationship("ReturnDoc", back_populates="items", lazy="joined")
@@ -1076,6 +1168,42 @@ def permission_required(perm_code: str):
             return fn(*args, **kwargs)
         return wrapper
     return deco
+
+def _booking_flow_ready(bk: "SalesDoc") -> bool:
+    """พร้อมปิดงานหรือยัง (ใช้กับ UI)
+    เงื่อนไข: ต้องมี BL/IV/RC ลูก และ BL=PAID, IV=ISSUED, RC=ISSUED
+    """
+    try:
+        if not bk or (bk.doc_type or "").upper() != "BK":
+            return False
+        kids = SalesDoc.query.filter_by(parent_id=bk.id).all()
+        m = { (c.doc_type or "").upper(): c for c in kids }
+        bl = m.get("BL")
+        iv = m.get("IV")
+        rc = m.get("RC")
+        if not (bl and iv and rc):
+            return False
+        ok_bl = (bl.status or "").upper() == "PAID"
+        ok_iv = (iv.status or "").upper() == "ISSUED"
+        ok_rc = (rc.status or "").upper() == "ISSUED"
+        return bool(ok_bl and ok_iv and ok_rc)
+    except Exception:
+        return False
+
+
+def _update_booking_flow_state(bk: "SalesDoc") -> None:
+    """อัพเดทสถานะ flow ของ BK (optional)
+    - ไม่ปิดงานอัตโนมัติ (เพราะเราทำ manual close แล้ว)
+    - แต่สามารถใช้ตั้ง flag/field เพิ่มในอนาคตได้
+    ตอนนี้ให้ทำแบบ safe no-op + future-proof
+    """
+    try:
+        # ยังไม่บังคับเปลี่ยน status ของ BK อัตโนมัติ
+        # แค่อ่านเพื่อให้แน่ใจว่าเด็กครบและสถานะถูกต้อง
+        _ = _booking_flow_ready(bk)
+    except Exception:
+        pass
+
 
 @app.context_processor
 def inject_perms():
@@ -1426,16 +1554,45 @@ def _save_image(file_storage, filename_stub: str) -> str:
     return f"uploads/equipment/{fname}"
 
 def gen_sku(prefix: str, dt: date) -> str:
-    base = f"{prefix}-{dt.strftime('%d%m%y')}"
-    like = f"{base}%"
+    """Generate Equipment SKU (Requirement 2.7)
+
+    รูปแบบ:
+      SPT{CAT}{YY}{MM}-{SEQ3}
+      - CAT = รหัสหมวด (Category.prefix_sku)
+      - YY  = ปี 2 หลัก
+      - MM  = เดือน 2 หลัก
+      - SEQ = running number 3 หลัก ภายในกลุ่ม (SPT{CAT}{YY}{MM})
+
+    ตัวอย่าง:
+      SPTE6901-001
+
+    หมายเหตุ:
+      - ถ้า prefix_sku เดิมกรอกมาเป็น 'SPTE' หรือมีขีด/ช่องว่าง เราจะ normalize ให้เป็น 'SPTE'
+      - SKU เก่าที่มีอยู่แล้วในระบบจะไม่ถูกเปลี่ยน
+    """
+    raw = (prefix or "").strip().upper()
+    raw = re.sub(r"[^A-Z0-9]", "", raw)
+
+    if not raw.startswith("SPT"):
+        raw = "SPT" + raw
+
+    base = f"{raw}{dt.strftime('%y%m')}"  # SPT{CAT}{YY}{MM}
+    like = f"{base}-%"
+
     last = (Equipment.query
             .filter(Equipment.sku.like(like))
             .order_by(Equipment.sku.desc())
             .first())
-    if last and last.sku.startswith(base) and last.sku[len(base):].strip("-").isdigit():
-        seq = int(last.sku[len(base):].strip("-")) + 1
-    else:
-        seq = 1
+
+    seq = 1
+    if last and last.sku:
+        mm = re.search(r"-(\d{3,})$", last.sku)
+        if mm:
+            try:
+                seq = int(mm.group(1)) + 1
+            except Exception:
+                seq = 1
+
     return f"{base}-{seq:03d}"
 
 def _gen_sales_running(prefix: str) -> str:
@@ -1469,8 +1626,14 @@ def _calc_sales_totals(doc: SalesDoc):
         total = round(sub, 2)
     doc.amount_vat = vat
     doc.amount_total = total
-    wht = round(total * (max(0, doc.wht_pct or 0)/100.0), 2)
+    # ✅ WHT ต้องคิดจากฐาน "ก่อน VAT" (Requirement)
+    wht_base = sub
+    if doc.tax_mode == "INC":
+        # sub/total เป็นยอดรวม VAT แล้ว → ฐานก่อน VAT = total - vat
+        wht_base = max(0.0, total - vat)
+    wht = round(wht_base * (max(0, doc.wht_pct or 0)/100.0), 2)
     doc.amount_wht = wht
+    # ยอดสุทธิหลังหัก ณ ที่จ่าย (รวม VAT แล้วค่อยหัก WHT)
     doc.amount_grand = round(total - wht, 2)
 
 def _first_nonempty(obj, names):
@@ -1737,12 +1900,19 @@ def _create_booking_from_quote(qu: SalesDoc) -> SalesDoc:
     db.session.add(bk)
     db.session.flush()
 
-    # clone items จาก QU มาลง BK ก่อน (เวอร์ชันแรก)
+    # clone items จาก QU มาลง BK ก่อน (คงหมวด + brand เพื่อใช้ reserve/allocate)
     for it in qu.items:
+        # ✅ สร้าง BK เฉพาะรายการที่อนุมัติ (Requirement 3.4)
+        if ((getattr(it, 'line_status', 'APPROVED') or 'APPROVED').upper() == 'REJECTED'):
+            continue
         db.session.add(SalesItem(
             doc_id=bk.id,
+            source_qu_item_id=it.id,
             image_path=it.image_path,
             name=it.name,
+            category_id=it.category_id,
+            category_prefix=it.category_prefix,
+            brand=it.brand,
             qty=it.qty,
             rent_unit=it.rent_unit,
             rent_duration=it.rent_duration,
@@ -1751,6 +1921,16 @@ def _create_booking_from_quote(qu: SalesDoc) -> SalesDoc:
             line_subtotal=it.line_subtotal,
             line_total=it.line_total,
         ))
+
+    
+    # โอน RESERVED จาก QU -> BK (กันค้างและกันจองซ้ำ)
+    # - ลบ reservation ของ QU
+    # - สร้าง reservation ใหม่ของ BK ตามรายการที่ clone มา
+    _release_reservations_for_doc("QU", qu.id)
+    db.session.flush()
+    for it in SalesItem.query.filter_by(doc_id=bk.id).all():
+        if it.category_id:
+            _check_and_reserve("BK", bk.id, it.id, it.category_id, it.brand, bk.warehouse, it.qty or 0)
 
     return bk
 
@@ -2689,11 +2869,14 @@ def po_new():
     def _parse_items_any(form):
         """
         รองรับ 2 แบบ:
-        A) แบบใหม่: items-0-name, items-0-sku, items-0-brand, items-0-qty, items-0-unit,
+        A) แบบใหม่: items-0-name, items-0-sku, items-0-brand, items-0-warehouse, items-0-qty, items-0-unit,
                     items-0-unit_price, items-0-discount_pct
         B) แบบเดิม: item_name[], item_sku[], item_brand[], item_qty[], item_unit[], item_cost[], item_disc[]
         คืน list ของ dict ที่ "มีรายการจริง"
         """
+        # default warehouse (ทั้งเอกสาร) ถ้า form ไม่มี warehouse ต่อบรรทัด
+        default_wh = (form.get("warehouse") or "").strip() or "MAIN"
+
         # --- แบบใหม่: items-{i}-{field} ---
         has_new = any(k.startswith("items-") for k in form.keys())
         if has_new:
@@ -2717,20 +2900,23 @@ def po_new():
                 brand = (r.get("brand") or "").strip()
                 unit = (r.get("unit") or "").strip() or "ชิ้น"
 
+                # ✅ warehouse ต่อบรรทัด (ถ้ามี) ไม่งั้นใช้ default_wh
+                warehouse = (r.get("warehouse") or "").strip() or default_wh
+
                 try:
                     qty = float(r.get("qty") or 0)
-                except:
+                except Exception:
                     qty = 0.0
 
                 # template ใหม่ใช้ unit_price / discount_pct
                 try:
                     unit_cost = float(r.get("unit_price") or 0)
-                except:
+                except Exception:
                     unit_cost = 0.0
 
                 try:
                     discount_pct = float(r.get("discount_pct") or 0)
-                except:
+                except Exception:
                     discount_pct = 0.0
 
                 # ถือว่าเป็นรายการจริง: ต้องมี name หรือ sku และ qty > 0
@@ -2739,6 +2925,7 @@ def po_new():
                         "name": name,
                         "sku": sku,
                         "brand": brand,
+                        "warehouse": warehouse,
                         "qty": qty,
                         "unit": unit,
                         "unit_cost": unit_cost,
@@ -2755,27 +2942,51 @@ def po_new():
         costs = form.getlist("item_cost[]")
         discs = form.getlist("item_disc[]")
 
+        # (ถ้าแบบเดิมยังไม่มี warehouse[] ก็ใช้ default_wh ให้ทั้งหมด)
+        warehouses = form.getlist("item_warehouse[]")  # optional
+
         out = []
         for i, name in enumerate(names):
             name = (name or "").strip()
-            if not name:
+            sku = (skus[i] or "").strip() if i < len(skus) else ""
+            brand = (brands[i] or "").strip() if i < len(brands) else ""
+            unit = (units[i] or "ชิ้น") if i < len(units) else "ชิ้น"
+
+            warehouse = (
+                (warehouses[i] or "").strip() if i < len(warehouses) and warehouses else ""
+            ) or default_wh
+
+            if not name and not sku:
                 continue
+
             try:
-                qty = float(qtys[i] or 0)
-            except:
+                qty = float(qtys[i] or 0) if i < len(qtys) else 0.0
+            except Exception:
                 qty = 0.0
             if qty <= 0:
                 continue
 
+            try:
+                unit_cost = float(costs[i] or 0) if i < len(costs) else 0.0
+            except Exception:
+                unit_cost = 0.0
+
+            try:
+                discount_pct = float(discs[i] or 0) if i < len(discs) else 0.0
+            except Exception:
+                discount_pct = 0.0
+
             out.append({
                 "name": name,
-                "sku": (skus[i] or "").strip() if i < len(skus) else "",
-                "brand": (brands[i] or "").strip() if i < len(brands) else "",
+                "sku": sku,
+                "brand": brand,
+                "warehouse": warehouse,
                 "qty": qty,
-                "unit": (units[i] or "ชิ้น") if i < len(units) else "ชิ้น",
-                "unit_cost": float(costs[i] or 0) if i < len(costs) else 0.0,
-                "discount_pct": float(discs[i] or 0) if i < len(discs) else 0.0,
+                "unit": unit,
+                "unit_cost": unit_cost,
+                "discount_pct": discount_pct,
             })
+
         return out
 
     if request.method == "POST":
@@ -2822,6 +3033,9 @@ def po_new():
                 unit_cost=r["unit_cost"],
                 discount_pct=r["discount_pct"],
             ))
+            # หมายเหตุ: ตอนนี้ POItem model ของคุณอาจยังไม่มี field warehouse
+            # ถ้ามีแล้วค่อยเปิดใช้:
+            # warehouse=r.get("warehouse") or "MAIN",
 
         db.session.commit()
         flash("สร้างใบสั่งซื้อเรียบร้อย", "success")
@@ -2904,7 +3118,7 @@ def po_create_grn(pid):
     # --- กันกดซ้ำ: ถ้ามี GRN ของ PO นี้แล้ว ให้พาไปใบเดิม ---
     existing = GoodsReceipt.query.filter_by(po_id=po.id).order_by(GoodsReceipt.id.desc()).first()
     if existing:
-        flash("มีใบรับสินค้า (GRN) ของใบสั่งซื้อนี้แล้ว", "info")
+        flash("มีใบรับสินค้า (RC) ของใบสั่งซื้อนี้แล้ว", "info")
         return redirect(url_for("grn_view", gid=existing.id))
 
     # --- สร้างหัวเอกสาร GRN ---
@@ -2922,7 +3136,7 @@ def po_create_grn(pid):
 
     # number
     if hasattr(grn, "number"):
-        grn.number = _gen_running("GRN", GoodsReceipt)
+        grn.number = _gen_running("RC", GoodsReceipt)
 
     # link PO
     if hasattr(grn, "po_id"):
@@ -3026,7 +3240,7 @@ def po_create_grn(pid):
             return redirect(url_for("po_view", pid=po.id))
 
         db.session.commit()
-        flash("สร้างใบรับสินค้า (GRN) เรียบร้อย", "success")
+        flash("สร้างใบรับสินค้า (RC) เรียบร้อย", "success")
         return redirect(url_for("grn_view", gid=grn.id))
 
     except Exception as e:
@@ -3053,7 +3267,7 @@ def grn_view(gid):
 @app.get("/purchases/grn/<int:gid>/print")
 @permission_required("purchases.view")
 def grn_print(gid):
-    """พิมพ์ใบรับสินค้า (GRN)"""
+    """พิมพ์ใบรับสินค้า (RC)"""
     grn = (
         GoodsReceipt.query
         .options(
@@ -3135,6 +3349,70 @@ def customers_list():
     customers = qry.order_by(Customer.name.asc()).all()
     return render_template("customers/customers_list.html", customers=customers, q=q)
 
+# ---------------------------
+# Customers: Rent History
+# ---------------------------
+@app.get("/customers/rent-history")
+@permission_required("customers.view")
+def rent_history_list():
+    q = (request.args.get("q") or "").strip()
+
+    cq = Customer.query
+    if q:
+        like = f"%{q}%"
+        cq = cq.filter(
+            or_(
+                Customer.name.ilike(like),
+                Customer.phone.ilike(like),
+                Customer.tax_id.ilike(like),
+            )
+        )
+    customers = cq.order_by(Customer.name.asc()).all()
+
+    # สถิติจากเอกสาร IV (ไม่นับ CANCELLED)
+    stats_rows = (
+        db.session.query(
+            SalesDoc.customer_id.label("cid"),
+            func.count(SalesDoc.id).label("count"),
+            func.coalesce(func.sum(SalesDoc.amount_grand), 0).label("total"),
+        )
+        .filter(func.upper(SalesDoc.doc_type) == "IV")
+        .filter(func.upper(func.coalesce(SalesDoc.status, "DRAFT")) != "CANCELLED")
+        .group_by(SalesDoc.customer_id)
+        .all()
+    )
+    stats = {r.cid: SimpleNamespace(count=int(r.count or 0), total=float(r.total or 0)) for r in stats_rows}
+
+    return render_template("customers/rent_history_list.html", customers=customers, stats=stats, q=q)
+
+
+@app.get("/customers/<int:cid>/rent-history")
+@permission_required("customers.view")
+def rent_history_view(cid):
+    customer = Customer.query.get_or_404(cid)
+
+    docs = (
+        SalesDoc.query
+        .filter(SalesDoc.customer_id == cid)
+        .filter(func.upper(SalesDoc.doc_type) == "IV")
+        .filter(func.upper(func.coalesce(SalesDoc.status, "DRAFT")) != "CANCELLED")
+        .order_by(SalesDoc.date.desc().nullslast(), SalesDoc.id.desc())
+        .all()
+    )
+
+    kpi_count = len(docs)
+    kpi_total = float(sum([(d.amount_grand or 0) for d in docs]) or 0)
+    kpi_avg = (kpi_total / kpi_count) if kpi_count else 0
+
+    return render_template(
+        "customers/rent_history_view.html",
+        customer=customer,
+        docs=docs,
+        kpi_count=kpi_count,
+        kpi_total=kpi_total,
+        kpi_avg=kpi_avg,
+    )
+
 @app.route("/customers/new", methods=["GET", "POST"])
 @permission_required("customers.manage")
 def customers_new():
@@ -3150,6 +3428,8 @@ def customers_new():
             tax_id=(request.form.get("tax_id") or "").strip(),
             contact_name=(request.form.get("contact_name") or "").strip(),
             contact_phone=(request.form.get("contact_phone") or "").strip(),
+            credit_term_days=int((request.form.get("credit_term_days") or 0) or 0),
+            payment_terms=(request.form.get("payment_terms") or "").strip(),
         )
         if not c.name:
             flash("กรุณากรอกชื่อลูกค้า", "danger")
@@ -3175,6 +3455,8 @@ def customers_edit(cid):
         c.tax_id = (request.form.get("tax_id") or "").strip()
         c.contact_name = (request.form.get("contact_name") or "").strip()
         c.contact_phone = (request.form.get("contact_phone") or "").strip()
+        c.credit_term_days = int((request.form.get("credit_term_days") or 0) or 0)
+        c.payment_terms = (request.form.get("payment_terms") or "").strip()
         if not c.name:
             flash("กรุณากรอกชื่อลูกค้า", "danger")
             return redirect(url_for("customers_edit", cid=c.id))
@@ -3223,6 +3505,7 @@ def cat_new():
 def equip_list():
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "").upper()
+    warehouse = (request.args.get("warehouse") or "").strip()
     start = (request.args.get("start") or "").strip()
     end = (request.args.get("end") or "").strip()
 
@@ -3235,6 +3518,8 @@ def equip_list():
         qry = qry.filter(or_(Equipment.sku.ilike(like), Equipment.name.ilike(like)))
     if status in EQUIP_STATUS:
         qry = qry.filter(Equipment.status == status)
+    if warehouse:
+        qry = qry.filter(Equipment.warehouse == warehouse)
     # date range filter (received_date)
     if start_d:
         qry = qry.filter(Equipment.received_date >= start_d)
@@ -3247,11 +3532,231 @@ def equip_list():
         rows=rows,
         q=q,
         status=status,
+        warehouse=warehouse,
         start=start,
         end=end,
         status_th=EQUIP_STATUS_THAI,
     )
 
+
+
+
+
+# ---------- Stock Reservation (Reserve at QU/BK line) ----------
+def _norm_brand(b: str | None) -> str:
+    b = (b or "").strip()
+    return b
+
+def _reserved_qty(category_id: int, brand: str | None, warehouse: str | None, exclude_doc: tuple[str,int] | None = None) -> float:
+    q = StockReservation.query.filter_by(category_id=category_id, status="ACTIVE")
+    wh = (warehouse or "").strip() or "MAIN"
+    q = q.filter(StockReservation.warehouse == wh)
+
+    nb = _norm_brand(brand)
+    if nb:
+        q = q.filter(StockReservation.brand == nb)
+    else:
+        q = q.filter((StockReservation.brand == None) | (StockReservation.brand == ""))
+
+    if exclude_doc:
+        dt, did = exclude_doc
+        q = q.filter(~((StockReservation.doc_type == dt) & (StockReservation.doc_id == did)))
+
+    return float(q.with_entities(func.coalesce(func.sum(StockReservation.qty), 0.0)).scalar() or 0.0)
+
+def _ready_total(category_id: int, brand: str | None, warehouse: str | None) -> int:
+    wh = (warehouse or "").strip() or "MAIN"
+    q = Equipment.query.filter_by(category_id=category_id).filter(Equipment.status == "READY").filter(Equipment.warehouse == wh)
+    nb = _norm_brand(brand)
+    if nb:
+        q = q.filter(Equipment.brand == nb)
+    else:
+        q = q.filter((Equipment.brand == None) | (Equipment.brand == ""))
+    return int(q.count())
+
+
+def _check_and_reserve(doc_type: str, doc_id: int, sales_item_id: int | None, category_id: int, brand: str | None, warehouse: str | None, qty: float):
+    qty = float(qty or 0)
+    if qty <= 0:
+        return
+    ready_total = _ready_total(category_id, brand, warehouse)
+    reserved = _reserved_qty(category_id, brand, warehouse)
+    available = ready_total - reserved
+    if qty > available + 1e-9:
+        cat = Category.query.get(category_id)
+        raise ValueError(f"สต็อกไม่พอ: {cat.name if cat else 'หมวด'} / {brand or 'ไม่ระบุ'} / คลัง {((warehouse or '').strip() or 'MAIN')} (คงเหลือ {available:.0f} จาก READY {ready_total} - RESERVED {reserved})")
+    r = StockReservation(
+        doc_type=(doc_type or "").upper(),
+        doc_id=doc_id,
+        sales_item_id=sales_item_id,
+        category_id=category_id,
+        brand=_norm_brand(brand),
+        warehouse=((warehouse or '').strip() or 'MAIN'),
+        qty=qty,
+        status="ACTIVE",
+    )
+    db.session.add(r)
+
+def _release_reservations_for_doc(doc_type: str, doc_id: int):
+    StockReservation.query.filter_by(doc_type=(doc_type or "").upper(), doc_id=doc_id, status="ACTIVE").delete(synchronize_session=False)
+
+def _release_reservation_for_item(sales_item_id: int):
+    StockReservation.query.filter_by(sales_item_id=sales_item_id, status="ACTIVE").delete(synchronize_session=False)
+
+
+def _warehouse_choices() -> list[str]:
+    whs = [r[0] for r in db.session.query(func.coalesce(Equipment.warehouse, "MAIN")).distinct().all()]
+    whs = sorted({(w or "MAIN") for w in whs})
+    return whs or ["MAIN"]
+
+def _brand_choices_by_category(category_id: int, warehouse: str | None = None) -> list[str]:
+    wh = (warehouse or "").strip() or "MAIN"
+    rows = (
+        db.session.query(func.coalesce(Equipment.brand, ""))
+        .filter(Equipment.category_id == category_id)
+        .filter(Equipment.warehouse == wh)
+        .distinct()
+        .all()
+    )
+    brands = sorted({(r[0] or "").strip() for r in rows})
+    return brands
+# ---------- Warehouse / Stock (Realtime) ----------
+
+@app.get("/warehouse/stock")
+@permission_required("equipment.view")
+def warehouse_stock():
+    """หน้าคลังสินค้า (สรุป Stock แบบ Realtime) + แยกตาม 'คลัง/สาขา' + RESERVED/AVAILABLE"""
+    q = (request.args.get("q") or "").strip()
+    wh_filter = (request.args.get("warehouse") or "").strip()
+
+    # รายชื่อคลังทั้งหมด (ดึงจากทั้ง equipment และ reservation เพื่อให้ครบ)
+    whs_e = [r[0] for r in db.session.query(func.coalesce(Equipment.warehouse, "MAIN")).distinct().all()]
+    whs_r = [r[0] for r in db.session.query(func.coalesce(StockReservation.warehouse, "MAIN")).distinct().all()]
+    warehouses = sorted({(w or "MAIN") for w in (whs_e + whs_r)})
+
+    # --- aggregate equipment ---
+    equip_rows = (
+        db.session.query(
+            Equipment.category_id.label("category_id"),
+            func.coalesce(Equipment.warehouse, "MAIN").label("warehouse"),
+            func.coalesce(Equipment.brand, "").label("brand"),
+            func.sum(case((Equipment.status == "READY", 1), else_=0)).label("ready_qty"),
+            func.sum(case((Equipment.status == "RENTED", 1), else_=0)).label("rented_qty"),
+            func.sum(case((Equipment.status == "REPAIR", 1), else_=0)).label("repair_qty"),
+            func.sum(case((Equipment.status == "LOST", 1), else_=0)).label("lost_qty"),
+            func.count(Equipment.id).label("total_in"),
+        )
+        .group_by(Equipment.category_id, func.coalesce(Equipment.warehouse, "MAIN"), func.coalesce(Equipment.brand, ""))
+        .all()
+    )
+
+    # --- aggregate reservations ---
+    resv_rows = (
+        db.session.query(
+            StockReservation.category_id.label("category_id"),
+            func.coalesce(StockReservation.warehouse, "MAIN").label("warehouse"),
+            func.coalesce(StockReservation.brand, "").label("brand"),
+            func.coalesce(func.sum(StockReservation.qty), 0.0).label("reserved_qty"),
+        )
+        .filter(StockReservation.status == "ACTIVE")
+        .group_by(StockReservation.category_id, func.coalesce(StockReservation.warehouse, "MAIN"), func.coalesce(StockReservation.brand, ""))
+        .all()
+    )
+
+    cat_map = {c.id: c for c in Category.query.all()}
+
+    # merge
+    data = {}
+    def _k(cat_id, wh, br):
+        return (int(cat_id), (wh or "MAIN"), (br or ""))
+
+    for r in equip_rows:
+        key=_k(r.category_id, r.warehouse, r.brand)
+        data.setdefault(key, {
+            "cat_id": r.category_id, "warehouse": r.warehouse, "brand": r.brand,
+            "ready_qty": 0, "rented_qty": 0, "repair_qty": 0, "lost_qty": 0, "total_in": 0, "reserved_qty": 0.0,
+        })
+        d=data[key]
+        d["ready_qty"]=int(r.ready_qty or 0)
+        d["rented_qty"]=int(r.rented_qty or 0)
+        d["repair_qty"]=int(r.repair_qty or 0)
+        d["lost_qty"]=int(r.lost_qty or 0)
+        d["total_in"]=int(r.total_in or 0)
+
+    for r in resv_rows:
+        key=_k(r.category_id, r.warehouse, r.brand)
+        data.setdefault(key, {
+            "cat_id": r.category_id, "warehouse": r.warehouse, "brand": r.brand,
+            "ready_qty": 0, "rented_qty": 0, "repair_qty": 0, "lost_qty": 0, "total_in": 0, "reserved_qty": 0.0,
+        })
+        data[key]["reserved_qty"]=float(r.reserved_qty or 0.0)
+
+    # build rows
+    rows=[]
+    for (cat_id, wh, br), d in data.items():
+        cat=cat_map.get(cat_id)
+        if not cat:
+            continue
+        if wh_filter and wh != wh_filter:
+            continue
+        d = dict(d)
+        d["cat_name"]=cat.name
+        d["cat_prefix"]=cat.prefix_sku
+        rows.append(SimpleNamespace(
+            cat_id=cat_id,
+            cat_name=cat.name,
+            cat_prefix=cat.prefix_sku,
+            warehouse=wh,
+            brand=(br or ""),
+            ready_qty=int(d["ready_qty"]),
+            reserved_qty=float(d["reserved_qty"]),
+            rented_qty=int(d["rented_qty"]),
+            repair_qty=int(d["repair_qty"]),
+            lost_qty=int(d["lost_qty"]),
+            total_in=int(d["total_in"]),
+        ))
+
+    # filter by q (ชื่อหมวด/Prefix/Brand/คลัง)
+    if q:
+        ql=q.lower()
+        rows=[r for r in rows if (ql in (r.cat_name or "").lower()) or (ql in (r.cat_prefix or "").lower()) or (ql in (r.brand or "").lower()) or (ql in (r.warehouse or "").lower())]
+
+    rows = sorted(rows, key=lambda r: (r.warehouse, r.cat_name or "", r.brand or ""))
+
+    return render_template("warehouse/stock.html", ep="warehouse_stock", rows=rows, q=q, warehouse=wh_filter, warehouses=warehouses)
+
+
+@app.get("/api/warehouse/stock")
+@permission_required("equipment.view")
+def api_warehouse_stock():
+    """API สำหรับดึง stock แบบ realtime ตาม category/prefix/brand (READY/RESERVED/AVAILABLE)"""
+    cat_id = request.args.get("category_id", type=int)
+    prefix = (request.args.get("prefix") or "").strip()
+    brand = (request.args.get("brand") or "").strip()
+
+    # Resolve category by prefix if needed
+    if (not cat_id) and prefix:
+        cat = Category.query.filter(Category.prefix_sku == prefix).first()
+        cat_id = cat.id if cat else None
+
+    if not cat_id:
+        return jsonify({"ok": False, "error": "missing category_id/prefix"}), 400
+
+    warehouse = (request.args.get('warehouse') or '').strip() or 'MAIN'
+
+    ready_total = _ready_total(cat_id, brand or None, warehouse)
+    reserved = _reserved_qty(cat_id, brand or None, warehouse)
+    available = max(0.0, float(ready_total) - float(reserved))
+
+    return jsonify({
+        "ok": True,
+        "category_id": cat_id,
+        "brand": brand,
+        "ready": int(ready_total),
+        "reserved": float(reserved),
+        "available": float(available),
+    })
+    # ---------- Equipment (New) ----------
 @app.route("/equipment/new", methods=["GET","POST"])
 @permission_required("equipment.manage")
 def equip_new():
@@ -3301,6 +3806,7 @@ def equip_new():
 
         eq = Equipment(
             sku=sku, name=name, brand=brand,
+            warehouse=((request.form.get('warehouse') or '').strip() or 'MAIN'),
             category_id=cat.id,
             received_date=rdate, cost=cost,
             life_years=ly, life_months=lm, life_days=ld,
@@ -3356,7 +3862,14 @@ def equip_new():
             "cost": float(inc.unit_cost or 0),
         }
 
-    return render_template("equipment/equip_form.html", cats=cats, pending=pending, preset=preset, incoming=inc)
+    return render_template(
+        "equipment/equip_form.html",
+        cats=cats,
+        pending=pending,
+        preset=preset,
+        incoming=inc,
+        warehouses=_warehouse_choices(),
+    )
 
 @app.route("/equipment/<int:eid>")
 @permission_required("equipment.view")
@@ -3373,6 +3886,7 @@ def equip_edit(eid):
     if request.method == "POST":
         e.name = (request.form.get("name") or "").strip()
         e.brand = (request.form.get("brand") or "").strip()
+        e.warehouse = ((request.form.get('warehouse') or '').strip() or 'MAIN')
         e.category_id = request.form.get("category_id", type=int) or e.category_id
         received = request.form.get("received_date")
         e.cost = request.form.get("cost", type=float) or 0.0
@@ -3409,7 +3923,7 @@ def equip_edit(eid):
         db.session.commit()
         flash("บันทึกแล้ว", "success")
         return redirect(url_for("equip_view", eid=e.id))
-    return render_template("equipment/equip_form.html", cats=cats, e=e, status_th=EQUIP_STATUS_THAI)
+    return render_template("equipment/equip_form.html", cats=cats, e=e, status_th=EQUIP_STATUS_THAI, warehouses=_warehouse_choices())
 
 @app.post("/equipment/<int:eid>/delete")
 @permission_required("equipment.manage")
@@ -3678,6 +4192,16 @@ def qu_check_promo(qid):
 
 
 # ---------- Sales: Quotes ----------
+
+# ---------------------------
+# Compatibility: old /quotes URL -> /sales/quotes
+# ---------------------------
+@app.get("/quotes")
+@app.get("/quotes/")
+def quotes_legacy_redirect():
+    return redirect(url_for("qu_list"))
+
+
 @app.route("/sales/quotes")
 @permission_required("sales.view")
 def qu_list():
@@ -3724,6 +4248,104 @@ def qu_list():
         doc_type="QU",   # ✅ ส่งไปให้ template ใช้เช็คว่ามีใบส่งแล้วหรือยัง
     )
 
+
+
+# ---------- Accounts Receivable (AR) / Aging ----------
+def _doc_credit_days_for_customer(doc: "SalesDoc", cust: "Customer") -> int:
+    """เครดิตที่ใช้คำนวณกำหนดชำระ: ใช้ของเอกสารก่อน ถ้าไม่กำหนดใช้ของลูกค้า"""
+    try:
+        d = int((doc.credit_days or 0) or 0)
+    except Exception:
+        d = 0
+    if d <= 0:
+        try:
+            d = int((cust.credit_term_days or 0) or 0)
+        except Exception:
+            d = 0
+    return max(0, d)
+
+def _customer_ar_documents(cust: "Customer", warehouse: str | None = None):
+    """
+    เอกสารลูกหนี้: ใช้ BL/IV ที่ยังไม่ชำระ (ไม่รวม CANCELLED)
+    คืน list[dict] สำหรับ render/report
+    """
+    q = SalesDoc.query.filter(SalesDoc.customer_id == cust.id)
+    q = q.filter(SalesDoc.doc_type.in_(["BL", "IV"]))
+    q = q.filter(SalesDoc.status.notin_(["PAID", "CANCELLED"]))
+    if warehouse:
+        q = q.filter(SalesDoc.warehouse == warehouse)
+    docs = q.order_by(SalesDoc.date.asc()).all()
+
+    today = date.today()
+    rows = []
+    for d in docs:
+        credit = _doc_credit_days_for_customer(d, cust)
+        due = (d.date or today) + timedelta(days=credit)
+        overdue_days = (today - due).days
+        bucket = "CURRENT" if overdue_days <= 0 else (
+            "1-30" if overdue_days <= 30 else
+            "31-60" if overdue_days <= 60 else
+            "61-90" if overdue_days <= 90 else
+            "90+"
+        )
+        rows.append({
+            "id": d.id,
+            "number": d.number,
+            "doc_type": d.doc_type,
+            "status": d.status,
+            "warehouse": d.warehouse,
+            "date": d.date,
+            "credit_days": credit,
+            "due_date": due,
+            "overdue_days": max(0, overdue_days),
+            "bucket": bucket,
+            "amount": float(d.amount_grand or d.amount_total or 0.0),
+            "url": url_for("sales_doc_view", sid=d.id) if "sales_doc_view" in app.view_functions else None,
+        })
+    return rows
+
+def _aging_summary(rows):
+    s = {"CURRENT": 0.0, "1-30": 0.0, "31-60": 0.0, "61-90": 0.0, "90+": 0.0, "TOTAL": 0.0}
+    for r in rows:
+        amt = float(r.get("amount") or 0.0)
+        s["TOTAL"] += amt
+        s[r["bucket"]] += amt
+    return s
+
+@app.get("/customers/<int:cid>/aging")
+@permission_required("customers.view")
+def customers_aging(cid):
+    c = Customer.query.get_or_404(cid)
+    wh = (request.args.get("warehouse") or "").strip() or None
+    rows = _customer_ar_documents(c, warehouse=wh)
+    summary = _aging_summary(rows)
+    return render_template(
+        "customers/customers_aging.html",
+        c=c,
+        rows=rows,
+        summary=summary,
+        warehouse=wh,
+    )
+
+@app.get("/reports/ar-aging")
+@permission_required("customers.view")
+def report_ar_aging():
+    wh = (request.args.get("warehouse") or "").strip() or None
+    q = Customer.query.order_by(Customer.name.asc()).all()
+    data = []
+    for c in q:
+        rows = _customer_ar_documents(c, warehouse=wh)
+        if not rows:
+            continue
+        data.append({
+            "customer": c,
+            "summary": _aging_summary(rows),
+            "rows_count": len(rows),
+        })
+    # เรียงลูกหนี้มาก -> น้อย
+    data.sort(key=lambda x: x["summary"]["TOTAL"], reverse=True)
+    return render_template("reports/ar_aging.html", data=data, warehouse=wh)
+
 @app.route("/sales/quotes/new", methods=["GET", "POST"])
 @permission_required("sales.manage")
 def qu_new():
@@ -3759,9 +4381,10 @@ def qu_new():
             doc_type="QU",
             status="DRAFT",
             customer_id=cid,
+            warehouse=((request.form.get('warehouse') or '').strip() or 'MAIN'),
             project_name=(request.form.get("project_name") or "").strip(),
             po_customer=(request.form.get("po_customer") or "").strip(),
-            credit_days=request.form.get("credit_days", type=int) or 0,
+            credit_days=(request.form.get("credit_days", type=int) if (request.form.get("credit_days") or "").strip() != "" else (Customer.query.get(cid).credit_term_days or 0)),
             tax_mode=(request.form.get("tax_mode") or "EXC").upper(),
             wht_pct=request.form.get("wht_pct", type=int) or 0,
             date=date.today(),
@@ -3774,6 +4397,7 @@ def qu_new():
         db.session.add(doc)
         db.session.flush()
         names   = request.form.getlist("name[]")
+        brands_ = request.form.getlist("brand[]")
         qtys    = request.form.getlist("qty[]")
         units   = request.form.getlist("unit[]")
         durs    = request.form.getlist("duration[]")
@@ -3788,9 +4412,22 @@ def qu_new():
             cat_id = None
             cat_prefix = None
             sku = _extract_sku(n)
+            # หา prefix/หมวดจากชื่อรายการ (เช่น "สว่าน [SPTE6901]" หรือ "สว่าน [SPTE6901-001]")
+            cat_prefix = None
+            cat_id = None
+            pref = _extract_sku(n)
+            if pref:
+                # ถ้าเป็น SKU เต็มให้ตัดเป็น prefix ก่อน "-" เช่น SPTE6901-001 -> SPTE6901
+                p = pref.split("-")[0].strip()
+                cat_prefix = p
+                cat = Category.query.filter_by(prefix_sku=p).first()
+                if cat:
+                    cat_id = cat.id
+
             if sku:
                 # ตอนทำ QU ให้เลือก "หมวดหมู่" จาก prefix_sku เท่านั้น (ยังไม่ล็อคตัวอุปกรณ์จริง)
-                cat = Category.query.filter_by(prefix_sku=sku).first()
+                base_sku = (sku.split("-")[0].strip() if sku else "")
+                cat = Category.query.filter_by(prefix_sku=base_sku).first()
                 if cat:
                     cat_id = cat.id
                     cat_prefix = (cat.prefix_sku or "").strip()
@@ -3803,6 +4440,7 @@ def qu_new():
                 image_path=image_path,
                 category_id=cat_id,
                 category_prefix=cat_prefix,
+                brand=(_norm_brand(brands_[i] if i < len(brands_) else "") or None),
                 qty=_to_float(qtys[i] if i < len(qtys) else 0),
                 rent_unit=((units[i] if i < len(units) else "DAY") or "DAY").upper(),
                 rent_duration=_to_int(durs[i] if i < len(durs) else 1),
@@ -3815,17 +4453,264 @@ def qu_new():
             flash("กรุณาใส่อย่างน้อย 1 รายการ", "danger")
             return redirect(url_for("qu_new"))
         db.session.flush()
+        # Reserve stock at line-level (B)
+        try:
+            for it in SalesItem.query.filter_by(doc_id=doc.id).all():
+                if it.category_id:
+                    _check_and_reserve("QU", doc.id, it.id, it.category_id, it.brand, doc.warehouse, it.qty or 0)
+        except ValueError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
+            return redirect(url_for("qu_new"))
+
         _calc_sales_totals(doc)
         db.session.commit()
         flash("บันทึกใบเสนอราคาแล้ว (DRAFT)", "success")
         return redirect(url_for("qu_view", qid=doc.id))
-    return render_template("sales/qu_form.html", customers=customers)
+    brands = [b[0] for b in db.session.query(Equipment.brand).filter(Equipment.brand != "").distinct().order_by(Equipment.brand.asc()).all()]
+    return render_template("sales/qu_form.html", customers=customers, brands=brands, warehouses=_warehouse_choices(), warehouse_default="MAIN")
+
+
+@app.route("/sales/quotes/<int:qid>/edit", methods=["GET","POST"])
+@permission_required("sales.manage")
+def qu_edit(qid):
+    doc = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
+        .get_or_404(qid)
+    )
+    if doc.doc_type != "QU":
+        abort(404)
+    if doc.status == "APPROVED":
+        flash("ใบเสนอราคาอนุมัติแล้ว ไม่อนุญาตให้แก้ไข", "warning")
+        return redirect(url_for("qu_view", qid=doc.id))
+
+    customers = Customer.query.order_by(Customer.name.asc()).all()
+    brands = [b[0] for b in db.session.query(Equipment.brand).filter(Equipment.brand != "").distinct().order_by(Equipment.brand.asc()).all()]
+
+    import re
+    def _extract_token_in_brackets(title: str) -> str | None:
+        m = re.search(r"\[([^\[\]]+?)\]", title or "")
+        return m.group(1).strip() if m else None
+
+    def _to_float(x, default=0.0) -> float:
+        try: return float(x)
+        except Exception: return float(default)
+
+    def _to_int(x, default=1):
+        try: return int(float(x))
+        except Exception: return int(default)
+
+    def _try_parse_date(s: str | None):
+        try:
+            s = (s or "").strip()
+            if not s:
+                return None
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    if request.method == "POST":
+        cid = request.form.get("customer_id", type=int) or 0
+        if not cid:
+            flash("กรุณาเลือกลูกค้า", "danger")
+            return redirect(url_for("qu_edit", qid=doc.id))
+
+        # update header
+        doc.customer_id = cid
+        doc.project_name = (request.form.get("project_name") or "").strip()
+        doc.warehouse = ((request.form.get('warehouse') or '').strip() or 'MAIN')
+        doc.po_customer = (request.form.get("po_customer") or "").strip()
+        doc.credit_days = request.form.get("credit_days", type=int) or 0
+        doc.tax_mode = (request.form.get("tax_mode") or "EXC").upper()
+        doc.wht_pct = request.form.get("wht_pct", type=int) or 0
+        doc.remark = (request.form.get("remark") or "").strip()
+        doc.billing_mode = ((request.form.get("billing_mode") or "ONCE").upper())
+        doc.installment_count = (request.form.get("installment_count", type=int) or 0)
+        doc.contract_start = _try_parse_date(request.form.get("contract_start"))
+        doc.contract_end = _try_parse_date(request.form.get("contract_end"))
+
+        # release old reservations + replace lines
+        _release_reservations_for_doc("QU", doc.id)
+        SalesItem.query.filter_by(doc_id=doc.id).delete(synchronize_session=False)
+
+        names   = request.form.getlist("name[]")
+        brands_ = request.form.getlist("brand[]")
+        qtys    = request.form.getlist("qty[]")
+        units   = request.form.getlist("unit[]")
+        durs    = request.form.getlist("duration[]")
+        prices  = request.form.getlist("price[]")
+        dps     = request.form.getlist("disc[]")
+
+        added_count = 0
+        for i, n in enumerate(names):
+            n = (n or "").strip()
+            if not n:
+                continue
+
+            # หา category จาก token ใน [] (ถือเป็น prefix เช่น SPTE6901 หรือ SPTE6901-001)
+            cat_id = None
+            cat_prefix = None
+            token = _extract_token_in_brackets(n)
+            if token:
+                p = token.split("-")[0].strip()
+                cat_prefix = p
+                cat = Category.query.filter_by(prefix_sku=p).first()
+                if cat:
+                    cat_id = cat.id
+
+            # image_path: ถ้า token เป็น SKU เต็มและพบใน equipment -> ใช้รูป
+            image_path = ""
+            if token:
+                eq = Equipment.query.filter_by(sku=token).first()
+                if eq:
+                    image_path = eq.image_path or ""
+
+            line = SalesItem(
+                doc_id=doc.id,
+                name=n,
+                category_id=cat_id,
+                category_prefix=cat_prefix,
+                brand=(_norm_brand(brands_[i] if i < len(brands_) else "") or None),
+                qty=_to_int(qtys[i] if i < len(qtys) else 1, 1),
+                rent_unit=((units[i] if i < len(units) else "DAY") or "DAY").upper(),
+                rent_duration=_to_int(durs[i] if i < len(durs) else 1, 1),
+                unit_price=_to_float(prices[i] if i < len(prices) else 0.0, 0.0),
+                discount_pct=_to_float(dps[i] if i < len(dps) else 0.0, 0.0),
+                image_path=image_path,
+            )
+            db.session.add(line)
+            added_count += 1
+
+        if added_count == 0:
+            db.session.rollback()
+            flash("กรุณาใส่อย่างน้อย 1 รายการ", "danger")
+            return redirect(url_for("qu_edit", qid=doc.id))
+
+        db.session.flush()
+
+        # reserve ใหม่ตามบรรทัด (B)
+        try:
+            for it in SalesItem.query.filter_by(doc_id=doc.id).all():
+                if it.category_id:
+                    _check_and_reserve("QU", doc.id, it.id, it.category_id, it.brand, doc.warehouse, it.qty or 0)
+        except ValueError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
+            return redirect(url_for("qu_edit", qid=doc.id))
+
+        _calc_sales_totals(doc)
+        db.session.commit()
+        flash(f"บันทึกการแก้ไขใบเสนอราคาแล้ว ({added_count} รายการ)", "success")
+        return redirect(url_for("qu_view", qid=doc.id))
+
+    return render_template(
+        "sales/qu_form.html",
+        customers=customers,
+        brands=brands,
+        warehouses=_warehouse_choices(),
+        warehouse_default=(doc.warehouse or 'MAIN'),
+        doc=doc,
+        items=doc.items,
+        action_url=url_for("qu_edit", qid=doc.id),
+        form_title="แก้ไขใบเสนอราคา",
+        submit_label="บันทึกการแก้ไข",
+    )
+
+@app.post("/sales/quotes/<int:qid>/delete")
+@permission_required("sales.manage")
+def qu_delete(qid):
+    doc = SalesDoc.query.get_or_404(qid)
+
+    # กันลบเอกสารผิดประเภท
+    if (doc.doc_type or "").upper() != "QU":
+        flash("เอกสารนี้ไม่ใช่ใบเสนอราคา (QU)", "danger")
+        return redirect(url_for("qu_list"))
+
+    # แนะนำความปลอดภัย: อนุญาตให้ลบเฉพาะ DRAFT
+    # ถ้าอยากลบได้ทุกสถานะ คุณค่อยแจ้งผม แล้วจะทำแบบ cascade/soft delete ให้
+    if (doc.status or "").upper() not in ("DRAFT", "CANCELLED"):
+        flash("ลบได้เฉพาะใบเสนอราคา DRAFT หรือ CANCELLED เท่านั้น (ถ้าต้องการลบสถานะอื่นบอกได้)", "warning")
+        return redirect(url_for("qu_view", qid=doc.id))
+
+    # ถ้ามีระบบจองสต๊อก ให้พยายามปล่อยจองก่อน
+        # try:
+        #     _release_reservations("QU", doc.id)
+        # except Exception:
+    #     pass
+
+    # ลบรายการลูกก่อน กัน FK error
+    SalesItem.query.filter_by(doc_id=doc.id).delete()
+
+    db.session.delete(doc)
+    db.session.commit()
+
+    flash("ลบใบเสนอราคาเรียบร้อยแล้ว", "success")
+    return redirect(url_for("qu_list"))
+
+
+@permission_required("sales.manage")
+def qu_delete(qid):
+    doc = SalesDoc.query.get_or_404(qid)
+    if doc.doc_type != "QU":
+        abort(404)
+    if doc.status == "APPROVED":
+        flash("ใบเสนอราคาอนุมัติแล้ว ไม่อนุญาตให้ลบ", "warning")
+        return redirect(url_for("qu_view", qid=doc.id))
+
+    # ถ้ามีใบส่งสินค้าถูกสร้างจากใบนี้ ให้กันลบทิ้งเพื่อไม่ให้ข้อมูลขาด
+    has_dl = DeliveryDoc.query.filter_by(source_type="QUOTATION", source_id=doc.id).first()
+    if has_dl:
+        flash("มีใบส่งสินค้าถูกสร้างจากใบเสนอราคานี้แล้ว ไม่อนุญาตให้ลบ", "warning")
+        return redirect(url_for("qu_view", qid=doc.id))
+
+    _release_reservations_for_doc("QU", doc.id)
+    SalesItem.query.filter_by(doc_id=doc.id).delete(synchronize_session=False)
+    db.session.delete(doc)
+    db.session.commit()
+    flash("ลบใบเสนอราคาแล้ว", "success")
+    return redirect(url_for("qu_list"))
+
 
 @app.route("/sales/quotes/<int:qid>")
 @permission_required("sales.view")
 def qu_view(qid):
     d = SalesDoc.query.get_or_404(qid)
-    return render_template("sales/qu_view.html", d=d)
+    bk = SalesDoc.query.filter_by(parent_id=d.id, doc_type="BK").first()
+    return render_template("sales/qu_view.html", d=d, bk=bk)
+
+
+@app.post("/sales/quotes/<int:qid>/items/<int:item_id>/status")
+@login_required
+@permission_required("sales.manage")
+def qu_item_set_status(qid, item_id):
+    d = SalesDoc.query.options(joinedload(SalesDoc.items)).get_or_404(qid)
+    if (d.doc_type or "").upper() != "QU":
+        abort(400)
+
+    it = SalesItem.query.filter_by(id=item_id, doc_id=d.id).first_or_404()
+
+    status = (request.form.get("line_status") or "APPROVED").strip().upper()
+    if status not in ("APPROVED", "REJECTED"):
+        status = "APPROVED"
+
+    it.line_status = status
+
+    # ✅ ถ้ารายการถูก "ไม่อนุมัติ" ให้ยกเลิกการจองสต็อกของรายการนี้ (ถ้ามี)
+    if status == "REJECTED":
+        (StockReservation.query
+         .filter_by(doc_type="QU", doc_id=d.id, sales_item_id=it.id)
+         .update({"status": "CANCELLED", "qty": 0.0}, synchronize_session=False))
+    else:
+        # กลับมาอนุมัติ → ทำให้ reservation ACTIVE (ถ้ามี) และใส่ qty ให้ตรงกับ item.qty
+        (StockReservation.query
+         .filter_by(doc_type="QU", doc_id=d.id, sales_item_id=it.id)
+         .update({"status": "ACTIVE", "qty": float(it.qty or 0)}, synchronize_session=False))
+
+    db.session.commit()
+    flash("อัปเดตสถานะรายการแล้ว", "success")
+    return redirect(url_for("qu_view", qid=d.id))
+
 
 @app.template_filter("unit_th")
 def unit_th(v: str) -> str:
@@ -3967,6 +4852,139 @@ def api_equipment_search():
             "value": f"[{e.sku}] {e.name}",
         })
     return jsonify(out)
+
+# ---- API: Catalog search (Categories + Equipment) for autocomplete in PO/QU ----
+@app.get("/api/catalog/search")
+@permission_required("equipment.view")
+def api_catalog_search():
+    q = (request.args.get("q") or "").strip()
+    limit = request.args.get("limit", type=int) or 20
+    out = []
+
+    if not q:
+        return jsonify(out)
+
+    like = f"%{q}%"
+
+    # Categories: search by prefix_sku or name
+    cats = (
+        Category.query
+        .filter(or_(Category.prefix_sku.ilike(like), Category.name.ilike(like)))
+        .order_by(Category.name.asc())
+        .limit(limit)
+        .all()
+    )
+    for c in cats:
+        p = (c.prefix_sku or "").strip()
+        nm = (c.name or "").strip() or p
+        if not p and not nm:
+            continue
+        out.append({
+            "type": "CATEGORY",
+            "sku": p,  # for QU/PO input we use prefix_sku as code
+            "name": nm,
+            "label": f"[{p}] {nm}" if p else nm,
+        })
+
+    # Equipment: search by full sku or name (include rented)
+    eqs = (
+        Equipment.query
+        .filter(or_(Equipment.sku.ilike(like), Equipment.name.ilike(like)))
+        .order_by(Equipment.name.asc())
+        .limit(limit)
+        .all()
+    )
+    for e in eqs:
+        sku = (e.sku or "").strip()
+        nm = (e.name or "").strip() or sku
+        if not sku and not nm:
+            continue
+        out.append({
+            "type": "EQUIPMENT",
+            "sku": sku,  # full sku
+            "name": nm,
+            "brand": getattr(e, "brand", None),
+            "warehouse": getattr(e, "warehouse", None),
+            "label": f"[{sku}] {nm}",
+        })
+
+    # Dedup by (type, sku)
+    seen = set()
+    uniq = []
+    for it in out:
+        key = (it.get("type"), it.get("sku") or it.get("name"))
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(it)
+
+    return jsonify(uniq[:limit])
+
+@app.get("/api/catalog/lookup")
+@permission_required("equipment.view")
+def api_catalog_lookup():
+    """Lookup one item for PO/QU autofill.
+    Priority:
+      1) exact Equipment.sku
+      2) exact Category.prefix_sku
+      3) best match by name (equipment first, then category)
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False})
+
+    # 1) exact equipment sku
+    e = Equipment.query.filter(func.upper(Equipment.sku) == q.upper()).first()
+    if e:
+        return jsonify({
+            "ok": True,
+            "type": "EQUIPMENT",
+            "sku": (e.sku or "").strip(),
+            "name": (e.name or "").strip(),
+            "brand": getattr(e, "brand", None),
+            "warehouse": getattr(e, "warehouse", None),
+            "label": f"[{(e.sku or '').strip()}] {(e.name or '').strip()}",
+        })
+
+    # 2) exact category prefix
+    c = Category.query.filter(func.upper(Category.prefix_sku) == q.upper()).first()
+    if c:
+        p = (c.prefix_sku or "").strip()
+        nm = (c.name or "").strip() or p
+        return jsonify({
+            "ok": True,
+            "type": "CATEGORY",
+            "sku": p,
+            "name": nm,
+            "label": f"[{p}] {nm}" if p else nm,
+        })
+
+    like = f"%{q}%"
+    e = Equipment.query.filter(Equipment.name.ilike(like)).order_by(Equipment.name.asc()).first()
+    if e:
+        return jsonify({
+            "ok": True,
+            "type": "EQUIPMENT",
+            "sku": (e.sku or "").strip(),
+            "name": (e.name or "").strip(),
+            "brand": getattr(e, "brand", None),
+            "warehouse": getattr(e, "warehouse", None),
+            "label": f"[{(e.sku or '').strip()}] {(e.name or '').strip()}",
+        })
+    c = Category.query.filter(Category.name.ilike(like)).order_by(Category.name.asc()).first()
+    if c:
+        p = (c.prefix_sku or "").strip()
+        nm = (c.name or "").strip() or p
+        return jsonify({
+            "ok": True,
+            "type": "CATEGORY",
+            "sku": p,
+            "name": nm,
+            "label": f"[{p}] {nm}" if p else nm,
+        })
+
+    return jsonify({"ok": False})
+
 
 def _build_item_img_map(d: SalesDoc) -> dict[int, str]:
     """คืน mapping item_id -> static url ของรูปสินค้า (รองรับหลายรูปแบบ path)
@@ -4214,7 +5232,7 @@ def _clone_items(from_doc: SalesDoc, to_doc: SalesDoc):
                 data[k] = v
 
         # --- lock/SKU fields ---
-        for k in ["category_id", "category_prefix", "allocated_skus"]:
+        for k in ["category_id", "category_prefix", "allocated_skus", "source_qu_item_id"]:
             if k in item_cols:
                 data[k] = _val(it, k, None)
 
@@ -4317,6 +5335,131 @@ def qu_approve(qid):
     # ไปหน้าใบจอง (param ชื่อ doc_id)
     return redirect(url_for("bk_view", doc_id=bk.id))
 
+
+@app.post("/sales/quotes/<int:qid>/cancel")
+@login_required
+@permission_required("sales.manage")
+def qu_cancel(qid):
+    """ยกเลิกใบเสนอราคา (QU) และคืนสต็อกที่จองไว้
+    - เดิม: ไม่ให้ยกเลิกเมื่อ QU = APPROVED
+    - ใหม่: อนุญาตให้ยกเลิกแม้ APPROVED ได้ "ถ้า" downstream ยังไม่ล็อคจริง
+      เงื่อนไขสำคัญ:
+        - BK (ถ้ามี) ต้องยังไม่ APPROVED
+        - BK ต้องยังไม่มี allocated_skus
+    """
+    qu: SalesDoc = (
+        SalesDoc.query.options(joinedload(SalesDoc.items)).get_or_404(qid)
+    )
+    if (qu.doc_type or "").upper() != "QU":
+        abort(404)
+
+    st = (qu.status or "").upper()
+    if st == "CANCELLED":
+        flash("ใบเสนอราคานี้ถูกยกเลิกแล้ว", "info")
+        return redirect(url_for("qu_view", qid=qu.id))
+
+    # หา BK ลูก (ถ้ามี)
+    bk = (
+        SalesDoc.query.options(joinedload(SalesDoc.items))
+        .filter_by(parent_id=qu.id, doc_type="BK")
+        .first()
+    )
+
+    # ถ้า QU อนุมัติแล้ว -> ให้ยกเลิกได้เฉพาะกรณี BK ยังไม่ล็อคของจริง
+    if st == "APPROVED":
+        if not bk:
+            # อนุมัติแล้วแต่ไม่มี BK (ผิด flow) — กันไว้
+            flash("ใบเสนอราคาอนุมัติแล้ว แต่ไม่พบใบจอง (BK) — ไม่อนุญาตให้ยกเลิก", "warning")
+            return redirect(url_for("qu_view", qid=qu.id))
+
+        bk_st = (bk.status or "").upper()
+        if bk_st == "APPROVED":
+            flash("มีใบจอง (BK) ที่อนุมัติแล้ว — ไม่อนุญาตให้ยกเลิกใบเสนอราคา", "warning")
+            return redirect(url_for("qu_view", qid=qu.id))
+
+        has_alloc = any((it.allocated_skus or "").strip() for it in (bk.items or []))
+        if has_alloc:
+            flash("มีการจัดสรร SKU แล้วในใบจอง (BK) — ไม่อนุญาตให้ยกเลิกใบเสนอราคา", "warning")
+            return redirect(url_for("qu_view", qid=qu.id))
+
+    # ===== ผ่านเงื่อนไข -> ยกเลิก QU + คืนจอง =====
+    qu.status = "CANCELLED"
+    _release_reservations_for_doc("QU", qu.id)
+
+    # ถ้ามี BK และ BK ยังไม่ APPROVED -> ยกเลิก BK และคืนจองด้วย
+    if bk and (bk.status or "").upper() != "APPROVED":
+        has_alloc = any((it.allocated_skus or "").strip() for it in (bk.items or []))
+        if has_alloc:
+            flash("มีการจัดสรร SKU แล้วในใบจอง (BK) — ไม่ยกเลิก BK อัตโนมัติ", "warning")
+        else:
+            bk.status = "CANCELLED"
+            _release_reservations_for_doc("BK", bk.id)
+
+    db.session.commit()
+    flash("ยกเลิกใบเสนอราคาและคืนสต็อกที่จองไว้แล้ว", "success")
+    return redirect(url_for("qu_view", qid=qu.id))
+
+
+
+@app.post("/sales/bookings/<int:bid>/cancel")
+@login_required
+@permission_required("sales.manage")
+def bk_cancel(bid):
+    """ยกเลิกใบจอง (BK) และคืนสต็อกที่จองไว้ (RESERVED)
+    - อนุญาตเฉพาะที่ยังไม่ APPROVED
+    - ถ้ามีการ Allocate SKU แล้ว จะคืนสถานะอุปกรณ์กลับเป็น READY และล้าง allocated_skus
+    """
+    bk: SalesDoc = (
+        SalesDoc.query.options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer)).get_or_404(bid)
+    )
+    if (bk.doc_type or "").upper() != "BK":
+        abort(404)
+
+    st = (bk.status or "").upper()
+    if st == "APPROVED":
+        flash("ใบจองนี้อนุมัติแล้ว ไม่อนุญาตให้ยกเลิก", "warning")
+        return redirect(url_for("bk_view", doc_id=bk.id))
+    if st == "CANCELLED":
+        flash("ใบจองนี้ถูกยกเลิกแล้ว", "info")
+        return redirect(url_for("bk_view", doc_id=bk.id))
+
+    cust_name = bk.customer.name if getattr(bk, "customer", None) else ""
+    # คืนอุปกรณ์ที่ถูก Allocate แล้ว (ถ้ามี)
+    for it in (bk.items or []):
+        skus = [s.strip() for s in (it.allocated_skus or "").split(",") if s.strip()]
+        if not skus:
+            continue
+        eqs = Equipment.query.filter(Equipment.sku.in_(skus)).all()
+        by_sku = {e.sku: e for e in eqs}
+        for sku in skus:
+            eq = by_sku.get(sku)
+            if not eq:
+                continue
+            # คืนเป็น READY เฉพาะกรณีที่ยัง RENTED อยู่
+            if (eq.status or "").upper() == "RENTED":
+                eq.status = "READY"
+                _equip_log(eq, "CANCEL_BOOKING", f"ยกเลิก {bk.number} | ลูกค้า: {cust_name}")
+        it.allocated_skus = ""  # ล้าง
+        # sync QU on bk_cancel
+        try:
+            if bk.parent_id:
+                qu = SalesDoc.query.get(bk.parent_id)
+                if qu and (qu.doc_type or '').upper() == 'QU' and getattr(it, 'source_qu_item_id', None):
+                    qu_it = SalesItem.query.get(it.source_qu_item_id)
+                    if qu_it and qu_it.doc_id == qu.id:
+                        qu_it.allocated_skus = ""
+        except Exception:
+            pass
+        # เผื่อมี reservation ผูก item นี้ค้างอยู่
+        _release_reservation_for_item(it.id)
+
+    # คืนจองทั้งหมดของ BK
+    _release_reservations_for_doc("BK", bk.id)
+    bk.status = "CANCELLED"
+    db.session.commit()
+
+    flash("ยกเลิกใบจองและคืนสต็อกเรียบร้อยแล้ว", "success")
+    return redirect(url_for("bk_view", doc_id=bk.id))
 
 # ---------- Sales: Lists/View/Toggle/Print ----------
 def _doc_list(doc_type: str, title_th: str):
@@ -4676,7 +5819,7 @@ def po_export_xlsx(pid):
 @app.get("/purchases/grn/<int:gid>/export.xlsx")
 @permission_required("purchases.view")
 def grn_export_xlsx(gid):
-    """Export ใบรับสินค้า (GRN) 1 ใบ"""
+    """Export ใบรับสินค้า (RC) 1 ใบ"""
     from openpyxl import Workbook
     g: GoodsReceipt = (
         GoodsReceipt.query
@@ -4832,30 +5975,139 @@ def iv_view(did): return _doc_view(did, "IV", "ใบกำกับภาษี
 @permission_required("sales.view")
 def rc_view(did): return _doc_view(did, "RC", "ใบเสร็จรับเงิน")
 
+# ---------- Flow Helpers (QU → BK → BL → IV → RC) ----------
+
+def _booking_flow_children_statuses(bk: 'SalesDoc') -> dict:
+    """Return map {doc_type: STATUS_UPPER} for BK children (BL/IV/RC)."""
+    if not bk or (bk.doc_type or '').upper() != 'BK':
+        return {}
+    return {c.doc_type: (c.status or '').upper()
+            for c in SalesDoc.query.filter_by(parent_id=bk.id).all()}
+
+
+def booking_flow_ready(bk: 'SalesDoc') -> bool:
+    """True if BL=PAID and IV=ISSUED and RC=ISSUED for this BK.
+
+    Note: Manual close only. We do NOT auto-close BK/QU here.
+    """
+    ch = _booking_flow_children_statuses(bk)
+    return ch.get('BL') == 'PAID' and ch.get('IV') == 'ISSUED' and ch.get('RC') == 'ISSUED'
+
+
+@app.post("/sales/bookings/<int:bid>/close")
+@permission_required("sales.manage")
+def bk_close(bid):
+    """Manual close BK work (and close QU parent if exists).
+
+    Allowed only when BK is APPROVED and flow is ready.
+    """
+    bk = SalesDoc.query.get_or_404(bid)
+    if (bk.doc_type or '').upper() != 'BK':
+        abort(404)
+
+    st = (bk.status or '').upper()
+    if st in ['CANCELLED']:
+        flash('ไม่สามารถปิดงาน: เอกสารถูกยกเลิกแล้ว', 'warning')
+        return redirect(url_for('bk_view', doc_id=bk.id))
+
+    if st != 'APPROVED':
+        flash('ต้องอนุมัติใบจองก่อนจึงจะปิดงานได้', 'warning')
+        return redirect(url_for('bk_view', doc_id=bk.id))
+
+    if not booking_flow_ready(bk):
+        flash('ยังปิดงานไม่ได้: ต้องให้ BL=ชำระแล้ว และ IV/RC=ออกแล้ว ก่อน', 'warning')
+        return redirect(url_for('bk_view', doc_id=bk.id))
+
+    bk.status = 'CLOSED'
+
+    close_parent = (request.form.get('close_parent') or '').strip() in ['1','true','True','on','yes']
+    if close_parent and bk.parent and (bk.parent.doc_type or '').upper() == 'QU':
+        bk.parent.status = 'CLOSED'
+
+    db.session.commit()
+    flash('ปิดงานเรียบร้อย', 'success')
+    return redirect(url_for('bk_view', doc_id=bk.id))
+
+
+@app.post("/sales/bookings/<int:bid>/reopen")
+@permission_required("sales.manage")
+def bk_reopen(bid):
+    """Reopen BK work (set status back to APPROVED).
+
+    Does not change equipment statuses.
+    """
+    bk = SalesDoc.query.get_or_404(bid)
+    if (bk.doc_type or '').upper() != 'BK':
+        abort(404)
+
+    st = (bk.status or '').upper()
+    if st != 'CLOSED':
+        flash('เอกสารยังไม่ได้ปิดงาน', 'info')
+        return redirect(url_for('bk_view', doc_id=bk.id))
+
+    bk.status = 'APPROVED'
+
+    reopen_parent = (request.form.get('reopen_parent') or '').strip() in ['1','true','True','on','yes']
+    if reopen_parent and bk.parent and (bk.parent.doc_type or '').upper() == 'QU' and (bk.parent.status or '').upper() == 'CLOSED':
+        bk.parent.status = 'APPROVED'
+
+    db.session.commit()
+    flash('เปิดงานอีกครั้งแล้ว', 'success')
+    return redirect(url_for('bk_view', doc_id=bk.id))
+
+
+
+
 @app.post("/sales/bills/<int:did>/toggle")
 @permission_required("sales.manage")
 def bl_toggle(did):
     d = SalesDoc.query.get_or_404(did)
-    if d.doc_type != "BL": abort(404)
+    if (d.doc_type or "").upper() != "BL":
+        abort(404)
+
     d.status = "PAID" if (d.status or "").upper() != "PAID" else "UNPAID"
+
+    # update booking flow if this doc belongs to BK
+    try:
+        if getattr(d, "parent", None) and (d.parent.doc_type or "").upper() == "BK":
+            _update_booking_flow_state(d.parent)
+    except Exception:
+        pass
+
     db.session.commit()
     return redirect(url_for("bl_view", did=did))
+
 
 @app.post("/sales/invoices/<int:did>/toggle")
 @permission_required("sales.manage")
 def iv_toggle(did):
     d = SalesDoc.query.get_or_404(did)
-    if d.doc_type != "IV": abort(404)
+    if (d.doc_type or "").upper() != "IV":
+        abort(404)
+
     d.status = "ISSUED" if (d.status or "").upper() != "ISSUED" else "UNISSUED"
+
+    # update booking flow if this doc belongs to BK
+    try:
+        if getattr(d, "parent", None) and (d.parent.doc_type or "").upper() == "BK":
+            _update_booking_flow_state(d.parent)
+    except Exception:
+        pass
+
     db.session.commit()
     return redirect(url_for("iv_view", did=did))
+
 
 @app.post("/sales/receipts/<int:did>/toggle")
 @permission_required("sales.manage")
 def rc_toggle(did):
     d = SalesDoc.query.get_or_404(did)
-    if d.doc_type != "RC": abort(404)
+    if d.doc_type != "RC":
+        abort(404)
     d.status = "ISSUED" if (d.status or "").upper() != "ISSUED" else "UNISSUED"
+    # update booking flow if this doc belongs to BK
+    if d.parent and d.parent.doc_type == "BK":
+        _update_booking_flow_state(d.parent)
     db.session.commit()
     return redirect(url_for("rc_view", did=did))
 
@@ -5417,6 +6669,7 @@ def returns_list():
     query = ReturnDoc.query.options(
         joinedload(ReturnDoc.customer),
         joinedload(ReturnDoc.quote),
+        joinedload(ReturnDoc.booking),
         joinedload(ReturnDoc.items),
     )
 
@@ -5434,14 +6687,18 @@ def returns_list():
     # ค้นหาจาก เลขที่ใบคืน / เลขที่ใบเสนอราคา / ชื่อลูกค้า
     if q:
         like = f"%{q}%"
+        QuoteDoc = aliased(SalesDoc)
+        BookingDoc = aliased(SalesDoc)
         query = (
             query
             .outerjoin(ReturnDoc.customer)
-            .outerjoin(ReturnDoc.quote)
+            .outerjoin(QuoteDoc, ReturnDoc.quote_id == QuoteDoc.id)
+            .outerjoin(BookingDoc, ReturnDoc.booking_id == BookingDoc.id)
             .filter(
                 or_(
                     ReturnDoc.number.ilike(like),
-                    SalesDoc.number.ilike(like),
+                    QuoteDoc.number.ilike(like),
+                    BookingDoc.number.ilike(like),
                     Customer.name.ilike(like),
                 )
             )
@@ -5462,62 +6719,94 @@ def returns_list():
         end=end,
     )
 
+
 @app.route("/returns/new", methods=["GET", "POST"])
 @login_required
 @permission_required("sales.manage")
 def returns_new():
     """
-    หน้าเลือก 'ลูกค้า' -> เลือก 'ใบเสนอราคา (QU) ที่อนุมัติแล้วแต่ยังไม่มีใบคืน'
-    คล้าย ๆ หน้าสร้างใบเคลม
+    สร้างใบคืนสินค้า / คืนอุปกรณ์เช่า
+
+    mode=QU (default): เลือก QU ที่อนุมัติแล้วและยังไม่เคยสร้างใบคืน
+    mode=BK: เลือก BK ที่อนุมัติแล้ว (คืนจากรายการ SKU ที่ allocate)
     """
     ep = "returns_new"
 
-    # เอาลูกค้าทั้งหมดมาให้เลือกใน dropdown
+    mode = (request.args.get("mode") or "QU").strip().upper()
+    if mode not in ("QU", "BK"):
+        mode = "QU"
+
     customers = Customer.query.order_by(Customer.name.asc()).all()
 
-    # customer ที่เลือกจาก query string ?customer_id=...
     selected_customer_id = request.args.get("customer_id", type=int)
     quotes = []
+    bookings = []
 
     if selected_customer_id:
-        # subquery หา QU ที่ถูกออกใบคืนสินค้าไปแล้ว
-        subq = db.session.query(ReturnDoc.quote_id).subquery()
+        if mode == "QU":
+            # QU ที่ถูกออกใบคืนสินค้าไปแล้ว (อ้าง QU)
+            subq = db.session.query(ReturnDoc.quote_id).filter(ReturnDoc.quote_id.isnot(None)).subquery()
 
-        # เลือกเฉพาะ QU ของลูกค้าคนนี้
-        quotes = (
-            SalesDoc.query
-            .filter(
-                SalesDoc.doc_type == "QU",
-                SalesDoc.customer_id == selected_customer_id,
-                func.upper(SalesDoc.status) == "APPROVED",
-                ~SalesDoc.id.in_(subq),  # ยังไม่เคยถูกใช้ใน ReturnDoc
+            quotes = (
+                SalesDoc.query
+                .filter(
+                    SalesDoc.doc_type == "QU",
+                    SalesDoc.customer_id == selected_customer_id,
+                    func.upper(SalesDoc.status) == "APPROVED",
+                    ~SalesDoc.id.in_(subq),
+                )
+                .order_by(SalesDoc.date.desc(), SalesDoc.number.desc())
+                .all()
             )
-            .order_by(SalesDoc.date.desc(), SalesDoc.number.desc())
-            .all()
-        )
+        else:
+            # BK คืนได้หลายครั้ง (partial return) -> ไม่ต้องกันซ้ำ
+            bookings = (
+                SalesDoc.query
+                .options(joinedload(SalesDoc.customer))
+                .filter(
+                    SalesDoc.doc_type == "BK",
+                    SalesDoc.customer_id == selected_customer_id,
+                    func.upper(SalesDoc.status).in_(["APPROVED", "CLOSED", "OPEN"]),
+                )
+                .order_by(SalesDoc.date.desc(), SalesDoc.number.desc())
+                .all()
+            )
 
-    # เมื่อ submit ฟอร์มเลือกลูกค้า + QU แล้ว ให้เด้งไปหน้า build
     if request.method == "POST":
         customer_id = request.form.get("customer_id", type=int)
-        quote_id = request.form.get("quote_id", type=int)
+        doc_id = request.form.get("doc_id", type=int)
+        mode_post = (request.form.get("mode") or mode).strip().upper()
 
-        if not (customer_id and quote_id):
-            flash("กรุณาเลือกลูกค้าและใบเสนอราคา", "warning")
-            return redirect(url_for("returns_new"))
+        if not (customer_id and doc_id):
+            flash("กรุณาเลือกลูกค้าและเอกสารอ้างอิง", "warning")
+            return redirect(url_for("returns_new", mode=mode_post))
 
-        qu = SalesDoc.query.get_or_404(quote_id)
+        if mode_post == "BK":
+            bk = SalesDoc.query.get_or_404(doc_id)
+            if bk.doc_type != "BK":
+                flash("ต้องใช้ใบจอง (BK) เท่านั้น", "warning")
+                return redirect(url_for("returns_new", mode="BK", customer_id=customer_id))
+            if (bk.status or "").upper() not in ("APPROVED", "OPEN", "CLOSED"):
+                flash("ใบจองต้องอยู่สถานะ อนุมัติ/เปิดงาน/ปิดงาน เท่านั้น", "warning")
+                return redirect(url_for("returns_new", mode="BK", customer_id=customer_id))
+            return redirect(url_for("returns_build_bk", bk_id=bk.id))
+
+        # default QU
+        qu = SalesDoc.query.get_or_404(doc_id)
         if qu.doc_type != "QU" or (qu.status or "").upper() != "APPROVED":
             flash("ต้องใช้ใบเสนอราคาที่อนุมัติแล้วเท่านั้น", "warning")
-            return redirect(url_for("returns_new", customer_id=customer_id))
+            return redirect(url_for("returns_new", mode="QU", customer_id=customer_id))
 
-        return redirect(url_for("returns_build", quote_id=quote_id))
+        return redirect(url_for("returns_build", quote_id=doc_id))
 
     return render_template(
         "returns/new.html",
         ep=ep,
+        mode=mode,
         customers=customers,
         selected_customer_id=selected_customer_id,
         quotes=quotes,
+        bookings=bookings,
     )
 
 
@@ -5656,6 +6945,180 @@ def returns_build(quote_id):
     )
 
 
+
+@app.route("/returns/build-bk/<int:bk_id>", methods=["GET", "POST"])
+@login_required
+@permission_required("sales.manage")
+def returns_build_bk(bk_id):
+    ep = "returns_build_bk"
+
+    bk: SalesDoc = (
+        SalesDoc.query
+        .options(
+            joinedload(SalesDoc.items),
+            joinedload(SalesDoc.customer),
+        )
+        .get_or_404(bk_id)
+    )
+
+    if (bk.doc_type or "").upper() != "BK":
+        flash("ต้องใช้ใบจอง (BK) เท่านั้น", "warning")
+        return redirect(url_for("returns_new", mode="BK", customer_id=bk.customer_id))
+
+    # รวบรวม SKU ที่ถูก allocate (ยังไม่คืน)
+    rows = []
+    for it in (bk.items or []):
+        sku_csv = (it.allocated_skus or "").strip()
+        if not sku_csv:
+            continue
+        skus = [s.strip() for s in sku_csv.split(",") if s.strip()]
+        for sku in skus:
+            eq = Equipment.query.filter_by(sku=sku).first()
+            if not eq:
+                continue
+            rows.append(SimpleNamespace(item=it, equipment=eq))
+
+    if request.method == "POST":
+        selected = []
+        # row_enabled[] + equipment_id[] + condition[] + damage_note[] + damage_cost[]
+        eq_ids = request.form.getlist("equipment_id[]")
+        conds = request.form.getlist("condition[]")
+        notes = request.form.getlist("damage_note[]")
+        costs = request.form.getlist("damage_cost[]")
+        enabled_idx_raw = request.form.getlist("row_enabled[]")
+
+        enabled_idx = {int(x) for x in enabled_idx_raw if x.isdigit()}
+
+        for idx, eqid in enumerate(eq_ids):
+            if idx not in enabled_idx:
+                continue
+            try:
+                eqid_int = int(eqid)
+            except Exception:
+                continue
+
+            cond = (conds[idx] if idx < len(conds) else "GOOD").strip().upper() or "GOOD"
+            if cond not in ("GOOD", "REPAIR", "LOST"):
+                cond = "GOOD"
+
+            note = (notes[idx] if idx < len(notes) else "").strip()
+
+            try:
+                cost = float(costs[idx]) if idx < len(costs) and (costs[idx] or "").strip() else 0.0
+            except Exception:
+                cost = 0.0
+
+            row = next((r for r in rows if r.equipment.id == eqid_int), None)
+            if not row:
+                continue
+            selected.append((row.item, row.equipment, cond, note, cost))
+
+        if not selected:
+            flash("กรุณาเลือกรายการที่จะคืนอย่างน้อย 1 รายการ", "warning")
+            return redirect(url_for("returns_build_bk", bk_id=bk_id))
+
+        # หา QU แม่ (ถ้ามี) เพื่อเก็บ reference
+        qu_id = None
+        try:
+            if bk.parent_id:
+                parent = SalesDoc.query.get(bk.parent_id)
+                if parent and (parent.doc_type or "").upper() == "QU":
+                    qu_id = parent.id
+        except Exception:
+            qu_id = None
+
+        ret = ReturnDoc(
+            number=_next_return_number_by_date_with_prefix("RT", date.today()),
+            date=date.today(),
+            customer_id=bk.customer_id,
+            quote_id=qu_id,
+            booking_id=bk.id,
+            ref_type="BK",
+            remark=(request.form.get("remark") or "").strip(),
+            created_by=current_user.id if current_user.is_authenticated else None,
+        )
+        db.session.add(ret)
+        db.session.flush()
+
+        # ทำคืนทีละ SKU: อัปเดตสถานะอุปกรณ์ + ตัด SKU ออกจาก allocated_skus ใน BK
+        for it, eq, cond, note, cost in selected:
+            db.session.add(
+                ReturnItem(
+                    doc_id=ret.id,
+                    equipment_id=eq.id,
+                    qty=1,
+                    condition=cond,
+                    damage_note=note,
+                    damage_cost=cost,
+                )
+            )
+
+            # update equipment status
+            prev_status = (eq.status or "READY").upper()
+            new_status = "READY"
+            if cond == "REPAIR":
+                new_status = "REPAIR"
+            elif cond == "LOST":
+                new_status = "LOST"
+
+            if prev_status != new_status:
+                eq.status = new_status
+
+            # remove SKU from allocated_skus (BK item) + sync ไป QU แม่ (ถ้ามี mapping)
+            try:
+                # --- 1) remove จาก BK item ---
+                sku_list = [s.strip() for s in (it.allocated_skus or "").split(",") if s.strip()]
+                if eq.sku in sku_list:
+                    sku_list = [s for s in sku_list if s != eq.sku]
+                    it.allocated_skus = ",".join(sku_list) if sku_list else None
+
+                # --- 2) sync QU allocated_skus on return (ถ้ามี mapping) ---
+                try:
+                    if bk and bk.parent_id:
+                        qu = SalesDoc.query.get(bk.parent_id)
+                        if (
+                            qu
+                            and (qu.doc_type or "").upper() == "QU"
+                            and getattr(it, "source_qu_item_id", None)
+                        ):
+                            qu_it = SalesItem.query.get(it.source_qu_item_id)
+                            if qu_it and qu_it.doc_id == qu.id:
+                                qu_skus = [s.strip() for s in (qu_it.allocated_skus or "").split(",") if s.strip()]
+                                if eq.sku in qu_skus:
+                                    qu_skus = [s for s in qu_skus if s != eq.sku]
+                                    qu_it.allocated_skus = ",".join(qu_skus) if qu_skus else None
+                except Exception:
+                    pass
+
+            except Exception:
+                pass
+
+            # log
+            th_cond = {"GOOD": "คืนปกติ", "REPAIR": "ส่งซ่อม", "LOST": "สูญหาย"}.get(cond, cond)
+            extra = f" ({th_cond})" + (f" | {note}" if note else "")
+            if cost and cost > 0:
+                extra += f" | ค่าเสียหาย {cost:,.2f}"
+
+            _equip_log(
+                eq,
+                action="RETURN",
+                note=f"คืนจากใบคืนสินค้า {ret.number} อ้างอิง BK {bk.number}{extra}",
+                ref_model="ReturnDoc",
+                ref_id=ret.id,
+            )
+
+        db.session.commit()
+        flash(f"สร้างใบคืนสินค้า {ret.number} แล้ว", "success")
+        return redirect(url_for("returns_view", rid=ret.id))
+
+    return render_template(
+        "returns/build_bk.html",
+        ep=ep,
+        bk=bk,
+        rows=rows,
+    )
+
+
 @app.route("/returns/<int:rid>")
 @login_required
 @permission_required("sales.view")
@@ -5667,6 +7130,7 @@ def returns_view(rid):
         .options(
             joinedload(ReturnDoc.customer),
             joinedload(ReturnDoc.quote).joinedload(SalesDoc.customer),
+            joinedload(ReturnDoc.booking).joinedload(SalesDoc.customer),
             joinedload(ReturnDoc.items).joinedload(ReturnItem.equipment),
         )
         .get_or_404(rid)
@@ -5688,6 +7152,7 @@ def returns_print(rid):
         .options(
             joinedload(ReturnDoc.customer),
             joinedload(ReturnDoc.quote),
+        joinedload(ReturnDoc.booking),
             joinedload(ReturnDoc.items).joinedload(ReturnItem.equipment),
         )
         .get_or_404(rid)
@@ -7260,6 +8725,7 @@ def rn_view(rid):
         .options(
             joinedload(ReturnDoc.customer),
             joinedload(ReturnDoc.quote),
+        joinedload(ReturnDoc.booking),
             joinedload(ReturnDoc.items),
         )
         .get_or_404(rid)
@@ -7280,6 +8746,7 @@ def rn_print(rid):
         .options(
             joinedload(ReturnDoc.customer),
             joinedload(ReturnDoc.quote),
+        joinedload(ReturnDoc.booking),
             joinedload(ReturnDoc.items),
         )
         .get_or_404(rid)
@@ -7421,10 +8888,27 @@ def bk_view(doc_id):
             joinedload(SalesDoc.customer),
             joinedload(SalesDoc.items),
         )
-        .filter_by(doc_type="BK", id=doc_id)   # กรองทั้ง doc_type และ id
-        .first_or_404()                        # ใช้ first_or_404 แทน get_or_404
+        .filter_by(doc_type="BK", id=doc_id)
+        .first_or_404()
     )
-    return render_template("sales/bk_view.html", d=d, page_title="ใบจอง")
+
+    children = SalesDoc.query.filter_by(parent_id=d.id).all()
+    children_map = { (c.doc_type or "").upper(): c for c in children }
+
+    flow_ready = False
+    try:
+        flow_ready = _booking_flow_ready(d)
+    except Exception:
+        flow_ready = False
+
+    return render_template(
+        "sales/bk_view.html",
+        d=d,
+        children_map=children_map,
+        flow_ready=flow_ready,
+        page_title="ใบจอง"
+    )
+
 
 
 
@@ -7434,32 +8918,82 @@ def bk_view(doc_id):
 @permission_required("sales.manage")
 def bk_allocate(bid):
     """หน้าเลือกตัวอุปกรณ์จริงให้ใบจอง (BK)
-    - ใบเสนอราคา (QU): เก็บเป็น "หมวดหมู่" (Category/prefix_sku)
-    - ใบจอง (BK): ผู้ใช้เลือก SKU อุปกรณ์จริงที่ READY เพื่อ "ล็อคของ" และเปลี่ยนเป็น RENTED
+    - QU: เก็บเป็นหมวดหมู่ (category_id / category_prefix)
+    - BK: เลือก SKU อุปกรณ์จริงที่ READY เพื่อ "ล็อคของ" และเปลี่ยนเป็น RENTED
     """
     doc: SalesDoc = (
         SalesDoc.query
         .options(joinedload(SalesDoc.items), joinedload(SalesDoc.customer))
         .get_or_404(bid)
     )
+
     if (doc.doc_type or "").upper() != "BK":
         flash("เอกสารนี้ไม่ใช่ใบจอง (BK)", "warning")
-        return redirect(url_for("sales_doc_view", doc_id=doc.id) if "sales_doc_view" in current_app.view_functions else url_for("bk_view", doc_id=doc.id))
+        if "sales_doc_view" in current_app.view_functions:
+            return redirect(url_for("sales_doc_view", doc_id=doc.id))
+        return redirect(url_for("bk_view", doc_id=doc.id))
 
-    # helper: parse prefix from item.name "[SP-001]" หรือใช้ item.category_prefix
     import re as _re
-    def _extract_prefix(title: str) -> str | None:
-        m = _re.search(r"\[([^\[\]]+?)\]", title or "")
-        return m.group(1).strip() if m else None
 
+    def _extract_prefix(title: str):
+        # รองรับ [SPTE] หรือ [SPTE6901] อะไรที่อยู่ใน [] จะหยิบมา
+        m = _re.search(r"\[([^\[\]]+?)\]", title or "")
+        return m.group(1).strip() if m else ""
+
+    def _normalize_cat_prefix(p: str) -> str:
+        # เก็บเฉพาะ A-Z0-9 และทำให้เป็นตัวใหญ่
+        p = (p or "").strip().upper()
+        p = _re.sub(r"[^A-Z0-9]", "", p)
+        return p
+
+    def _resolve_category_for_item(it: SalesItem):
+        """
+        return dict:
+          {
+            'cat_id': int|None,
+            'cat_prefix': str,    # Category.prefix_sku (เช่น SPTE/SPTA/E/A)
+            'legacy_prefix': str  # it.category_prefix หรือ [] ในชื่อ
+          }
+        """
+        cat_id = getattr(it, "category_id", None)
+        legacy_prefix = (getattr(it, "category_prefix", "") or "").strip() or _extract_prefix(getattr(it, "name", ""))
+
+        # 1) ถ้ามี category_id ใช้เลย (ดีที่สุด)
+        if cat_id:
+            c = Category.query.get(cat_id)
+            return {
+                "cat_id": cat_id,
+                "cat_prefix": (c.prefix_sku or "").strip() if c else "",
+                "legacy_prefix": legacy_prefix,
+            }
+
+        # 2) fallback: หา category จาก legacy_prefix (พยายาม normalize)
+        lp = _normalize_cat_prefix(legacy_prefix)
+        if lp:
+            # เทียบตรง ๆ
+            c = Category.query.filter_by(prefix_sku=lp).first()
+            if not c:
+                # เผื่อบางคนเก็บ prefix_sku เป็น "E" แต่ legacy เป็น "SPTE"
+                if lp.startswith("SPT") and len(lp) >= 4:
+                    c = Category.query.filter_by(prefix_sku=lp[3:]).first()
+                elif len(lp) == 1:
+                    c = Category.query.filter_by(prefix_sku="SPT" + lp).first()
+
+            if c:
+                return {"cat_id": c.id, "cat_prefix": (c.prefix_sku or "").strip(), "legacy_prefix": legacy_prefix}
+
+        return {"cat_id": None, "cat_prefix": "", "legacy_prefix": legacy_prefix}
+
+    # -------------------------
+    # POST: save allocation
+    # -------------------------
     if request.method == "POST":
         any_selected = False
         used_skus = set()
 
         # กันเลือก SKU ซ้ำในฟอร์มเดียวกัน
         for it in (doc.items or []):
-            chosen = request.form.getlist(f"alloc_{it.id}")
-            for sku in chosen:
+            for sku in request.form.getlist(f"alloc_{it.id}"):
                 sku = (sku or "").strip()
                 if not sku:
                     continue
@@ -7468,14 +9002,14 @@ def bk_allocate(bid):
                     return redirect(url_for("bk_allocate", bid=doc.id))
                 used_skus.add(sku)
 
+        # ทำทีละบรรทัด
         for it in (doc.items or []):
-            chosen = [ (x or "").strip() for x in request.form.getlist(f"alloc_{it.id}") if (x or "").strip() ]
-            prefix = (it.category_prefix or "").strip() or (_extract_prefix(it.name) or "")
+            chosen = [(x or "").strip() for x in request.form.getlist(f"alloc_{it.id}") if (x or "").strip()]
             qty_need = int(round(float(it.qty or 0))) if it.qty is not None else 0
             qty_need = max(qty_need, 1)
 
             if not chosen:
-                # อนุญาตให้ยังไม่เลือกครบทุกบรรทัดได้ แต่จะเตือน
+                # อนุญาตให้ยังไม่เลือกครบทุกบรรทัดได้
                 continue
 
             any_selected = True
@@ -7484,7 +9018,10 @@ def bk_allocate(bid):
                 flash(f"รายการ '{it.name}' ต้องเลือกอย่างน้อย {qty_need} ตัว (ตอนนี้เลือก {len(chosen)} ตัว)", "danger")
                 return redirect(url_for("bk_allocate", bid=doc.id))
 
-            # ตรวจอุปกรณ์จริงว่าพร้อมให้เช่า + ตรง prefix
+            info = _resolve_category_for_item(it)
+            cat_id = info["cat_id"]
+
+            # ตรวจอุปกรณ์จริงว่าพร้อมให้เช่า + อยู่หมวดเดียวกัน
             eqs = Equipment.query.filter(Equipment.sku.in_(chosen)).all()
             eq_by_sku = {e.sku: e for e in eqs}
 
@@ -7496,51 +9033,90 @@ def bk_allocate(bid):
                 if (eq.status or "").upper() != "READY":
                     flash(f"อุปกรณ์ {sku} ไม่ได้อยู่สถานะ READY (สถานะปัจจุบัน: {eq.status})", "danger")
                     return redirect(url_for("bk_allocate", bid=doc.id))
-                if prefix and not (eq.sku or "").startswith(prefix):
-                    flash(f"อุปกรณ์ {sku} ไม่ตรงหมวด (ต้องขึ้นต้นด้วย {prefix})", "danger")
+                if cat_id and eq.category_id != cat_id:
+                    flash(f"อุปกรณ์ {sku} ไม่ตรงหมวดของรายการนี้", "danger")
                     return redirect(url_for("bk_allocate", bid=doc.id))
 
-            # บันทึกลง item
+            # บันทึก SKU ลง BK item
             it.allocated_skus = ",".join(chosen)
-            it.category_prefix = prefix or it.category_prefix
+
+            # sync หมวดให้ชัดเจน: ถ้า item ไม่มี category_id แต่ resolve ได้ -> ใส่กลับ
+            if cat_id and not getattr(it, "category_id", None):
+                it.category_id = cat_id
+
+            # เก็บ category_prefix ให้เป็น prefix_sku ของ Category (เพื่อ UI/legacy)
+            try:
+                if cat_id:
+                    c = Category.query.get(cat_id)
+                    if c and c.prefix_sku:
+                        it.category_prefix = (c.prefix_sku or "").strip()
+            except Exception:
+                pass
+
+            # SYNC allocated_skus back to QU parent
+            try:
+                if doc.parent_id:
+                    qu = SalesDoc.query.get(doc.parent_id)
+                    if qu and (qu.doc_type or "").upper() == "QU" and getattr(it, "source_qu_item_id", None):
+                        qu_it = SalesItem.query.get(it.source_qu_item_id)
+                        if qu_it and qu_it.doc_id == qu.id:
+                            qu_it.allocated_skus = it.allocated_skus
+                            qu_it.category_id = it.category_id
+                            qu_it.category_prefix = it.category_prefix
+            except Exception:
+                pass
+
+            # ปล่อย reservation (ถ้ามี)
+            try:
+                _release_reservation_for_item(it.id)
+            except Exception:
+                pass
 
             # เปลี่ยนสถานะอุปกรณ์เป็น RENTED + log
             cust_name = doc.customer.name if getattr(doc, "customer", None) else ""
             for sku in chosen:
                 eq = eq_by_sku[sku]
                 eq.status = "RENTED"
-                _equip_log(eq, "RENT_OUT", f"จองจาก {doc.number} | ลูกค้า: {cust_name} | หมวด: {prefix}")
+                try:
+                    _equip_log(eq, "RENT_OUT", f"จองจาก {doc.number} | ลูกค้า: {cust_name}")
+                except Exception:
+                    pass
 
         db.session.commit()
-        if any_selected:
-            flash("บันทึกการเลือกอุปกรณ์เรียบร้อยแล้ว (อุปกรณ์ถูกเปลี่ยนสถานะเป็น RENTED)", "success")
-        else:
-            flash("ยังไม่ได้เลือกอุปกรณ์ (สามารถกลับมาเลือกภายหลังได้)", "info")
+        flash("บันทึกการเลือกอุปกรณ์เรียบร้อยแล้ว" if any_selected else "ยังไม่ได้เลือกอุปกรณ์", "success" if any_selected else "info")
         return redirect(url_for("bk_view", doc_id=doc.id))
 
-
-    # GET: เตรียมรายการอุปกรณ์ READY แยกตาม prefix เพื่อให้เลือกง่าย
+    # -------------------------
+    # GET: build items_vm
+    # -------------------------
     items_vm = []
     for it in (doc.items or []):
-        prefix = (it.category_prefix or "").strip() or (_extract_prefix(it.name) or "")
+        info = _resolve_category_for_item(it)
+        cat_id = info["cat_id"]
         qty_need = int(round(float(it.qty or 0))) if it.qty is not None else 0
         qty_need = max(qty_need, 1)
 
         q = Equipment.query.filter(Equipment.status == "READY")
-        if prefix:
-            q = q.filter(Equipment.sku.like(f"{prefix}%"))
-        eqs = q.order_by(Equipment.sku.asc()).limit(200).all()
+        if cat_id:
+            q = q.filter(Equipment.category_id == cat_id)
+
+        eqs = q.order_by(Equipment.sku.asc()).limit(300).all()
 
         already = [s.strip() for s in (it.allocated_skus or "").split(",") if s.strip()]
-        items_vm.append({
-            "item": it,
-            "prefix": prefix,
-            "qty_need": qty_need,
-            "equipments": eqs,
-            "already": already,
-        })
+        items_vm.append(
+            {
+                "item": it,
+                "prefix": info["cat_prefix"] or info["legacy_prefix"],
+                "qty_need": qty_need,
+                "equipments": eqs,
+                "already": already,
+            }
+        )
 
     return render_template("sales/bk_allocate.html", doc=doc, items_vm=items_vm)
+
+
+
 
 @app.post("/sales/bookings/<int:bid>/approve")
 @login_required
@@ -7723,7 +9299,7 @@ def export_po_excel():
 @login_required
 @permission_required("goods.receive")
 def export_grn_excel():
-    """Export รายการใบรับสินค้า (GRN) ตามช่วงวันที่ (grn_date) และค้นหา (q)"""
+    """Export รายการใบรับสินค้า (RC) ตามช่วงวันที่ (grn_date) และค้นหา (q)"""
     q = (request.args.get("q") or "").strip()
     start = (request.args.get("start") or "").strip()
     end = (request.args.get("end") or "").strip()

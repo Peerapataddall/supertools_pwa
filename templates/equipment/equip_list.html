@@ -135,6 +135,11 @@
         <option value="REPAIR" {{ status=='REPAIR' and 'selected' or '' }}>รอซ่อม</option>
       </select>
     </div>
+    <div class="col-12 col-md-2">
+      <label class="form-label mb-1 small text-muted">คลัง/สาขา</label>
+      <input class="form-control form-control-lg" name="warehouse" value="{{ warehouse or '' }}" placeholder="เช่น MAIN" onchange="this.form.submit()">
+    </div>
+
 
     <div class="col-6 col-md-2">
       <label class="form-label mb-1 small text-muted">เริ่ม</label>
@@ -180,6 +185,7 @@
           <th class="text-uppercase small">ชื่ออุปกรณ์</th>
           <th class="text-uppercase small">สถานะ</th>
           <th class="text-uppercase small">หมวดหมู่</th>
+          <th class="text-uppercase small">คลัง</th>
           <th class="text-uppercase small">รับเข้า</th>
           <th class="text-uppercase small text-center" style="width:160px">การทำงาน</th>
         </tr>
@@ -212,6 +218,7 @@
             {% endif %}
           </td>
           <td>{{ r.category.name }}</td>
+          <td>{{ r.warehouse or 'MAIN' }}</td>
           <td>{{ r.received_date|strftime('%d/%m/%Y') }}</td>
           <td class="text-center">
             <div class="d-inline-flex gap-2">

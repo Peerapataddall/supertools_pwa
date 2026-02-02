@@ -122,6 +122,23 @@
           <input name="phone" class="form-control" value="{{ c.phone if c else '' }}">
         </div>
       </div>
+
+      <div class="col-md-3">
+        <label class="form-label">เครดิต (วัน)</label>
+        <div class="input-wrap">
+          <i class="bi bi-clock"></i>
+          <input name="credit_term_days" type="number" min="0" class="form-control" value="{{ c.credit_term_days if c else 0 }}">
+        </div>
+        <div class="help small text-muted mt-1">0 = เงินสด</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">เงื่อนไขชำระเงิน (ข้อความ)</label>
+        <div class="input-wrap">
+          <i class="bi bi-receipt"></i>
+          <input name="payment_terms" class="form-control" value="{{ c.payment_terms if c else '' }}" placeholder="เช่น โอนก่อนส่งของ / วางบิลทุกสิ้นเดือน">
+        </div>
+      </div>
+
       <div class="col-md-3">
         <label class="form-label">เลขประจำตัวผู้เสียภาษี</label>
         <div class="input-wrap">

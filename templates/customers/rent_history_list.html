@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}ประวัติการเช่า - เลือกลูกค้า{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3" style="max-width:1100px;">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-clock-history text-primary fs-4"></i>
+      <h1 class="h5 m-0">ดูประวัติการเช่า</h1>
+    </div>
+
+    <form class="d-flex gap-2" method="get" action="{{ url_for('rent_history_list') }}">
+      <input type="text" class="form-control" name="q" placeholder="ค้นหาชื่อลูกค้า / โทร / เลขผู้เสียภาษี"
+             value="{{ q or '' }}" style="min-width:280px;">
+      <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i>ค้นหา</button>
+    </form>
+  </div>
+
+  <div class="card st-softcard border-0">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle m-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:40%">ลูกค้า</th>
+              <th style="width:20%">เช่าทั้งหมด</th>
+              <th style="width:20%" class="text-end">ยอดรวม</th>
+              <th style="width:20%" class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if customers and customers|length > 0 %}
+            {% for c in customers %}
+              {% set st = stats.get(c.id) if stats else None %}
+              {% set cnt = (st.count if st is not none else 0) %}
+              {% set total = (st.total if st is not none else 0) %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ c.name }}</div>
+                  <div class="small text-muted">
+                    {% if c.phone %}<span class="me-2"><i class="bi bi-telephone me-1"></i>{{ c.phone }}</span>{% endif %}
+                    {% if c.tax_id %}<span><i class="bi bi-card-text me-1"></i>{{ c.tax_id }}</span>{% endif %}
+                  </div>
+                </td>
+                <td>
+                  <span class="badge bg-light text-dark border">
+                    {{ cnt }} ครั้ง
+                  </span>
+                </td>
+                <td class="text-end fw-semibold">{{ '%.2f'|format(total or 0) }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm"
+                     href="{{ url_for('rent_history_view', cid=c.id) }}">
+                    <i class="bi bi-bar-chart-line me-1"></i> ดูรายละเอียด
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-4">ไม่พบลูกค้า</td>
+            </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="small text-muted mt-2">
+    * สรุปยอดอ้างอิงจากเอกสาร <b>IV</b> ของลูกค้า (ไม่นับที่ถูกยกเลิก)
+  </div>
+</div>
+{% endblock %}

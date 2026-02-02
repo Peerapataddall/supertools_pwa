@@ -1,92 +1,126 @@
 {% extends "base.html" %}
-{% block title %}สร้างใบเสนอราคา{% endblock %}
+{% block title %}{{ form_title or "สร้างใบเสนอราคา" }}{% endblock %}
 {% block content %}
-
-
 
 <div class="container-xxl">
   <div class="d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-file-earmark-plus-fill text-primary fs-4"></i>
-    <h1 class="h5 m-0">สร้างใบเสนอราคา</h1>
+    <h1 class="h5 m-0">{{ form_title or "สร้างใบเสนอราคา" }}</h1>
   </div>
 
   <!-- datalist สำหรับค้นหาอุปกรณ์ (ใช้ร่วมทุกแถว) -->
   <datalist id="equip-options"></datalist>
 
+  <!-- datalist สำหรับยี่ห้อ/รุ่น -->
+  <datalist id="brand-options">
+    {% for b in (brands or []) %}
+      <option value="{{ b }}"></option>
+    {% endfor %}
+  </datalist>
+
   <!-- Header -->
   <div class="card st-softcard border-0 mb-3">
     <div class="card-body row g-3">
+
       <div class="col-md-6 col-lg-3">
         <label class="form-label">ลูกค้า</label>
         <select class="form-select" name="customer_id" form="quForm" required>
           <option value="">— เลือกลูกค้า —</option>
           {% for c in customers %}
-            <option value="{{ c.id }}">{{ c.name }}</option>
+            <option value="{{ c.id }}"
+              {% if doc and doc.customer_id == c.id %}selected{% endif %}
+            >{{ c.name }}</option>
           {% endfor %}
         </select>
       </div>
 
       <div class="col-md-6 col-lg-2">
         <label class="form-label">เครดิต (วัน)</label>
-        <input type="number" class="form-control" name="credit_days" form="quForm" value="0" min="0">
+        <input type="number" class="form-control" name="credit_days" form="quForm"
+               value="{{ (doc.credit_days if doc else 0) or 0 }}" min="0">
       </div>
 
       <div class="col-md-6 col-lg-3">
         <label class="form-label">เลขที่ PO ลูกค้า</label>
-        <input type="text" class="form-control" name="po_customer" form="quForm" placeholder="เช่น RX3030">
+        <input type="text" class="form-control" name="po_customer" form="quForm"
+               value="{{ (doc.po_customer if doc else '') or '' }}"
+               placeholder="เช่น RX3030">
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <label class="form-label">คลัง/สาขา</label>
+        <input type="text" class="form-control" name="warehouse" form="quForm" list="warehouse-options"
+               value="{{ (doc.warehouse if doc else (warehouse_default or 'MAIN')) or 'MAIN' }}"
+               placeholder="เช่น MAIN">
+        <datalist id="warehouse-options">
+          {% for w in (warehouses or []) %}
+            <option value="{{ w }}"></option>
+          {% endfor %}
+        </datalist>
       </div>
 
       <div class="col-md-6 col-lg-3">
         <label class="form-label">รูปแบบการเรียกเก็บเงิน</label>
         <select class="form-select" name="billing_mode" id="billingMode" form="quForm">
-          <option value="ONCE" selected>ปกติ (ออกเอกสารชุดเดียว)</option>
-          <option value="INSTALLMENT">สัญญา/PO ใหญ่ (แบ่งงวดรายเดือน)</option>
+          <option value="ONCE" {% if not doc or (doc.billing_mode or 'ONCE') == 'ONCE' %}selected{% endif %}>
+            ปกติ (ออกเอกสารชุดเดียว)
+          </option>
+          <option value="INSTALLMENT" {% if doc and (doc.billing_mode or '') == 'INSTALLMENT' %}selected{% endif %}>
+            สัญญา/PO ใหญ่ (แบ่งงวดรายเดือน)
+          </option>
         </select>
         <div class="form-text">ถ้าเลือก “แบ่งงวดรายเดือน” ระบบจะสร้างสัญญา (CT) และตารางงวด เมื่อกดอนุมัติ</div>
       </div>
 
       <div class="col-md-6 col-lg-2 js-contract-fields">
         <label class="form-label">จำนวนงวด (เดือน)</label>
-        <input type="number" class="form-control" name="installment_count" form="quForm" value="12" min="1">
+        <input type="number" class="form-control" name="installment_count" form="quForm"
+               value="{{ (doc.installment_count if doc else 12) or 12 }}" min="1">
       </div>
 
       <div class="col-md-6 col-lg-2 js-contract-fields">
         <label class="form-label">เริ่มสัญญา</label>
-        <input type="date" class="form-control" name="contract_start" form="quForm">
+        <input type="date" class="form-control" name="contract_start" form="quForm"
+               value="{{ doc.contract_start if doc and doc.contract_start else '' }}">
       </div>
 
       <div class="col-md-6 col-lg-2 js-contract-fields">
         <label class="form-label">สิ้นสุดสัญญา</label>
-        <input type="date" class="form-control" name="contract_end" form="quForm">
+        <input type="date" class="form-control" name="contract_end" form="quForm"
+               value="{{ doc.contract_end if doc and doc.contract_end else '' }}">
       </div>
 
       <div class="col-md-6 col-lg-2">
         <label class="form-label">ภาษี</label>
         <select class="form-select" name="tax_mode" id="taxMode" form="quForm">
-          <option value="EXC">ค่าของไม่รวมภาษี (+VAT 7%)</option>
-          <option value="INC">รวมภาษีแล้ว (VAT 7% อยู่ในยอด)</option>
-          <option value="NONE">ไม่คิดภาษี</option>
+          <option value="EXC" {% if not doc or (doc.tax_mode or 'EXC') == 'EXC' %}selected{% endif %}>
+            ค่าของไม่รวมภาษี (+VAT 7%)
+          </option>
+          <option value="INC" {% if doc and (doc.tax_mode or '') == 'INC' %}selected{% endif %}>
+            รวมภาษีแล้ว (VAT 7% อยู่ในยอด)
+          </option>
+          <option value="NONE" {% if doc and (doc.tax_mode or '') == 'NONE' %}selected{% endif %}>
+            ไม่คิดภาษี
+          </option>
         </select>
       </div>
 
       <div class="col-md-6 col-lg-2">
         <label class="form-label">หัก ณ ที่จ่าย (%)</label>
         <select class="form-select" name="wht_pct" id="whtPct" form="quForm">
-          <option value="0">0</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
-          <option value="5">5</option>
+          {% set _w = (doc.wht_pct if doc else 3) %}
+          <option value="0" {% if _w == 0 %}selected{% endif %}>0</option>
+          <option value="1" {% if _w == 1 %}selected{% endif %}>1</option>
+          <option value="2" {% if _w == 2 %}selected{% endif %}>2</option>
+          <option value="3" {% if _w == 3 %}selected{% endif %}>3</option>
+          <option value="5" {% if _w == 5 %}selected{% endif %}>5</option>
         </select>
       </div>
 
-      <!-- หัวข้อโครงการ -->
       <div class="col-12">
         <label class="form-label">หัวข้อโครงการ</label>
-        <input type="text"
-               class="form-control"
-               name="project_name"
-               form="quForm"
+        <input type="text" class="form-control" name="project_name" form="quForm"
+               value="{{ (doc.project_name if doc else '') or '' }}"
                placeholder="เช่น งานรีโนเวทสำนักงาน อาคาร A">
       </div>
     </div>
@@ -100,75 +134,174 @@
         รายการอุปกรณ์
       </div>
     </div>
+
     <div class="card-body p-0">
       <div class="table-responsive">
         <table class="table align-middle m-0" id="itemsTable">
           <thead class="table-light">
-          <tr>
-            <th style="width:16%">รหัส</th>
-            <th style="width:24%">ชื่ออุปกรณ์ / หมวดหมู่</th>
-            <th style="width:8%">จำนวน</th>
-            <th style="width:12%">หน่วยเช่า</th>
-            <th style="width:10%">ระยะเวลา</th>
-            <th style="width:16%">ราคา/หน่วย</th>
-            <th style="width:10%">%ลด</th>
-            <th style="width:8%"></th>
-          </tr>
+            <tr>
+              <th style="width:16%">รหัส</th>
+              <th style="width:24%">ชื่ออุปกรณ์ / หมวดหมู่</th>
+              <th style="width:14%">ยี่ห้อ/รุ่น</th>
+              <th style="width:8%">จำนวน</th>
+              <th style="width:12%">หน่วยเช่า</th>
+              <th style="width:10%">ระยะเวลา</th>
+              <th style="width:16%">ราคา/หน่วย</th>
+              <th style="width:10%">%ลด</th>
+              <th style="width:8%"></th>
+            </tr>
           </thead>
           <tbody>
-          <tr>
-            <!-- รหัส (Prefix SKU / ค้นหาได้ทั้งรหัสและชื่อ) -->
-            <td>
-              <input type="text"
-                     class="form-control js-code-input"
-                     placeholder="Prefix SKU หรือชื่อหมวดหมู่"
-                     list="equip-options"
-                     autocomplete="off">
-            </td>
 
-            <!-- ชื่ออุปกรณ์ / หมวดหมู่ + ช่องซ่อนส่งให้ backend -->
-            <td>
-              <input type="text"
-                     class="form-control js-name-display"
-                     placeholder="ชื่อหมวดหมู่ / อุปกรณ์"
-                     readonly>
-              <input type="hidden"
-                     name="name[]"
-                     class="js-name-hidden"
-                     form="quForm">
-            </td>
+          {% if items %}
+            {% for it in items %}
+              {% set _nm = (it.name or "") %}
+              {# ดึง SKU ในวงเล็บได้ทั้งรูปแบบ "[XXX]" หรือ "ชื่อ [XXX]" #}
+              {% set _sku = "" %}
+              {% if _nm and "[" in _nm and "]" in _nm %}
+                {% set _sku = _nm.split("[")[-1].split("]")[0].strip() %}
+              {% endif %}
+              {% set _display_name = _nm %}
+              {% if _nm and _nm.startswith('[') and ']' in _nm %}
+                {% set _display_name = _nm.split(']', 1)[1].strip() %}
+              {% elif _nm and (' [' in _nm) and _nm.endswith(']') %}
+                {% set _display_name = _nm.rsplit(' [', 1)[0].strip() %}
+              {% endif %}
 
-            <td>
-              <input type="number" class="form-control text-end item-qty"
-                     name="qty[]" value="1" min="0" form="quForm">
-            </td>
-            <td>
-              <select class="form-select item-unit" name="unit[]" form="quForm">
-                <option value="HOUR">ชั่วโมง</option>
-                <option value="DAY" selected>วัน</option>
-                <option value="MONTH">เดือน</option>
-                <option value="YEAR">ปี</option>
-              </select>
-            </td>
-            <td>
-              <input type="number" class="form-control text-end item-dur"
-                     name="duration[]" value="1" min="0" form="quForm">
-            </td>
-            <td>
-              <input type="number" class="form-control text-end item-price"
-                     name="price[]" value="0" min="0" step="0.01" form="quForm">
-            </td>
-            <td>
-              <input type="number" class="form-control text-end item-disc"
-                     name="disc[]" value="0" min="0" max="100" step="0.01" form="quForm">
-            </td>
-            <td class="text-center">
-              <button type="button"
-                      class="btn btn-outline-danger btn-sm btn-del-row">
-                <i class="bi bi-x-lg"></i>
-              </button>
-            </td>
-          </tr>
+              <tr>
+                <td>
+                  <input type="text"
+                         class="form-control js-code-input"
+                         placeholder="Prefix SKU หรือชื่อหมวดหมู่"
+                         list="equip-options"
+                         autocomplete="off"
+                         value="{{ _sku }}">
+                </td>
+
+                <td>
+                  <input type="text"
+                         class="form-control js-name-display"
+                         placeholder="ชื่อหมวดหมู่ / อุปกรณ์"
+                         value="{{ _display_name }}"
+                         readonly>
+                  <input type="hidden"
+                         name="name[]"
+                         class="js-name-hidden"
+                         value="{{ _nm }}"
+                         form="quForm">
+                </td>
+
+                <td>
+                  <input type="text" name="brand[]" class="form-control"
+                         placeholder="ยี่ห้อ/รุ่น" list="brand-options"
+                         value="{{ it.brand or '' }}" form="quForm">
+                </td>
+
+                <td>
+                  <input type="number" name="qty[]"
+                         class="form-control text-end item-qty"
+                         min="1" step="1"
+                         value="{{ it.qty or 1 }}" form="quForm">
+                </td>
+
+                <td>
+                  <select name="unit[]" class="form-select item-unit" form="quForm">
+                    <option value="DAY"   {{ "selected" if (it.rent_unit or "DAY")=="DAY" else "" }}>วัน</option>
+                    <option value="MONTH" {{ "selected" if (it.rent_unit or "DAY")=="MONTH" else "" }}>เดือน</option>
+                    <option value="YEAR"  {{ "selected" if (it.rent_unit or "DAY")=="YEAR" else "" }}>ปี</option>
+                  </select>
+                </td>
+
+                <td>
+                  <input type="number" name="duration[]"
+                         class="form-control text-end item-dur"
+                         min="1" step="1"
+                         value="{{ it.rent_duration or 1 }}" form="quForm">
+                </td>
+
+                <td>
+                  <input type="number" name="price[]"
+                         class="form-control text-end item-price"
+                         min="0" step="0.01"
+                         value="{{ '%.2f'|format(it.unit_price or 0) }}" form="quForm">
+                </td>
+
+                <td>
+                  <input type="number" name="disc[]"
+                         class="form-control text-end item-disc"
+                         min="0" max="100" step="0.01"
+                         value="{{ '%.2f'|format(it.discount_pct or 0) }}" form="quForm">
+                </td>
+
+                <td class="text-center">
+                  <button type="button" class="btn btn-outline-danger btn-sm btn-del-row">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td>
+                <input type="text"
+                       class="form-control js-code-input"
+                       placeholder="Prefix SKU หรือชื่อหมวดหมู่"
+                       list="equip-options"
+                       autocomplete="off">
+              </td>
+
+              <td>
+                <input type="text"
+                       class="form-control js-name-display"
+                       placeholder="ชื่อหมวดหมู่ / อุปกรณ์"
+                       readonly>
+                <input type="hidden"
+                       name="name[]"
+                       class="js-name-hidden"
+                       form="quForm">
+              </td>
+
+              <td>
+                <input type="text" name="brand[]" class="form-control"
+                       placeholder="ยี่ห้อ/รุ่น" list="brand-options" form="quForm">
+              </td>
+
+              <td>
+                <input type="number" class="form-control text-end item-qty"
+                       name="qty[]" value="1" min="1" step="1" form="quForm">
+              </td>
+
+              <td>
+                <select class="form-select item-unit" name="unit[]" form="quForm">
+                  <option value="DAY" selected>วัน</option>
+                  <option value="MONTH">เดือน</option>
+                  <option value="YEAR">ปี</option>
+                </select>
+              </td>
+
+              <td>
+                <input type="number" class="form-control text-end item-dur"
+                       name="duration[]" value="1" min="1" step="1" form="quForm">
+              </td>
+
+              <td>
+                <input type="number" class="form-control text-end item-price"
+                       name="price[]" value="0" min="0" step="0.01" form="quForm">
+              </td>
+
+              <td>
+                <input type="number" class="form-control text-end item-disc"
+                       name="disc[]" value="0" min="0" max="100" step="0.01" form="quForm">
+              </td>
+
+              <td class="text-center">
+                <button type="button" class="btn btn-outline-danger btn-sm btn-del-row">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </td>
+            </tr>
+          {% endif %}
+
           </tbody>
         </table>
       </div>
@@ -178,7 +311,6 @@
           <i class="bi bi-plus-circle me-1"></i> เพิ่มแถว
         </button>
 
-        <!-- ปุ่มตรวจสอบโปรโมชั่น -->
         <button type="button" class="btn btn-outline-success" id="btnCheckPromo">
           <i class="bi bi-magic me-1"></i> ตรวจสอบโปรโมชั่น
         </button>
@@ -193,10 +325,11 @@
         <div class="card-body">
           <label class="form-label">หมายเหตุ</label>
           <textarea class="form-control" name="remark" id="remarkBox" form="quForm"
-                    rows="4" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
+                    rows="4" placeholder="รายละเอียดเพิ่มเติม...">{{ (doc.remark if doc else '') or '' }}</textarea>
         </div>
       </div>
     </div>
+
     <div class="col-lg-4">
       <div class="card st-softcard st-softcard--accent border-0 h-100">
         <div class="card-body st-totals">
@@ -218,7 +351,7 @@
   </div>
 
   <!-- ปุ่มบันทึก -->
-  <form id="quForm" action="{{ url_for('qu_new') }}" method="post" class="mt-3">
+  <form id="quForm" action="{{ action_url or url_for('qu_new') }}" method="post" class="mt-3">
     <div class="d-flex gap-2">
       <a href="{{ url_for('qu_list') }}" class="btn btn-outline-secondary">ยกเลิก</a>
       <button type="submit" class="btn btn-primary">
@@ -265,28 +398,45 @@
   );
 
   function calc() {
-    let before=0, discAll=0;
-    document.querySelectorAll('#itemsTable tbody tr').forEach(tr=>{
-      const qty   = parseFloat(tr.querySelector('.item-qty').value||0);
-      const dur   = parseFloat(tr.querySelector('.item-dur').value||0);
-      const price = parseFloat(tr.querySelector('.item-price').value||0);
-      const disc  = parseFloat(tr.querySelector('.item-disc').value||0);
+    let before = 0, discAll = 0;
+
+    document.querySelectorAll('#itemsTable tbody tr').forEach(tr => {
+      const qty   = parseFloat(tr.querySelector('.item-qty')?.value || 0);
+      const dur   = parseFloat(tr.querySelector('.item-dur')?.value || 0);
+      const price = parseFloat(tr.querySelector('.item-price')?.value || 0);
+      const disc  = parseFloat(tr.querySelector('.item-disc')?.value || 0);
+
       const gross = qty * dur * price;
-      const discAmt = gross * (isNaN(disc)?0:disc/100);
+      const discAmt = gross * ((isNaN(disc) ? 0 : disc) / 100);
+
       before += gross;
       discAll += discAmt;
     });
 
-    const taxMode = document.getElementById('taxMode').value;
-    const whtPct  = parseFloat(document.getElementById('whtPct').value||0);
+    const taxModeEl = document.getElementById('taxMode');
+    const whtEl     = document.getElementById('whtPct');
+
+    const taxMode = (taxModeEl?.value || 'EXC').toUpperCase();
+    const whtPct  = parseFloat(whtEl?.value || 0);
 
     const taxBase = Math.max(0, before - discAll);
-    let vat=0, total=0;
-    if (taxMode === 'EXC') { vat = taxBase * 0.07; total = taxBase + vat; }
-    else if (taxMode === 'INC') { vat = taxBase * (7/107); total = taxBase; }
-    else { vat = 0; total = taxBase; }
-    const wht   = total * (whtPct/100);
-    const grand = total - wht;
+
+    const wht = Math.max(0, taxBase * (whtPct / 100));
+    const netBase = Math.max(0, taxBase - wht);
+
+    let vat = 0;
+    let grand = 0;
+
+    if (taxMode === 'EXC') {
+      vat = netBase * 0.07;
+      grand = netBase + vat;
+    } else if (taxMode === 'INC') {
+      vat = netBase * (7/107);
+      grand = netBase;
+    } else {
+      vat = 0;
+      grand = netBase;
+    }
 
     document.getElementById('sum-before').innerText   = fmt(before);
     document.getElementById('sum-discount').innerText = fmt(discAll);
@@ -311,26 +461,30 @@
       el.addEventListener('input', calc);
       el.addEventListener('change', calc);
     });
-    tr.querySelector('.btn-del-row').addEventListener('click', ()=>{
-      const tbody = document.querySelector('#itemsTable tbody');
-      if (tbody.children.length > 1) {
-        tr.remove();
-        calc();
-      } else {
-        tr.querySelectorAll('input').forEach(i=>{
-          if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) {
-            i.value = '1';
-          } else if (i.classList.contains('item-price') || i.classList.contains('item-disc')) {
-            // ปล่อยให้ด้านล่างจัดการ
-          } else {
-            i.value = '';
-          }
-        });
-        tr.querySelector('.item-price').value='0';
-        tr.querySelector('.item-disc').value='0';
-        calc();
-      }
-    });
+
+    const delBtn = tr.querySelector('.btn-del-row');
+    if (delBtn){
+      delBtn.addEventListener('click', ()=>{
+        const tbody = document.querySelector('#itemsTable tbody');
+        if (tbody.children.length > 1) {
+          tr.remove();
+          calc();
+        } else {
+          tr.querySelectorAll('input').forEach(i=>{
+            if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) {
+              i.value = '1';
+            } else {
+              i.value = '';
+            }
+          });
+          const p = tr.querySelector('.item-price'); if (p) p.value = '0';
+          const d = tr.querySelector('.item-disc');  if (d) d.value = '0';
+          const nameDisp = tr.querySelector('.js-name-display'); if (nameDisp) nameDisp.value = '';
+          const nameHid  = tr.querySelector('.js-name-hidden');  if (nameHid)  nameHid.value  = '';
+          calc();
+        }
+      });
+    }
   }
 
   // --------- datalist Autocomplete: Prefix SKU + ชื่อหมวดหมู่ ----------
@@ -338,68 +492,83 @@
     const dl = document.getElementById('equip-options');
     if (!dl) return;
 
-    // cache: prefixSku -> { sku เต็ม, name }
-    const cache = {};
+    const cacheBySku  = {};
+    const cacheByName = {};
     let t = null;
+
+    function clearDL(){ dl.innerHTML = ''; }
 
     function fetchEquip(q){
       if (!q || q.length < 1){
-        dl.innerHTML = '';
+        clearDL();
         return;
       }
-      fetch(`/api/categories/search?q=${encodeURIComponent(q)}`)
+      fetch(`/api/catalog/search?q=${encodeURIComponent(q)}&limit=25`)
         .then(r => r.json())
         .then(list => {
-          dl.innerHTML = '';
-          list.forEach(it => {
-            const sku = it.sku || "";
+          clearDL();
 
-            // Prefix จาก SKU เช่น SP-001 จาก SP-001-041125-001
-            let prefixSku = sku;
-            const parts = sku.split("-");
-            if (parts.length >= 2){
-              prefixSku = parts[0] + "-" + parts[1];
-            }
+          (list || []).forEach(it => {
+            const type = (it.type || "").toUpperCase();  // CATEGORY / EQUIPMENT
+            const skuRaw = (it.sku || "").trim();        // ต้องใช้ "เต็ม" ห้ามตัด "-"
+            const name = (it.name || "").trim();
 
-            // ใช้ชื่อหมวดหมู่ถ้ามี field category_name; ไม่มีก็ใช้ name ปกติ
-            const name = it.category_name || it.name || "";
+            if (!skuRaw && !name) return;
+
+            // ✅ สำคัญ: option.value ต้องเป็น sku เต็ม (เช่น SP-001 หรือ SPTE)
+            // ไม่ทำ split("-")[0] อีกแล้ว
+            const value = skuRaw || name;
+            const label = it.label || (skuRaw ? `[${skuRaw}] ${name}` : name);
 
             const opt = document.createElement('option');
-            opt.value = prefixSku;                 // ช่อง "รหัส" จะเติม prefix
-            opt.label = `[${prefixSku}] ${name}`;  // dropdown แสดง prefix + ชื่อ
+            opt.value = value;
+            opt.label = label;
             dl.appendChild(opt);
 
-            if (!cache[prefixSku]){
-              cache[prefixSku] = { sku, name };
+            const rec = { type, sku: skuRaw, name };
+
+            if (skuRaw){
+              cacheBySku[skuRaw] = rec;
+            }
+            if (name){
+              cacheByName[name] = rec;
             }
           });
         })
-        .catch(() => { dl.innerHTML = ''; });
+        .catch(() => clearDL());
     }
 
     function syncNameAndHidden(input){
       const tr = input.closest('tr');
       if (!tr) return;
 
-      const prefix = (input.value || '').trim();
-      const info = cache[prefix];
+      const v = (input.value || '').trim();
+      if (!v) return;
+
+      // หาได้จาก sku ก่อน แล้วค่อย name
+      const info = cacheBySku[v] || cacheByName[v];
       if (!info) return;
 
       const nameInput   = tr.querySelector('.js-name-display');
       const hiddenInput = tr.querySelector('.js-name-hidden');
 
+      // ✅ บังคับให้ช่องรหัสเป็น "sku เต็ม" เสมอ
+      if (info.sku) input.value = info.sku;
+
       if (nameInput){
-        nameInput.value = info.name;
+        nameInput.value = info.name || '';
       }
       if (hiddenInput){
-        hiddenInput.value = `[${info.sku}] ${info.name}`; // format เดิมสำหรับ backend/promo
+        // ✅ รูปแบบที่ BK parse ง่าย: "[PREFIX] ชื่อหมวด"
+        // และไม่เอาไป split "-" ใน JS อีก
+        hiddenInput.value = info.sku ? `[${info.sku}] ${info.name}` : (info.name || '');
       }
     }
 
     function onType(ev){
       const q = ev.target.value.trim();
       clearTimeout(t);
-      t = setTimeout(() => fetchEquip(q), 200);
+      t = setTimeout(() => fetchEquip(q), 180);
     }
 
     function wire(input){
@@ -410,10 +579,8 @@
       input.dataset._wired = '1';
     }
 
-    // แถวแรก
     document.querySelectorAll('.js-code-input').forEach(wire);
 
-    // เวลาเพิ่มแถว
     document.addEventListener('click', (e) => {
       if (!e.target.closest('[data-add-row]')) return;
       setTimeout(() => {
@@ -422,20 +589,22 @@
     });
   })();
 
-  // --------- เพิ่มแถว ----------
-    // --------- เพิ่มแถว ----------
-  bindRow(document.querySelector('#itemsTable tbody tr'));
-  // โหมดสัญญา/รายงวด: ซ่อน/โชว์ฟิลด์ที่เกี่ยวข้อง
+  // --------- init / events ----------
+  document.querySelectorAll('#itemsTable tbody tr').forEach(tr => bindRow(tr));
+
+  document.getElementById('taxMode')?.addEventListener('change', calc);
+  document.getElementById('whtPct')?.addEventListener('change', calc);
+
   const bm = document.getElementById('billingMode');
   if (bm){
     bm.addEventListener('change', updateBillingModeUI);
   }
   updateBillingModeUI();
-  document.getElementById('btnAddRow').addEventListener('click', ()=>{
+
+  document.getElementById('btnAddRow')?.addEventListener('click', ()=>{
     const tr0 = document.querySelector('#itemsTable tbody tr');
     const tr  = tr0.cloneNode(true);
 
-    // reset ค่าในแถวใหม่
     tr.querySelectorAll('input').forEach(i=>{
       if (i.classList.contains('item-qty') || i.classList.contains('item-dur')) {
         i.value = '1';
@@ -448,7 +617,9 @@
       }
     });
 
-    // 🟢 สำคัญ: เคลียร์ flag _wired ออกจากช่องค้นหารหัสในแถวใหม่
+    const nameDisp = tr.querySelector('.js-name-display'); if (nameDisp) nameDisp.value = '';
+    const nameHid  = tr.querySelector('.js-name-hidden');  if (nameHid)  nameHid.value  = '';
+
     tr.querySelectorAll('.js-code-input').forEach(inp=>{
       delete inp.dataset._wired;
       inp.removeAttribute('data-_wired');
@@ -459,27 +630,21 @@
     calc();
   });
 
-  // ===================== Promotion (เหมือนเดิม) =====================
-  const unitToDays = (unit,n)=>{
-    unit = (unit||'DAY').toUpperCase();
-    n = Math.max(0, parseInt(n||0,10));
-    if (unit==='MONTH') return n*30;
-    if (unit==='YEAR')  return n*365;
-    return n;
-  };
+  calc();
 
+  // ===================== Promotion (เหมือนเดิม) =====================
   function collectItems(){
     const rows = [];
     document.querySelectorAll('#itemsTable tbody tr').forEach((tr,idx)=>{
       rows.push({
         index: idx,
         el: tr,
-        name: tr.querySelector('input[name="name[]"]').value.trim(),
-        qty: parseFloat(tr.querySelector('.item-qty').value||0),
-        rent_unit: (tr.querySelector('.item-unit').value||'DAY').toUpperCase(),
-        rent_duration: parseFloat(tr.querySelector('.item-dur').value||0),
-        unit_price: parseFloat(tr.querySelector('.item-price').value||0),
-        discPct: parseFloat(tr.querySelector('.item-disc').value||0)
+        name: tr.querySelector('input[name="name[]"]')?.value?.trim() || "",
+        qty: parseFloat(tr.querySelector('.item-qty')?.value||0),
+        rent_unit: (tr.querySelector('.item-unit')?.value||'DAY').toUpperCase(),
+        rent_duration: parseFloat(tr.querySelector('.item-dur')?.value||0),
+        unit_price: parseFloat(tr.querySelector('.item-price')?.value||0),
+        discPct: parseFloat(tr.querySelector('.item-disc')?.value||0)
       });
     });
     return rows;
@@ -500,10 +665,11 @@
     const qtyEl = rowEl.querySelector('.item-qty');
     let qty = parseInt(qtyEl.value||0,10);
     if (qty <= needUnits) return rowEl;
-    const tbody = document.querySelector('#itemsTable tbody');
+
     const clone = rowEl.cloneNode(true);
     clone.querySelector('.item-qty').value = String(needUnits);
     qtyEl.value = String(qty - needUnits);
+
     rowEl.after(clone);
     bindRow(clone);
     return clone;
@@ -517,6 +683,7 @@
       const key = u.row.el;
       byRow.set(key, (byRow.get(key)||0) + 1);
     });
+
     byRow.forEach((needUnits, row)=>{
       const targetRow = splitRowIfNeeded(row, needUnits);
       const discEl = targetRow.querySelector('.item-disc');
@@ -540,7 +707,7 @@
 
   let promoToApply = null;
   const promoModal = new bootstrap.Modal(document.getElementById('promoModal'));
-  document.getElementById('btnApplyPromo').addEventListener('click', ()=>{
+  document.getElementById('btnApplyPromo')?.addEventListener('click', ()=>{
     if (promoToApply){
       applyPromoToForm(promoToApply.promo, promoToApply.rows);
       promoModal.hide();
@@ -558,9 +725,7 @@
 
   async function checkPromoNow(){
     try{
-      const rows = collectItems().filter(r=>
-        r.name && r.qty>0 && r.rent_duration>0 && r.unit_price>0
-      );
+      const rows = collectItems().filter(r=> r.name && r.qty>0 && r.rent_duration>0 && r.unit_price>0);
       if (!rows.length){
         alert('กรุณากรอกรายการอย่างน้อย 1 รายการก่อนตรวจสอบโปรโมชัน');
         return;
@@ -584,9 +749,7 @@
       }
 
       const promos = await getActivePromos();
-      const promoDetail = (promos || []).find(
-        p => String(p.id) === String(data.promo.id)
-      );
+      const promoDetail = (promos || []).find(p => String(p.id) === String(data.promo.id));
       if (!promoDetail){
         alert('ไม่พบรายละเอียดโปรโมชันที่เลือก');
         return;
@@ -595,14 +758,17 @@
       const durText =
         (promoDetail.rental_unit==='MONTH'?'เดือน':
          promoDetail.rental_unit==='YEAR'?'ปี':'วัน');
+
       const cond =
         `เงื่อนไข: อย่างน้อย ${promoDetail.min_items||0} ชิ้น, ` +
         `ระยะเช่า ≥ ${promoDetail.min_duration||0} ${durText}`;
+
       const how =
         `ลดชิ้นราคาถูกสุด ${promoDetail.cheapest_units_to_discount||1} ชิ้น — ` +
         (promoDetail.discount_type==='PCT'
           ? `${promoDetail.discount_value||0}%`
           : `${promoDetail.discount_value||0} บาท/ชิ้น`);
+
       const approx = Number(data.discount||0).toLocaleString();
 
       document.getElementById('promoDesc').innerHTML =
@@ -615,8 +781,7 @@
       promoModal.show();
 
       const box = document.getElementById('remarkBox');
-      const note =
-        `[AUTO PROMO] ใช้โปร '${data.promo.name}' ส่วนลดโดยประมาณ ${approx} บาท`;
+      const note = `[AUTO PROMO] ใช้โปร '${data.promo.name}' ส่วนลดโดยประมาณ ${approx} บาท`;
       if (!box.value.includes(note)){
         box.value = (box.value.trim()? box.value.trim()+'\n' : '') + note;
       }
@@ -626,7 +791,6 @@
     }
   }
 
-  document.getElementById('btnCheckPromo')
-    ?.addEventListener('click', checkPromoNow);
+  document.getElementById('btnCheckPromo')?.addEventListener('click', checkPromoNow);
 </script>
 {% endblock %}

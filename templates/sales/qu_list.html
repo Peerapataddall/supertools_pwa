@@ -103,11 +103,10 @@
     border:1px solid #bbf7d0;
   }
 
-  .st-field{ min-width: 140px; }
+  .st-field{ min-width: показать 140px; }
   .st-search{ min-width: 240px; max-width: 340px; }
   .st-search-input{ padding-left:2.2rem; }
   .st-search-ic{ position:absolute; left:.75rem; top:50%; transform:translateY(-50%); opacity:.6; }
-
 </style>
 {% endblock %}
 
@@ -186,14 +185,14 @@
       </div>
     </form>
 
-    {# ===== ปุ่มสร้างใบเสนอราคา (คงเดิม) ===== #}
+    {# ===== ปุ่มสร้างใบเสนอราคา ===== #}
     {% if can('sales.manage') and (show_new is not defined or show_new) %}
       <a class="btn btn-primary btn-sm st-btn" href="{{ url_for('qu_new') }}">
         <i class="bi bi-plus-lg"></i> สร้างใบเสนอราคา
       </a>
     {% endif %}
 
-    {# ===== ปุ่ม Export Excel (แยกออกมา เพื่อให้ BL/IV/RC เห็นด้วย) ===== #}
+    {# ===== ปุ่ม Export Excel ===== #}
     {% if (can('sales.view') or can('sales.manage')) %}
       <a class="btn btn-outline-dark btn-sm st-btn"
          href="{{ url_for('export_sales_docs_report_excel',
@@ -226,6 +225,7 @@
         {# ใช้ deliveries_map จาก view เพื่อเช็คว่ามีใบส่งสินค้าหรือยัง #}
         {% set dl = deliveries_map.get(d.id) if deliveries_map is defined else None %}
         {% set delivered = dl is not none %}
+        {% set st = (d.status or '')|upper %}
 
         <tr>
           <td class="fw-semibold text-primary">
@@ -239,6 +239,7 @@
           <td class="text-end">
             {{ '{:,.2f}'.format(d.amount_grand or 0) }}
           </td>
+
           <td class="text-end">
             <div class="st-delivery-cell">
 
@@ -249,6 +250,31 @@
                   <i class="bi bi-eye"></i>
                   <span class="d-none d-md-inline">เปิด</span>
                 </a>
+
+                {% if can('sales.manage') %}
+                  <a class="btn btn-sm btn-outline-secondary btn-icon"
+                     href="{{ url_for('qu_edit', qid=d.id) }}">
+                    <i class="bi bi-pencil"></i>
+                    <span class="d-none d-md-inline">แก้ไข</span>
+                  </a>
+
+                  {# ✅ เปลี่ยนจาก qu_delete -> qu_cancel #}
+                  {% if st != 'APPROVED' and st != 'CANCELLED' %}
+                    <form method="post"
+                          action="{{ url_for('qu_cancel', qid=d.id) }}"
+                          style="display:inline"
+                          onsubmit="return confirm('ยืนยันยกเลิกใบเสนอราคา {{ d.number }} ?\\n(ระบบจะคืนสต็อกที่จองไว้)');">
+                      <button class="btn btn-sm btn-outline-danger btn-icon" type="submit">
+                        <i class="bi bi-x-circle"></i>
+                        <span class="d-none d-md-inline">ยกเลิก</span>
+                      </button>
+                    </form>
+                  {% elif st == 'CANCELLED' %}
+                    <span class="badge text-bg-light border">ยกเลิกแล้ว</span>
+                  {% else %}
+                    <span class="badge text-bg-light border">อนุมัติแล้ว</span>
+                  {% endif %}
+                {% endif %}
 
                 {% if can('transport.manage') %}
                   {% if not delivered %}
@@ -299,6 +325,7 @@
           </td>
         </tr>
       {% endfor %}
+
     </tbody>
   </table>
 </div>

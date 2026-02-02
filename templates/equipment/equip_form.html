@@ -146,6 +146,12 @@
              value="{{ (e.brand if is_edit else (preset.get('brand') if preset is defined else '')) or '' }}">
     </div>
     <div class="col-md-3">
+      <label class="form-label">คลัง/สาขา</label>
+      <input name="warehouse" class="form-control" placeholder="เช่น MAIN, กรุงเทพ, สาขา-1"
+             value="{{ (e.warehouse if is_edit else (preset.get('warehouse') if preset is defined else 'MAIN')) or 'MAIN' }}">
+    </div>
+
+    <div class="col-md-3">
       <label class="form-label">หมวดหมู่</label>
       <select name="category_id" id="category_id" class="form-select" required>
         <option value="">— เลือก —</option>

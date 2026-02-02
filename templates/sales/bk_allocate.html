@@ -3,100 +3,364 @@
 {% block title %}เลือกอุปกรณ์ (ใบจอง {{ d.number }}){% endblock %}
 
 {% block content %}
-<div class="container py-3" style="max-width:1200px;">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <div>
-      <h3 class="mb-0" style="font-weight:900;">
-        <i class="bi bi-box-seam me-2"></i>เลือกอุปกรณ์จริง (Allocate)
-      </h3>
-      <div class="text-muted" style="font-weight:700;">
-        ใบจอง: <span class="text-dark">{{ d.number }}</span>
-        · ลูกค้า: <span class="text-dark">{{ d.customer.name if d.customer else "-" }}</span>
-      </div>
-      <div class="small text-muted mt-1">
-        แนวคิด: QU เลือก “หมวดหมู่” → BK ค่อยเลือก “ตัวอุปกรณ์จริง” เพื่อกันของซ้ำ และเปลี่ยนสถานะเป็น RENTED
-      </div>
-    </div>
+{% set st = (d.status or 'DRAFT')|upper %}
+{% set is_cancelled = (st == 'CANCELLED') %}
+{% set is_closed = (st == 'CLOSED') %}
+{% set is_locked = is_cancelled or is_closed %}
 
-    <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary" href="{{ url_for('bk_view', doc_id=d.id) }}">
-        <i class="bi bi-arrow-left me-1"></i> กลับใบจอง
-      </a>
+<style>
+  .st-hero{
+    background:
+      radial-gradient(1200px 220px at 10% -60%, rgba(99,102,241,.14), transparent),
+      radial-gradient(900px 260px at 90% -70%, rgba(16,185,129,.12), transparent),
+      linear-gradient(180deg,#f7fbff,#ffffff 60%);
+    border:1px solid rgba(0,0,0,.05);
+    box-shadow:0 10px 30px rgba(24,39,75,.06);
+    border-radius:1.25rem;
+    padding:1rem 1.25rem;
+    margin-bottom:1rem;
+  }
+  .st-card{
+    border:0; border-radius:1rem;
+    background: radial-gradient(circle at 0% 0%, rgba(255,255,255,1) 0%, rgba(240,248,255,.7) 60%, rgba(235,244,255,.4) 100%);
+    box-shadow: 0 20px 40px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
+    border:1px solid rgba(0,0,0,.03);
+  }
+  .st-card-hd{
+    background:transparent;
+    border-bottom:1px solid rgba(0,0,0,.05);
+    border-radius:1rem 1rem 0 0;
+    font-weight:800;
+    padding:.85rem 1rem;
+    display:flex;
+    align-items:center;
+    gap:.55rem;
+  }
+
+  .st-chip{
+    display:inline-flex; align-items:center; gap:.45rem;
+    border-radius:999px; padding:.35rem .65rem;
+    font-weight:900; font-size:.8rem;
+    border:1px solid rgba(0,0,0,.08);
+    background:#f8fafc; color:#334155;
+  }
+  .chip-warn{ background:#fff7ed; color:#92400e; border-color:#fed7aa; }
+  .chip-ok{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+  .chip-bad{ background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+  .chip-dark{ background:#111827; color:#fff; border-color:#111827; }
+
+  .st-meta{ font-size:.85rem; color:#64748b; }
+  .st-value{ font-weight:900; color:#0f172a; }
+
+  .st-item{
+    border:1px solid rgba(0,0,0,.06);
+    border-radius:1rem;
+    padding:1rem;
+    background: rgba(255,255,255,.78);
+  }
+  .st-item-title{ font-weight:950; color:#0f172a; }
+  .st-kpi{
+    display:flex; flex-wrap:wrap; gap:.5rem;
+    margin-top:.35rem;
+  }
+  .st-kpi .k{
+    display:inline-flex; align-items:center; gap:.35rem;
+    padding:.25rem .55rem;
+    border-radius:999px;
+    border:1px solid rgba(0,0,0,.08);
+    background:#fff;
+    font-size:.78rem;
+    font-weight:900;
+    color:#334155;
+  }
+  .k b{ color:#0f172a; }
+
+  .tile{
+    border:1px solid rgba(0,0,0,.08);
+    border-radius:1rem;
+    padding:.75rem .85rem;
+    background:#fff;
+    display:flex;
+    align-items:flex-start;
+    gap:.65rem;
+    transition: all .12s ease;
+    cursor:pointer;
+    height:100%;
+  }
+  .tile:hover{
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(2, 18, 46, .08);
+  }
+  .tile .sku{ font-weight:950; color:#0f172a; line-height:1.1; }
+  .tile .nm{ font-size:.85rem; color:#64748b; }
+  .tile .right{
+    margin-left:auto;
+    display:flex;
+    align-items:center;
+    gap:.45rem;
+  }
+  .badge-soft{
+    display:inline-flex; align-items:center; gap:.35rem;
+    padding:.2rem .55rem;
+    border-radius:999px;
+    border:1px solid rgba(0,0,0,.08);
+    background:#f8fafc;
+    color:#334155;
+    font-size:.75rem;
+    font-weight:900;
+    white-space:nowrap;
+  }
+  .soft-ready{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+  .soft-other{ background:#fff7ed; color:#92400e; border-color:#fed7aa; }
+
+  .hint{
+    font-size:.85rem;
+    color:#64748b;
+  }
+
+  .st-footer{
+    position: sticky;
+    bottom: 10px;
+    z-index: 20;
+    border-radius:1.15rem;
+    border:1px solid rgba(0,0,0,.06);
+    background: rgba(255,255,255,.82);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 16px 34px rgba(2, 18, 46, .10);
+    padding: .9rem 1rem;
+  }
+  .st-footer .btn{ border-radius:.85rem; font-weight:900; }
+  .st-footer .btn-sm{ border-radius:.75rem; }
+
+  .muted-note{
+    font-size:.82rem;
+    color:#64748b;
+  }
+
+  .dim{
+    opacity:.65;
+    pointer-events:none;
+    filter: grayscale(.15);
+  }
+</style>
+
+<div class="container-xxl py-3" style="max-width:1200px;">
+
+  {# ===== HERO ===== #}
+  <div class="st-hero">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start align-items-stretch gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <h1 class="h5 m-0 d-flex align-items-center gap-2" style="font-weight:950;">
+            <i class="bi bi-box-seam text-primary"></i>
+            <span>เลือกอุปกรณ์จริง (Allocate)</span>
+          </h1>
+
+          {% if is_cancelled %}
+            <span class="st-chip chip-bad"><i class="bi bi-x-circle"></i> ใบจองถูกยกเลิก</span>
+          {% elif is_closed %}
+            <span class="st-chip chip-dark"><i class="bi bi-lock-fill"></i> ปิดงานแล้ว</span>
+          {% else %}
+            <span class="st-chip chip-ok"><i class="bi bi-check2-circle"></i> เลือกได้เฉพาะ READY</span>
+          {% endif %}
+        </div>
+
+        <div class="st-meta mt-1">
+          ใบจอง: <span class="st-value">{{ d.number }}</span>
+          · ลูกค้า: <span class="st-value">{{ d.customer.name if d.customer else "-" }}</span>
+        </div>
+
+        <div class="mt-2 hint">
+          แนวคิด: QU เลือก “หมวดหมู่” → BK เลือก “ตัวอุปกรณ์จริง” เพื่อกันของซ้ำ และเปลี่ยนสถานะเป็น RENTED
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 align-items-center ms-lg-auto">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('bk_view', doc_id=d.id) }}">
+          <i class="bi bi-arrow-left me-1"></i> กลับใบจอง
+        </a>
+      </div>
     </div>
   </div>
 
-  <form method="post" class="card shadow-sm border-0">
-    <div class="card-body">
-      {% for row in items_vm %}
-        {% set it = row.item %}
-        <div class="border rounded-4 p-3 mb-3">
-          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <div>
-              <div style="font-weight:900;">
-                {{ loop.index }}. {{ it.name }}
-              </div>
-              <div class="text-muted small">
-                หมวด (prefix): <b class="text-dark">{{ row.prefix or "-" }}</b>
-                · ต้องเลือกอย่างน้อย: <b class="text-dark">{{ row.qty_need }}</b> ตัว
-              </div>
-              {% if it.allocated_skus %}
-                <div class="small mt-1">
-                  เลือกไว้แล้ว: <span class="badge text-bg-success">{{ it.allocated_skus }}</span>
+  {% if is_locked %}
+    <div class="alert alert-warning rounded-4">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div class="fw-semibold">เอกสารถูกล็อคแล้ว</div>
+      </div>
+      <div class="small mt-1">
+        {% if is_cancelled %}ใบจองนี้ถูกยกเลิก จึงไม่สามารถ Allocate ได้{% else %}ใบจองนี้ปิดงานแล้ว จึงไม่สามารถ Allocate ได้{% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post" class="st-card {% if is_locked %}dim{% endif %}" id="allocForm">
+    <div class="st-card-hd">
+      <i class="bi bi-ui-checks-grid text-primary"></i>
+      <span>เลือกอุปกรณ์ตามรายการ</span>
+    </div>
+
+    <div class="card-body p-3 p-md-4">
+
+      {% if items_vm and items_vm|length > 0 %}
+        {% for row in items_vm %}
+          {% set it = row.item %}
+          {% set need = row.qty_need or 0 %}
+          {% set already_count = (row.already|length if row.already is defined and row.already else 0) %}
+
+          <div class="st-item mb-3" data-item-id="{{ it.id }}" data-need="{{ need }}">
+            <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+              <div>
+                <div class="st-item-title">
+                  {{ loop.index }}. {{ it.name }}
                 </div>
-              {% endif %}
+
+                <div class="st-kpi">
+                  <div class="k"><i class="bi bi-tag"></i> หมวด(prefix): <b>{{ row.prefix or "-" }}</b></div>
+                  <div class="k"><i class="bi bi-bullseye"></i> ต้องเลือกอย่างน้อย: <b>{{ need }}</b> ตัว</div>
+                  <div class="k">
+                    <i class="bi bi-check2-square"></i>
+                    เลือกแล้ว: <b class="js-count">{{ already_count }}</b> ตัว
+                  </div>
+                </div>
+
+                {% if it.allocated_skus %}
+                  <div class="muted-note mt-2">
+                    เลือกไว้แล้ว: <span class="st-chip chip-ok"><i class="bi bi-check2-circle"></i> {{ it.allocated_skus }}</span>
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="text-end">
+                <div class="st-meta">สถานะอุปกรณ์ที่แสดง</div>
+                <div class="st-chip chip-ok mt-1"><i class="bi bi-circle-fill"></i> READY</div>
+                <div class="muted-note mt-1">
+                  * เลือกเกินขั้นต่ำได้ (เผื่อสำรอง)
+                </div>
+              </div>
             </div>
 
-            <div class="text-muted small">
-              สถานะอุปกรณ์ที่แสดง: <b class="text-dark">READY</b>
-            </div>
+            <hr class="my-3"/>
+
+            {% if row.equipments and row.equipments|length > 0 %}
+              <div class="row g-2">
+                {% for e in row.equipments %}
+                  {% set checked = (e.sku in row.already) %}
+                  <div class="col-12 col-md-6 col-lg-4">
+                    <label class="tile w-100" for="cb_{{ it.id }}_{{ loop.index }}">
+                      <input
+                        id="cb_{{ it.id }}_{{ loop.index }}"
+                        class="form-check-input mt-1 js-cb"
+                        type="checkbox"
+                        name="alloc_{{ it.id }}"
+                        value="{{ e.sku }}"
+                        {% if checked %}checked{% endif %}
+                      >
+                      <div>
+                        <div class="sku">{{ e.sku }}</div>
+                        <div class="nm">{{ e.name or "-" }}</div>
+                      </div>
+                      <div class="right">
+                        {% set est = (e.status or '')|upper %}
+                        {% if est == 'READY' %}
+                          <span class="badge-soft soft-ready">READY</span>
+                        {% else %}
+                          <span class="badge-soft soft-other">{{ e.status }}</span>
+                        {% endif %}
+                      </div>
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+
+              <div class="hint mt-2">
+                เคล็ดลับ: เลือก “พอดีกับขั้นต่ำ” เพื่อกันสต็อกค้างโดยไม่จำเป็น
+              </div>
+
+              <div class="mt-2">
+                <span class="st-chip chip-warn js-needwarn" style="display:none;">
+                  <i class="bi bi-exclamation-triangle"></i> ยังเลือกไม่ครบขั้นต่ำ
+                </span>
+                <span class="st-chip chip-ok js-needok" style="display:none;">
+                  <i class="bi bi-check2-circle"></i> ครบขั้นต่ำแล้ว
+                </span>
+              </div>
+
+            {% else %}
+              <div class="alert alert-warning rounded-4 mb-0">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-exclamation-triangle-fill"></i>
+                  <div class="fw-semibold">ไม่พบอุปกรณ์ READY ในหมวดนี้</div>
+                </div>
+                <div class="small mt-1">prefix={{ row.prefix or "-" }}</div>
+              </div>
+            {% endif %}
           </div>
-
-          <hr class="my-3"/>
-
-          {% if row.equipments and row.equipments|length > 0 %}
-            <div class="row g-2">
-              {% for e in row.equipments %}
-                <div class="col-12 col-md-6 col-lg-4">
-                  <label class="d-flex align-items-center gap-2 border rounded-3 p-2">
-                    <input
-                      class="form-check-input m-0"
-                      type="checkbox"
-                      name="alloc_{{ it.id }}"
-                      value="{{ e.sku }}"
-                      {% if e.sku in row.already %}checked{% endif %}
-                    >
-                    <div class="flex-grow-1">
-                      <div style="font-weight:800;">{{ e.sku }}</div>
-                      <div class="small text-muted">{{ e.name or "-" }}</div>
-                    </div>
-                    <span class="badge text-bg-light">{{ e.status }}</span>
-                  </label>
-                </div>
-              {% endfor %}
-            </div>
-            <div class="form-text mt-2">
-              หมายเหตุ: ถ้าเลือกมากกว่า “จำนวนที่ต้องเลือก” ระบบจะบันทึกทั้งหมด (เผื่อจองสำรองได้) แต่แนะนำให้เลือกพอดี
-            </div>
-          {% else %}
-            <div class="alert alert-warning mb-0">
-              ไม่พบอุปกรณ์ READY ในหมวดนี้ (prefix={{ row.prefix or "-" }})
-            </div>
-          {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="text-center text-muted py-5">
+          ไม่มีรายการให้ Allocate
         </div>
-      {% endfor %}
+      {% endif %}
+
     </div>
 
-    <div class="card-footer bg-white d-flex flex-wrap gap-2 justify-content-between">
-      <div class="text-muted small">
-        หลังบันทึก: อุปกรณ์ที่เลือกจะถูกเปลี่ยนสถานะเป็น <b>RENTED</b> และบันทึก Log อัตโนมัติ
-      </div>
-      <div class="d-flex gap-2">
-        <button class="btn btn-primary" type="submit">
-          <i class="bi bi-check2-circle me-1"></i> บันทึกการเลือกอุปกรณ์
-        </button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('bk_view', doc_id=d.id) }}">ยกเลิก</a>
+    {# ===== Sticky Footer ===== #}
+    <div class="st-footer mt-3">
+      <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+        <div class="muted-note">
+          หลังบันทึก: อุปกรณ์ที่เลือกจะถูกเปลี่ยนสถานะเป็น <b>RENTED</b> และบันทึก Log อัตโนมัติ
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" type="submit" {% if is_locked %}disabled{% endif %}>
+            <i class="bi bi-check2-circle me-1"></i> บันทึกการเลือกอุปกรณ์
+          </button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('bk_view', doc_id=d.id) }}">
+            ยกเลิก
+          </a>
+        </div>
       </div>
     </div>
+
   </form>
 </div>
+
+<script>
+(function(){
+  // อัปเดตตัวเลข "เลือกแล้ว" + เตือนขั้นต่ำ (ต่อ item)
+  function updateItemBox(box){
+    const need = parseInt(box.getAttribute("data-need") || "0", 10);
+    const cbs = box.querySelectorAll("input.js-cb");
+    let checked = 0;
+    cbs.forEach(cb => { if(cb.checked) checked++; });
+
+    const countEl = box.querySelector(".js-count");
+    if(countEl) countEl.textContent = String(checked);
+
+    const warn = box.querySelector(".js-needwarn");
+    const ok = box.querySelector(".js-needok");
+
+    if(need > 0){
+      if(checked >= need){
+        if(ok) ok.style.display = "";
+        if(warn) warn.style.display = "none";
+      }else{
+        if(warn) warn.style.display = "";
+        if(ok) ok.style.display = "none";
+      }
+    }else{
+      if(warn) warn.style.display = "none";
+      if(ok) ok.style.display = "none";
+    }
+  }
+
+  document.querySelectorAll("[data-item-id]").forEach(box => {
+    updateItemBox(box);
+    box.querySelectorAll("input.js-cb").forEach(cb => {
+      cb.addEventListener("change", () => updateItemBox(box));
+    });
+  });
+})();
+</script>
 {% endblock %}

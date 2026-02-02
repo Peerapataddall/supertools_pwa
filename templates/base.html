@@ -249,6 +249,16 @@
       opacity:0;
     }
 
+    /* ✅ Disabled menu item (no route yet) */
+    .st-side-link.is-disabled{
+      opacity:.55;
+      cursor:not-allowed;
+      pointer-events:none;
+      transform:none !important;
+      background:transparent !important;
+    }
+    .st-side-link.is-disabled::before{ opacity:0 !important; }
+
     /* small pill for active section label */
     .st-side-nav-label::after{
       content:"";
@@ -343,7 +353,7 @@
       <nav class="st-side-nav flex-grow-1">
         <ul class="list-unstyled mb-0">
 
-          {# 1) Dashboard #}
+          {# 0) Dashboard #}
           {% if can('dashboard.view') or is_admin %}
           <li>
             <a href="{{ url_for('dashboard') }}" class="st-side-link {% if ep=='dashboard' %}is-active{% endif %}">
@@ -353,13 +363,73 @@
           </li>
           {% endif %}
 
-          {# 2) อุปกรณ์ #}
+          {# 6.1.1 ระบบลูกค้า #}
+          {% if can('customers.view') or is_admin %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">6.1.1 ระบบลูกค้า</div>
+            <ul class="list-unstyled mb-0">
+              <li>
+                <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit','customers_aging'] %}is-active{% endif %}">
+                  <i class="bi bi-people"></i>
+                  <span>เพิ่ม/แก้ไข/ลบ ข้อมูลลูกค้า</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link" href="{{ url_for('rent_history_list') }}">
+                  <i class="bi bi-clock-history"></i>
+                  <span>ดูประวัติการเช่า</span>
+                </a>
+              </li>
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 6.1.2 ระบบงานเช่า #}
+          {% if can('sales.view') or is_admin %}
+          {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
+          {% set is_bk = ep in ['bk_list','bk_view'] %}
+          {% set is_bl = ep in ['bl_list','bl_view'] %}
+          {% set is_iv = ep in ['iv_list','iv_view'] %}
+          {% set is_rc = ep in ['rc_list','rc_view'] %}
+          {% set is_ct = ep in ['contract_list','contract_view'] %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">6.1.2 ระบบงานเช่า</div>
+            <ul class="list-unstyled mb-0">
+              <li>
+                <a href="{{ url_for('qu_list') }}" class="st-side-link {% if is_qu %}is-active{% endif %}">
+                  <i class="bi bi-file-earmark-text"></i>
+                  <span>ใบเสนอราคา</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
+                  <i class="bi bi-calendar-check"></i>
+                  <span>ใบจอง</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-cash-coin"></i>
+                  <span>ใบบันทึกเงินมัดจำ (เพิ่มเติม)</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
+                  <i class="bi bi-journal-bookmark"></i>
+                  <span>สัญญา/POใหญ่ (รายงวด)</span>
+                </a>
+              </li>
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 6.1.3 ระบบคลังสินค้า #}
           {% if can('equipment.view') or is_admin %}
           {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
           {% set is_eq_new  = ep in ['equip_new'] %}
           {% set is_cat     = ep in ['cat_list','cat_new'] %}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">อุปกรณ์</div>
+            <div class="st-side-nav-label">6.1.3 ระบบคลังสินค้า</div>
             <ul class="list-unstyled mb-0">
               <li>
                 <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
@@ -377,35 +447,38 @@
               <li>
                 <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
                   <i class="bi bi-tags"></i>
-                  <span>หมวดหมู่ / Prefix SKU</span>
+                  <span>หมวดหมู่</span>
                 </a>
               </li>
               {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# 3) ลูกค้า #}
-          {% if can('customers.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">ลูกค้า</div>
-            <ul class="list-unstyled mb-0">
               <li>
-                <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
-                  <i class="bi bi-people"></i>
-                  <span>ลูกค้า</span>
+                <a href="{{ url_for('warehouse_stock') }}" class="st-side-link {% if ep=='warehouse_stock' %}is-active{% endif %}">
+                  <i class="bi bi-boxes"></i>
+                  <span>คลังสินค้า (Stock)</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-truck"></i>
+                  <span>บันทึกการส่งมอบอุปกรณ์ (เพิ่มเติม)</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-bell"></i>
+                  <span>แจ้งเตือนอุปกรณ์ใกล้ครบกำหนดคืน (เพิ่มเติม)</span>
                 </a>
               </li>
             </ul>
           </li>
           {% endif %}
 
-          {# 4) เอกสารซื้อ #}
+          {# 6.1.4 ระบบจัดซื้อ #}
           {% if can('purchases.view') or is_admin %}
           {% set is_po  = ep in ['po_list','po_new','po_view'] %}
           {% set is_grn = ep in ['grn_list','grn_view'] %}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">เอกสารซื้อ</div>
+            <div class="st-side-nav-label">6.1.4 ระบบจัดซื้อ</div>
             <ul class="list-unstyled mb-0">
               <li>
                 <a href="{{ url_for('po_list') }}" class="st-side-link {% if is_po %}is-active{% endif %}">
@@ -417,7 +490,7 @@
               <li>
                 <a href="{{ url_for('grn_list') }}" class="st-side-link {% if is_grn %}is-active{% endif %}">
                   <i class="bi bi-truck"></i>
-                  <span>ใบรับสินค้า (GRN)</span>
+                  <span>ใบรับสินค้า (RC/GRN)</span>
                 </a>
               </li>
               {% endif %}
@@ -425,39 +498,92 @@
           </li>
           {% endif %}
 
-          {# 5) เอกสารขาย #}
+          {# 6.1.5 รับคืน และประเมินความเสียหาย #}
           {% if can('sales.view') or is_admin %}
-          {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
-          {% set is_bk = ep in ['bk_list','bk_view'] %}
-          {% set is_bl = ep in ['bl_list','bl_view'] %}
-          {% set is_iv = ep in ['iv_list','iv_view'] %}
-          {% set is_rc = ep in ['rc_list','rc_view'] %}
-          {% set is_ct = ep in ['contract_list','contract_view'] %}
           {% set is_returns = ep in ['returns_list','returns_view','returns_new'] %}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">เอกสารขาย</div>
+            <div class="st-side-nav-label">6.1.5 รับคืน/ประเมิน</div>
             <ul class="list-unstyled mb-0">
               <li>
-                <a href="{{ url_for('qu_list') }}" class="st-side-link {% if is_qu %}is-active{% endif %}">
-                  <i class="bi bi-file-earmark-text"></i>
-                  <span>ใบเสนอราคา</span>
+                <a href="{{ url_for('returns_list') }}" class="st-side-link {% if is_returns %}is-active{% endif %}">
+                  <i class="bi bi-box-arrow-in-down-left"></i>
+                  <span>ใบคืนสินค้า</span>
                 </a>
               </li>
-              {% if can('sales.manage') or is_admin %}
+              {% if can('claims.view') or is_admin %}
               <li>
-                <a href="{{ url_for('qu_new') }}" class="st-side-link {% if ep=='qu_new' %}is-active{% endif %}">
-                  <i class="bi bi-plus-circle"></i>
-                  <span>สร้างใบเสนอราคา</span>
+                <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                  <i class="bi bi-clipboard2-check"></i>
+                  <span>ใบประเมินความเสียหาย (เพิ่มเติม)</span>
+                </a>
+              </li>
+              {% else %}
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-clipboard2-check"></i>
+                  <span>ใบประเมินความเสียหาย (เพิ่มเติม)</span>
                 </a>
               </li>
               {% endif %}
-              {# เมนูใหม่: ใบจอง #}
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 6.1.6 ระบบซ่อมบำรุง #}
+          {% if can('repairs.view') or is_admin or can('claims.view') or can('spares.view') %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">6.1.6 ระบบซ่อมบำรุง</div>
+            <ul class="list-unstyled mb-0">
+              {% if can('claims.view') or is_admin %}
               <li>
-                <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
-                  <i class="bi bi-calendar-check"></i>
-                  <span>ใบจอง</span>
+                <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                  <i class="bi bi-shield-exclamation"></i>
+                  <span>รายการเคลม</span>
                 </a>
               </li>
+              {% if can('claims.manage') or is_admin %}
+              <li>
+                <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
+                  <i class="bi bi-plus-circle"></i>
+                  <span>สร้างใบเคลม</span>
+                </a>
+              </li>
+              {% endif %}
+              {% endif %}
+
+              {% if can('repairs.view') or is_admin %}
+              <li>
+                <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
+                  <i class="bi bi-tools"></i>
+                  <span>รายการงานซ่อม</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-wrench-adjustable-circle"></i>
+                  <span>สร้างใบงานซ่อม (เพิ่มเติม)</span>
+                </a>
+              </li>
+              {% endif %}
+
+              {% if can('spares.view') or is_admin %}
+              <li>
+                <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
+                  <i class="bi bi-nut"></i>
+                  <span>อะไหล่/สต็อกซ่อม</span>
+                </a>
+              </li>
+              {% endif %}
+            </ul>
+          </li>
+          {% endif %}
+
+          {# 6.1.7 ระบบการเงิน และบัญชี #}
+          {% if can('sales.view') or is_admin or can('customers.view') %}
+          <li class="st-side-nav-section mt-3">
+            <div class="st-side-nav-label">6.1.7 การเงิน/บัญชี</div>
+            <ul class="list-unstyled mb-0">
+              {% if can('sales.view') or is_admin %}
               <li>
                 <a href="{{ url_for('bl_list') }}" class="st-side-link {% if is_bl %}is-active{% endif %}">
                   <i class="bi bi-receipt"></i>
@@ -476,151 +602,47 @@
                   <span>ใบเสร็จรับเงิน</span>
                 </a>
               </li>
-              <li>
-                <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
-                  <i class="bi bi-journal-bookmark"></i>
-                  <span>สัญญา/PO ใหญ่ (รายงวด)</span>
-                </a>
-              </li>
-
-              <li>
-                <a href="{{ url_for('returns_list') }}" class="st-side-link {% if is_returns %}is-active{% endif %}">
-                  <i class="bi bi-box-arrow-in-down-left"></i>
-                  <span>ใบคืนสินค้า</span>
-                </a>
-              </li>
-            </ul>
-          </li>
-          {% endif %}
-
-          {# 6) งานขนส่ง #}
-          {% if can('transport.access') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">งานขนส่ง</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('deliveries.list_docs') }}" class="st-side-link {% if ep=='deliveries.list_docs' %}is-active{% endif %}">
-                  <i class="bi bi-truck-front"></i>
-                  <span>ใบส่งสินค้าทั้งหมด</span>
-                </a>
-              </li>
-              {% if can('transport.manage') or is_admin %}
-              <li>
-                <a href="{{ url_for('deliveries.vehicles') }}" class="st-side-link {% if ep=='deliveries.vehicles' %}is-active{% endif %}">
-                  <i class="bi bi-truck"></i>
-                  <span>รถขนส่ง</span>
-                </a>
-              </li>
-              <li>
-                <a href="{{ url_for('deliveries.drivers') }}" class="st-side-link {% if ep=='deliveries.drivers' %}is-active{% endif %}">
-                  <i class="bi bi-person-vcard"></i>
-                  <span>คนขับ</span>
-                </a>
-              </li>
-              <li>
-                <a href="{{ url_for('deliveries.schedule_view') }}" class="st-side-link {% if ep=='deliveries.schedule_view' %}is-active{% endif %}">
-                  <i class="bi bi-diagram-3"></i>
-                  <span>จัดสายรถ</span>
-                </a>
-              </li>
               {% endif %}
+
+              <li>
+                <a href="{{ url_for('report_ar_aging') }}" class="st-side-link {% if ep=='report_ar_aging' %}is-active{% endif %}">
+                  <i class="bi bi-clipboard-data"></i>
+                  <span>รายงานลูกหนี้</span>
+                </a>
+              </li>
+
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-cash-stack"></i>
+                  <span>จัดการเงินมัดจำ (เพิ่มเติม)</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-file-earmark-ruled"></i>
+                  <span>ใบสำคัญรับเงิน (เพิ่มเติม)</span>
+                </a>
+              </li>
+              <li>
+                <a class="st-side-link is-disabled" href="#">
+                  <i class="bi bi-file-earmark-spreadsheet"></i>
+                  <span>รายงานรายได้ (เพิ่มเติม)</span>
+                </a>
+              </li>
             </ul>
           </li>
           {% endif %}
 
-          {# 7) งานเคลม #}
-          {% if can('claims.view') or is_admin %}
+          {# 6.1.8 ระบบรายงาน (เพิ่มเติม) #}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">งานเคลม</div>
+            <div class="st-side-nav-label">6.1.8 รายงาน (เพิ่มเติม)</div>
             <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
-                  <i class="bi bi-shield-exclamation"></i>
-                  <span>รายการใบเคลม</span>
-                </a>
-              </li>
-              {% if can('claims.manage') or is_admin %}
-              <li>
-                <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
-                  <i class="bi bi-plus-circle"></i>
-                  <span>สร้างใบเคลม</span>
-                </a>
-              </li>
-              {% endif %}
+              <li><a class="st-side-link is-disabled" href="#"><i class="bi bi encourages bi-bar-chart-line"></i><span>กลุ่มรายงาน (ตาม Requirement)</span></a></li>
+              <li><a class="st-side-link is-disabled" href="#"><i class="bi bi-graph-up"></i><span>รายงานงานเช่า/คลัง/ซ่อม/การเงิน (ชุดใหญ่)</span></a></li>
             </ul>
           </li>
-          {% endif %}
 
-          {# 8) งานซ่อม #}
-          {% if can('repairs.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">งานซ่อม</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
-                  <i class="bi bi-tools"></i>
-                  <span>รายการงานซ่อม</span>
-                </a>
-              </li>
-              {% if can('spares.view') or is_admin %}
-              <li>
-                <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
-                  <i class="bi bi-nut"></i>
-                  <span>อะไหล่ / สต็อกซ่อม</span>
-                </a>
-              </li>
-              {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# 9) โปรโมชั่น #}
-          {% if can('promos.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">โปรโมชั่น</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('promos_list') }}" class="st-side-link {% if ep=='promos_list' %}is-active{% endif %}">
-                  <i class="bi bi-stars"></i>
-                  <span>รายการโปรโมชั่น</span>
-                </a>
-              </li>
-              {% if can('promos.manage') or is_admin %}
-              <li>
-                <a href="{{ url_for('promo_new') }}" class="st-side-link {% if ep=='promo_new' %}is-active{% endif %}">
-                  <i class="bi bi-plus-circle"></i>
-                  <span>เพิ่มโปรโมชั่น</span>
-                </a>
-              </li>
-              {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# 10) ของขวัญ #}
-          {% if can('gifts.view') or is_admin %}
-          <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">ของขวัญ</div>
-            <ul class="list-unstyled mb-0">
-              <li>
-                <a href="{{ url_for('gifts_index') }}" class="st-side-link {% if ep=='gifts_index' %}is-active{% endif %}">
-                  <i class="bi bi-gift"></i>
-                  <span>ภาพรวมแคมเปญของขวัญ</span>
-                </a>
-              </li>
-              {% if can('gifts.manage') or is_admin %}
-              <li>
-                <a href="{{ url_for('gifts_new') }}" class="st-side-link {% if ep=='gifts_new' %}is-active{% endif %}">
-                  <i class="bi bi-plus-circle"></i>
-                  <span>สร้างแคมเปญของขวัญใหม่</span>
-                </a>
-              </li>
-              {% endif %}
-            </ul>
-          </li>
-          {% endif %}
-
-          {# 11) การตั้งค่า #}
+          {# การตั้งค่า (คงไว้ท้ายสุด) #}
           {% if can('users.manage') or is_admin or can('company.manage') %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">การตั้งค่า</div>
@@ -683,7 +705,7 @@
     <nav class="st-side-nav flex-grow-1">
       <ul class="list-unstyled mb-0">
 
-        {# 1) Dashboard #}
+        {# 0) Dashboard #}
         {% if can('dashboard.view') or is_admin %}
         <li>
           <a href="{{ url_for('dashboard') }}" class="st-side-link {% if ep=='dashboard' %}is-active{% endif %}">
@@ -693,13 +715,73 @@
         </li>
         {% endif %}
 
-        {# 2) อุปกรณ์ #}
+        {# 6.1.1 ระบบลูกค้า #}
+        {% if can('customers.view') or is_admin %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">6.1.1 ระบบลูกค้า</div>
+          <ul class="list-unstyled mb-0">
+            <li>
+              <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit','customers_aging'] %}is-active{% endif %}">
+                <i class="bi bi-people"></i>
+                <span>เพิ่ม/แก้ไข/ลบ ข้อมูลลูกค้า</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link" href="{{ url_for('rent_history_list') }}">
+                  <i class="bi bi-clock-history"></i>
+                  <span>ดูประวัติการเช่า</span>
+                </a>
+            </li>
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 6.1.2 ระบบงานเช่า #}
+        {% if can('sales.view') or is_admin %}
+        {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
+        {% set is_bk = ep in ['bk_list','bk_view'] %}
+        {% set is_bl = ep in ['bl_list','bl_view'] %}
+        {% set is_iv = ep in ['iv_list','iv_view'] %}
+        {% set is_rc = ep in ['rc_list','rc_view'] %}
+        {% set is_ct = ep in ['contract_list','contract_view'] %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">6.1.2 ระบบงานเช่า</div>
+          <ul class="list-unstyled mb-0">
+            <li>
+              <a href="{{ url_for('qu_list') }}" class="st-side-link {% if is_qu %}is-active{% endif %}">
+                <i class="bi bi-file-earmark-text"></i>
+                <span>ใบเสนอราคา</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
+                <i class="bi bi-calendar-check"></i>
+                <span>ใบจอง</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-cash-coin"></i>
+                <span>ใบบันทึกเงินมัดจำ (เพิ่มเติม)</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
+                <i class="bi bi-journal-bookmark"></i>
+                <span>สัญญา/POใหญ่ (รายงวด)</span>
+              </a>
+            </li>
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 6.1.3 ระบบคลังสินค้า #}
         {% if can('equipment.view') or is_admin %}
         {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
         {% set is_eq_new  = ep in ['equip_new'] %}
         {% set is_cat     = ep in ['cat_list','cat_new'] %}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">อุปกรณ์</div>
+          <div class="st-side-nav-label">6.1.3 ระบบคลังสินค้า</div>
           <ul class="list-unstyled mb-0">
             <li>
               <a href="{{ url_for('equip_list') }}" class="st-side-link {% if is_eq_list %}is-active{% endif %}">
@@ -717,35 +799,38 @@
             <li>
               <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
                 <i class="bi bi-tags"></i>
-                <span>หมวดหมู่ / Prefix SKU</span>
+                <span>หมวดหมู่</span>
               </a>
             </li>
             {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {# 3) ลูกค้า #}
-        {% if can('customers.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">ลูกค้า</div>
-          <ul class="list-unstyled mb-0">
             <li>
-              <a href="{{ url_for('customers_list') }}" class="st-side-link {% if ep in ['customers_list','customers_new','customers_edit'] %}is-active{% endif %}">
-                <i class="bi bi-people"></i>
-                <span>ลูกค้า</span>
+              <a href="{{ url_for('warehouse_stock') }}" class="st-side-link {% if ep=='warehouse_stock' %}is-active{% endif %}">
+                <i class="bi bi-boxes"></i>
+                <span>คลังสินค้า (Stock)</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-truck"></i>
+                <span>บันทึกการส่งมอบอุปกรณ์ (เพิ่มเติม)</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-bell"></i>
+                <span>แจ้งเตือนอุปกรณ์ใกล้ครบกำหนดคืน (เพิ่มเติม)</span>
               </a>
             </li>
           </ul>
         </li>
         {% endif %}
 
-        {# 4) เอกสารซื้อ #}
+        {# 6.1.4 ระบบจัดซื้อ #}
         {% if can('purchases.view') or is_admin %}
         {% set is_po  = ep in ['po_list','po_new','po_view'] %}
         {% set is_grn = ep in ['grn_list','grn_view'] %}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">เอกสารซื้อ</div>
+          <div class="st-side-nav-label">6.1.4 ระบบจัดซื้อ</div>
           <ul class="list-unstyled mb-0">
             <li>
               <a href="{{ url_for('po_list') }}" class="st-side-link {% if is_po %}is-active{% endif %}">
@@ -757,7 +842,7 @@
             <li>
               <a href="{{ url_for('grn_list') }}" class="st-side-link {% if is_grn %}is-active{% endif %}">
                 <i class="bi bi-truck"></i>
-                <span>ใบรับสินค้า (GRN)</span>
+                <span>ใบรับสินค้า (RC/GRN)</span>
               </a>
             </li>
             {% endif %}
@@ -765,39 +850,92 @@
         </li>
         {% endif %}
 
-        {# 5) เอกสารขาย #}
+        {# 6.1.5 รับคืน และประเมินความเสียหาย #}
         {% if can('sales.view') or is_admin %}
-        {% set is_qu = ep in ['qu_list','qu_new','qu_view'] %}
-        {% set is_bk = ep in ['bk_list','bk_view'] %}
-        {% set is_bl = ep in ['bl_list','bl_view'] %}
-        {% set is_iv = ep in ['iv_list','iv_view'] %}
-        {% set is_rc = ep in ['rc_list','rc_view'] %}
-        {% set is_ct = ep in ['contract_list','contract_view'] %}
         {% set is_returns = ep in ['returns_list','returns_view','returns_new'] %}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">เอกสารขาย</div>
+          <div class="st-side-nav-label">6.1.5 รับคืน/ประเมิน</div>
           <ul class="list-unstyled mb-0">
             <li>
-              <a href="{{ url_for('qu_list') }}" class="st-side-link {% if is_qu %}is-active{% endif %}">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>ใบเสนอราคา</span>
+              <a href="{{ url_for('returns_list') }}" class="st-side-link {% if is_returns %}is-active{% endif %}">
+                <i class="bi bi-box-arrow-in-down-left"></i>
+                <span>ใบคืนสินค้า</span>
               </a>
             </li>
-            {% if can('sales.manage') or is_admin %}
+            {% if can('claims.view') or is_admin %}
             <li>
-              <a href="{{ url_for('qu_new') }}" class="st-side-link {% if ep=='qu_new' %}is-active{% endif %}">
-                <i class="bi bi-plus-circle"></i>
-                <span>สร้างใบเสนอราคา</span>
+              <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                <i class="bi bi-clipboard2-check"></i>
+                <span>ใบประเมินความเสียหาย (เพิ่มเติม)</span>
+              </a>
+            </li>
+            {% else %}
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-clipboard2-check"></i>
+                <span>ใบประเมินความเสียหาย (เพิ่มเติม)</span>
               </a>
             </li>
             {% endif %}
-            {# เมนูใหม่: ใบจอง #}
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 6.1.6 ระบบซ่อมบำรุง #}
+        {% if can('repairs.view') or is_admin or can('claims.view') or can('spares.view') %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">6.1.6 ระบบซ่อมบำรุง</div>
+          <ul class="list-unstyled mb-0">
+            {% if can('claims.view') or is_admin %}
             <li>
-              <a href="{{ url_for('bk_list') }}" class="st-side-link {% if is_bk %}is-active{% endif %}">
-                <i class="bi bi-calendar-check"></i>
-                <span>ใบจอง</span>
+              <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
+                <i class="bi bi-shield-exclamation"></i>
+                <span>รายการเคลม</span>
               </a>
             </li>
+            {% if can('claims.manage') or is_admin %}
+            <li>
+              <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
+                <i class="bi bi-plus-circle"></i>
+                <span>สร้างใบเคลม</span>
+              </a>
+            </li>
+            {% endif %}
+            {% endif %}
+
+            {% if can('repairs.view') or is_admin %}
+            <li>
+              <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
+                <i class="bi bi-tools"></i>
+                <span>รายการงานซ่อม</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-wrench-adjustable-circle"></i>
+                <span>สร้างใบงานซ่อม (เพิ่มเติม)</span>
+              </a>
+            </li>
+            {% endif %}
+
+            {% if can('spares.view') or is_admin %}
+            <li>
+              <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
+                <i class="bi bi-nut"></i>
+                <span>อะไหล่/สต็อกซ่อม</span>
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+        </li>
+        {% endif %}
+
+        {# 6.1.7 ระบบการเงิน และบัญชี #}
+        {% if can('sales.view') or is_admin or can('customers.view') %}
+        <li class="st-side-nav-section mt-3">
+          <div class="st-side-nav-label">6.1.7 การเงิน/บัญชี</div>
+          <ul class="list-unstyled mb-0">
+            {% if can('sales.view') or is_admin %}
             <li>
               <a href="{{ url_for('bl_list') }}" class="st-side-link {% if is_bl %}is-active{% endif %}">
                 <i class="bi bi-receipt"></i>
@@ -816,151 +954,51 @@
                 <span>ใบเสร็จรับเงิน</span>
               </a>
             </li>
+            {% endif %}
 
             <li>
-              <a href="{{ url_for('contract_list') }}" class="st-side-link {% if is_ct %}is-active{% endif %}">
-                <i class="bi bi-journal-bookmark"></i>
-                <span>สัญญา/PO ใหญ่ (รายงวด)</span>
+              <a href="{{ url_for('report_ar_aging') }}" class="st-side-link {% if ep=='report_ar_aging' %}is-active{% endif %}">
+                <i class="bi bi-clipboard-data"></i>
+                <span>รายงานลูกหนี้</span>
+              </a>
+            </li>
+
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-cash-stack"></i>
+                <span>จัดการเงินมัดจำ (เพิ่มเติม)</span>
               </a>
             </li>
             <li>
-              <a href="{{ url_for('returns_list') }}" class="st-side-link {% if is_returns %}is-active{% endif %}">
-                <i class="bi bi-box-arrow-in-down-left"></i>
-                <span>ใบคืนสินค้า</span>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-file-earmark-ruled"></i>
+                <span>ใบสำคัญรับเงิน (เพิ่มเติม)</span>
+              </a>
+            </li>
+            <li>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-file-earmark-spreadsheet"></i>
+                <span>รายงานรายได้ (เพิ่มเติม)</span>
               </a>
             </li>
           </ul>
         </li>
         {% endif %}
 
-        {# 6) งานขนส่ง #}
-        {% if can('transport.access') or is_admin %}
+        {# 6.1.8 ระบบรายงาน (เพิ่มเติม) #}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">งานขนส่ง</div>
+          <div class="st-side-nav-label">6.1.8 รายงาน (เพิ่มเติม)</div>
           <ul class="list-unstyled mb-0">
             <li>
-              <a href="{{ url_for('deliveries.list_docs') }}" class="st-side-link {% if ep=='deliveries.list_docs' %}is-active{% endif %}">
-                <i class="bi bi-truck-front"></i>
-                <span>ใบส่งสินค้าทั้งหมด</span>
+              <a class="st-side-link is-disabled" href="#">
+                <i class="bi bi-bar-chart-line"></i>
+                <span>รายงานตาม Requirement (ชุดใหญ่)</span>
               </a>
             </li>
-            {% if can('transport.manage') or is_admin %}
-            <li>
-              <a href="{{ url_for('deliveries.vehicles') }}" class="st-side-link {% if ep=='deliveries.vehicles' %}is-active{% endif %}">
-                <i class="bi bi-truck"></i>
-                <span>รถขนส่ง</span>
-              </a>
-            </li>
-            <li>
-              <a href="{{ url_for('deliveries.drivers') }}" class="st-side-link {% if ep=='deliveries.drivers' %}is-active{% endif %}">
-                <i class="bi bi-person-vcard"></i>
-                <span>คนขับ</span>
-              </a>
-            </li>
-            <li>
-              <a href="{{ url_for('deliveries.schedule_view') }}" class="st-side-link {% if ep=='deliveries.schedule_view' %}is-active{% endif %}">
-                <i class="bi bi-diagram-3"></i>
-                <span>จัดสายรถ</span>
-              </a>
-            </li>
-            {% endif %}
           </ul>
         </li>
-        {% endif %}
 
-        {# 7) งานเคลม #}
-        {% if can('claims.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">งานเคลม</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('claims_list') }}" class="st-side-link {% if ep=='claims_list' %}is-active{% endif %}">
-                <i class="bi bi-shield-exclamation"></i>
-                <span>รายการใบเคลม</span>
-              </a>
-            </li>
-            {% if can('claims.manage') or is_admin %}
-            <li>
-              <a href="{{ url_for('claim_new') }}" class="st-side-link {% if ep=='claim_new' %}is-active{% endif %}">
-                <i class="bi bi-plus-circle"></i>
-                <span>สร้างใบเคลม</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {# 8) งานซ่อม #}
-        {% if can('repairs.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">งานซ่อม</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('repairs.list_') }}" class="st-side-link {% if ep=='repairs.list_' %}is-active{% endif %}">
-                <i class="bi bi-tools"></i>
-                <span>รายการงานซ่อม</span>
-              </a>
-            </li>
-            {% if can('spares.view') or is_admin %}
-            <li>
-              <a href="{{ url_for('spares_list') }}" class="st-side-link {% if ep in ['spares_list','spare_new','spare_edit'] %}is-active{% endif %}">
-                <i class="bi bi-nut"></i>
-                <span>อะไหล่ / สต็อกซ่อม</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {# 9) โปรโมชั่น #}
-        {% if can('promos.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">โปรโมชั่น</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('promos_list') }}" class="st-side-link {% if ep=='promos_list' %}is-active{% endif %}">
-                <i class="bi bi-stars"></i>
-                <span>รายการโปรโมชั่น</span>
-              </a>
-            </li>
-            {% if can('promos.manage') or is_admin %}
-            <li>
-              <a href="{{ url_for('promo_new') }}" class="st-side-link {% if ep=='promo_new' %}is-active{% endif %}">
-                <i class="bi bi-plus-circle"></i>
-                <span>เพิ่มโปรโมชั่น</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {# 10) ของขวัญ #}
-        {% if can('gifts.view') or is_admin %}
-        <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">ของขวัญ</div>
-          <ul class="list-unstyled mb-0">
-            <li>
-              <a href="{{ url_for('gifts_index') }}" class="st-side-link {% if ep=='gifts_index' %}is-active{% endif %}">
-                <i class="bi bi-gift"></i>
-                <span>ภาพรวมแคมเปญของขวัญ</span>
-              </a>
-            </li>
-            {% if can('gifts.manage') or is_admin %}
-            <li>
-              <a href="{{ url_for('gifts_new') }}" class="st-side-link {% if ep=='gifts_new' %}is-active{% endif %}">
-                <i class="bi bi-plus-circle"></i>
-                <span>สร้างแคมเปญของขวัญใหม่</span>
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </li>
-        {% endif %}
-
-        {# 11) การตั้งค่า #}
+        {# การตั้งค่า #}
         {% if can('users.manage') or is_admin or can('company.manage') %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">การตั้งค่า</div>
