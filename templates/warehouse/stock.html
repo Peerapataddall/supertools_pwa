@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% set title = "คลังสินค้า (Stock)" %}
+
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>คลังสินค้า (Stock Realtime)</h1>
+    <div class="muted">สรุปจำนวนอุปกรณ์ตามหมวด + สถานะ (READY/RESERVED/AVAILABLE/RENTED/REPAIR/LOST)</div>
+  </div>
+  <div class="actions">
+    <form class="d-flex gap-2" method="get" action="{{ url_for('warehouse_stock') }}">
+      <input class="form-control" name="q" value="{{ q }}" placeholder="ค้นหา (ชื่อหมวด / prefix / ยี่ห้อ)" style="min-width:260px;">
+
+      <select class="form-select" name="warehouse" style="max-width:220px">
+        <option value="" {{ (warehouse or '')=='' and 'selected' or '' }}>ทุกคลัง</option>
+        {% for w in (warehouses or []) %}
+          <option value="{{ w }}" {{ (warehouse==w) and 'selected' or '' }}>{{ w }}</option>
+        {% endfor %}
+      </select>
+
+      <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> ค้นหา</button>
+      <a class="btn btn-ghost" href="{{ url_for('warehouse_stock') }}">ล้าง</a>
+    </form>
+  </div>
+</div>
+
+<div class="card p-0">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+  <tr>
+    <th style="width:44px;">#</th>
+    <th>หมวดหมู่</th>
+    <th style="width:140px;">Prefix</th>
+    <th style="width:140px;">คลัง</th>
+    <th style="width:180px;">ยี่ห้อ/รุ่น</th>
+    <th class="text-end" style="width:110px;">รวมรับเข้า</th>
+    <th class="text-end" style="width:110px;">พร้อมให้เช่า</th>
+    <th class="text-end" style="width:110px;">จองไว้</th>
+    <th class="text-end" style="width:110px;">คงเหลือ</th>
+    <th class="text-end" style="width:110px;">ถูกเช่า</th>
+    <th class="text-end" style="width:110px;">รอซ่อม</th>
+    <th class="text-end" style="width:110px;">สูญหาย</th>
+  </tr>
+</thead>
+      <tbody>
+  {% for r in rows %}
+  {% set _brand = (r.brand or '') %}
+  {% set _brand_label = _brand if _brand else 'ไม่ระบุ' %}
+  {% set _ready = (r.ready_qty or 0) %}
+  {% set _reserved = (r.reserved_qty or 0) %}
+  {% set _available = (_ready - _reserved) %}
+  <tr>
+    <td class="text-muted">{{ loop.index }}</td>
+    <td>
+      <div class="fw-semibold">{{ r.cat_name }}</div>
+      <div class="small text-muted">SKU ใหม่: {{ ("SPT" ~ (r.cat_prefix|upper|replace("-","")|replace(" ",""))) if not (r.cat_prefix|upper).startswith("SPT") else (r.cat_prefix|upper|replace("-","")|replace(" ","")) }}YYMM-XXX</div>
+    </td>
+    <td><span class="badge bg-secondary-subtle text-secondary">{{ r.cat_prefix }}</span></td>
+    <td><span class="badge bg-info-subtle text-info">{{ r.warehouse or "MAIN" }}</span></td>
+    <td>{{ _brand_label }}</td>
+
+    <td class="text-end fw-semibold">{{ (r.total_in or 0)|int }}</td>
+    <td class="text-end"><span class="badge bg-success-subtle text-success">{{ _ready|int }}</span></td>
+    <td class="text-end"><span class="badge bg-warning-subtle text-warning">{{ _reserved|round(0, 'floor')|int }}</span></td>
+    <td class="text-end"><span class="badge bg-primary-subtle text-primary">{{ (_available if _available>0 else 0)|round(0,'floor')|int }}</span></td>
+    <td class="text-end"><span class="badge bg-dark-subtle text-dark">{{ (r.rented_qty or 0)|int }}</span></td>
+    <td class="text-end"><span class="badge bg-info-subtle text-info">{{ (r.repair_qty or 0)|int }}</span></td>
+    <td class="text-end"><span class="badge bg-danger-subtle text-danger">{{ (r.lost_qty or 0)|int }}</span></td>
+  </tr>
+  {% endfor %}
+  {% if rows|length == 0 %}
+  <tr>
+    <td colspan="11" class="text-center text-muted py-4">ไม่พบข้อมูล</td>
+  </tr>
+  {% endif %}
+</tbody>
+    </table>
+  </div>
+</div>
+
+<div class="mt-3 small text-muted">
+  <div>หมายเหตุ: “คงเหลือ” = READY − RESERVED (จองไว้จากใบเสนอราคา/ใบจอง ก่อนเลือก SKU จริง). เมื่อ Allocate SKU ในใบจอง ระบบจะปล่อย RESERVED ของรายการนั้น แล้วสถานะอุปกรณ์จริงจะเปลี่ยนเป็น <code>RENTED</code>.</div>
+</div>
+{% endblock %}
