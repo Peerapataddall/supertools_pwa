@@ -18,3 +18,4 @@ instance/
 # IDE settings
 .vscode/
 static/uploads/
+migrations_old/
