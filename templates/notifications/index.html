@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% set title = "แจ้งเตือน" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>แจ้งเตือน</h1>
+    <div class="muted">รายการงานที่ใกล้ครบกำหนด / เอกสารค้างอนุมัติ</div>
+  </div>
+  <div class="actions">
+    <form class="d-flex gap-2 flex-wrap" method="get" action="{{ url_for('notifications_index') }}">
+      <div class="input-group input-group-sm" style="max-width: 220px;">
+        <span class="input-group-text">คืนภายใน</span>
+        <input class="form-control" type="number" min="1" name="return_days" value="{{ return_days }}">
+        <span class="input-group-text">วัน</span>
+      </div>
+      <div class="input-group input-group-sm" style="max-width: 260px;">
+        <span class="input-group-text">อุปกรณ์หมดอายุภายใน</span>
+        <input class="form-control" type="number" min="1" name="equip_days" value="{{ equip_days }}">
+        <span class="input-group-text">วัน</span>
+      </div>
+      <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>ปรับช่วง</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body">
+      <h5 class="mb-2">ใกล้ครบกำหนดคืน/สิ้นสุดสัญญา</h5>
+      {% if due_docs %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>เอกสาร</th><th>ลูกค้า</th><th>สิ้นสุด</th><th class="text-end">เหลือ (วัน)</th></tr></thead>
+          <tbody>
+            {% for d in due_docs %}
+            <tr>
+              <td>{{ d.doc_type }} {{ d.number }}</td>
+              <td>{{ d.customer.name if d.customer else '-' }}</td>
+              <td>{{ d.contract_end }}</td>
+              <td class="text-end">{{ d.days_left }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="alert alert-info mb-0">ไม่มีรายการใกล้ครบกำหนดในช่วงที่เลือก</div>
+      {% endif %}
+    </div></div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body">
+      <h5 class="mb-2">เอกสารค้างอนุมัติ</h5>
+      {% if pending_docs %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>เอกสาร</th><th>ลูกค้า</th><th>วันที่</th><th class="text-end">อายุเอกสาร (วัน)</th></tr></thead>
+          <tbody>
+            {% for d in pending_docs %}
+            <tr>
+              <td>{{ d.doc_type }} {{ d.number }}</td>
+              <td>{{ d.customer.name if d.customer else '-' }}</td>
+              <td>{{ d.date }}</td>
+              <td class="text-end">{{ d.age_days }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="alert alert-info mb-0">ไม่มีเอกสารค้างอนุมัติ</div>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+
+  <div class="st-card p-3 p-md-4 mb-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div>
+        <div class="h5 m-0">อุปกรณ์ใกล้หมดอายุ</div>
+        <div class="text-muted small">แสดงเฉพาะอุปกรณ์ที่กำหนดอายุการใช้งาน และเหลือ &le; {{ equip_days }} วัน</div>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('equip_list', expiring=1) }}">
+        <i class="bi bi-box-seam me-1"></i> ดูทั้งหมด
+      </a>
+    </div>
+    <div class="table-responsive mt-3">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr class="text-muted">
+            <th>SKU</th>
+            <th>ชื่อ</th>
+            <th style="width:14%">สถานะ</th>
+            <th style="width:16%">หมดอายุ</th>
+            <th style="width:16%" class="text-end">เหลือ (วัน)</th>
+            <th style="width:1%"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in equip_expiring %}
+          <tr>
+            <td class="text-nowrap"><span class="badge text-bg-light text-dark">{{ x.sku }}</span></td>
+            <td>{{ x.name }}</td>
+            <td>{{ x.status }}</td>
+            <td class="text-nowrap">{{ x.expiry_date|strftime('%d/%m/%Y') }}</td>
+            <td class="text-end fw-semibold">{{ x.days_left }}</td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('equip_view', eid=x.id) }}">ดู</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted">ยังไม่มีอุปกรณ์ที่ใกล้หมดอายุ</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card"><div class="card-body">
+        <h5 class="mb-2">อุปกรณ์หมดอายุแล้ว</h5>
+        {% if equip_expired %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>SKU</th><th>ชื่อ</th><th>หมดอายุ</th><th class="text-end">เลยกำหนด (วัน)</th></tr></thead>
+            <tbody>
+              {% for x in equip_expired %}
+              <tr>
+                <td class="text-nowrap"><span class="badge text-bg-light text-dark">{{ x.sku }}</span></td>
+                <td>{{ x.name }}</td>
+                <td class="text-nowrap">{{ x.expiry_date|strftime('%d/%m/%Y') }}</td>
+                <td class="text-end fw-semibold">{{ -x.days_left }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="alert alert-info mb-0">ยังไม่มีอุปกรณ์หมดอายุ</div>
+        {% endif %}
+      </div></div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card"><div class="card-body">
+        <h5 class="mb-2">งานซ่อมค้าง / เคลมค้าง</h5>
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="fw-semibold mb-1">งานซ่อมที่ยังไม่ปิด</div>
+            {% if open_repairs %}
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th>เลขที่</th><th>อุปกรณ์</th><th>ลูกค้า</th><th>สถานะ</th></tr></thead>
+                <tbody>
+                  {% for r in open_repairs %}
+                  <tr>
+                    <td class="text-nowrap">{{ r.number }}</td>
+                    <td>{{ r.equipment }}</td>
+                    <td>{{ r.customer }}</td>
+                    <td>{{ r.status }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+              <div class="alert alert-info mb-0">ไม่มีงานซ่อมค้าง</div>
+            {% endif %}
+          </div>
+
+          <div class="col-12">
+            <div class="fw-semibold mb-1">ใบเคลมที่ยังไม่ปิด</div>
+            {% if open_claims %}
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th>เลขที่</th><th>อุปกรณ์</th><th>ลูกค้า</th><th>สถานะ</th></tr></thead>
+                <tbody>
+                  {% for c in open_claims %}
+                  <tr>
+                    <td class="text-nowrap">{{ c.number }}</td>
+                    <td>{{ c.equipment }}</td>
+                    <td>{{ c.customer }}</td>
+                    <td>{{ c.status }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+              <div class="alert alert-info mb-0">ไม่มีใบเคลมค้าง</div>
+            {% endif %}
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+{% endblock %}

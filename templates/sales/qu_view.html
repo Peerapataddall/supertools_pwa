@@ -152,6 +152,15 @@
       </a>
     {% endif %}
 
+    {% if (not bk) and d.doc_type=='QU' and can('sales.manage') %}
+      <form method="post" action="{{ url_for('qu_open_job', qid=d.id) }}" class="d-inline">
+        <button class="btn btn-outline-success btn-sm" type="submit">
+          <i class="bi bi-play-circle me-1"></i> เปิดงานเช่า (สร้างใบจอง BK)
+        </button>
+      </form>
+    {% endif %}
+
+
     {# ===================== QU Actions ===================== #}
     {% if d.doc_type=='QU' and can('sales.manage') and not (hide_approve or false) %}
       {# ✅ อนุมัติ: ให้กดได้เฉพาะยังไม่ APPROVED และยังไม่ CANCELLED #}

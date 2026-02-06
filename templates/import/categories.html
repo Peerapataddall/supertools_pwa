@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set title = "Import หมวดหมู่" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>Import หมวดหมู่</h1>
+    <div class="muted">อัปโหลด CSV เพื่อเพิ่ม/อัปเดตหมวดหมู่</div>
+  </div>
+  <div class="actions"><a class="btn btn-ghost" href="{{ url_for('import_index') }}">กลับ</a></div>
+</div>
+
+<div class="card"><div class="card-body">
+  <div class="alert alert-info">
+    รูปแบบไฟล์ CSV (หัวตาราง): <code>name,prefix_sku</code><br>
+    ถ้า <b>prefix_sku ซ้ำ</b> ระบบจะอัปเดตชื่อให้ (ถือเป็นแก้ไข)
+  </div>
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".csv" class="form-control" required>
+    <button class="btn btn-primary mt-3" type="submit"><i class="bi bi-upload"></i> อัปโหลด</button>
+  </form>
+
+  {% if result %}
+  <hr>
+  <h6>ผลลัพธ์</h6>
+  <ul class="mb-0">
+    <li>เพิ่มใหม่: {{ result.created }}</li>
+    <li>อัปเดต: {{ result.updated }}</li>
+    <li>ข้าม/ผิดพลาด: {{ result.skipped }}</li>
+  </ul>
+  {% endif %}
+</div></div>
+{% endblock %}

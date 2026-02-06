@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}เพิ่มหมวดหมู่{% endblock %}
+{% block title %}{{ "แก้ไขหมวดหมู่" if is_edit else "{{ 'แก้ไขหมวดหมู่' if is_edit else 'เพิ่มหมวดหมู่' }}" }}{% endblock %}
 {% block content %}
 <div class="fx-hero p-3 p-md-4 mb-3">
   <div class="d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-3">
       <span class="icon-pill"><i class="bi bi-tags"></i></span>
       <div>
-        <div class="h5 m-0 fw-semibold">เพิ่มหมวดหมู่</div>
+        <div class="h5 m-0 fw-semibold">{{ 'แก้ไขหมวดหมู่' if is_edit else 'เพิ่มหมวดหมู่' }}</div>
         <div class="small text-muted">เก็บ Prefix SKU เช่น <b>SP-001</b></div>
       </div>
     </div>

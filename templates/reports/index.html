@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% set title = "รายงาน (6.1.8)" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>รายงาน</h1>
+    <div class="muted">กลุ่มรายงานตาม Requirement 6.1.8 (เลือกช่วงวันที่ได้ + Export Excel)</div>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+  <!-- Customers -->
+  <div class="card p-3">
+    <div class="h2 mb-1">ระบบลูกค้า</div>
+    <div class="muted mb-2">Customer</div>
+    <a class="btn btn-primary w-100 mb-2" href="{{ safe_href('report_customer_rent_history') }}">
+      รายงานประวัติการเช่าลูกค้า
+    </a>
+  </div>
+
+  <!-- Rental -->
+  <div class="card p-3">
+    <div class="h2 mb-1">ระบบงานเช่า</div>
+    <div class="muted mb-2">Rental</div>
+
+    <div class="stack" style="display:grid; gap:8px;">
+      <a class="btn w-100" href="{{ safe_href('report_quotation_by_status') }}">ใบเสนอราคา (เรียงตามสถานะ)</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_by_customer') }}">ใบงานเช่า (รายละเอียดตามรหัสลูกค้า)</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_income') }}">รายได้จากงานเช่า</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_equipment_status') }}">อุปกรณ์ถูกเช่า / รอซ่อม / พร้อมให้เช่า</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_by_project') }}">อุปกรณ์ถูกเช่าแยกตามโครงการ</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_due_return') }}">กำหนดคืนอุปกรณ์</a>
+      <a class="btn w-100" href="{{ safe_href('report_rental_pattern') }}">แบบการเช่าลูกค้า (รายวัน/เดือน/ปี)</a>
+    </div>
+  </div>
+
+  <!-- Warehouse -->
+  <div class="card p-3">
+    <div class="h2 mb-1">ระบบคลังสินค้า</div>
+    <div class="muted mb-2">Warehouse</div>
+
+    <div class="stack" style="display:grid; gap:8px;">
+      <a class="btn w-100" href="{{ safe_href('report_stock_remaining') }}">อุปกรณ์คงเหลือ</a>
+      <a class="btn w-100" href="{{ safe_href('report_warehouse_received') }}">อุปกรณ์ที่รับเข้า</a>
+      <a class="btn w-100" href="{{ safe_href('report_warehouse_by_category') }}">อุปกรณ์ตามหมวดหมู่สินค้า</a>
+      <a class="btn w-100" href="{{ safe_href('report_spares_remaining') }}">อะไหล่คงเหลือ</a>
+      <a class="btn w-100" href="{{ safe_href('report_spares_used_in_repairs') }}">อะไหล่ถูกใช้ในงานซ่อม</a>
+      <a class="btn w-100" href="{{ safe_href('report_deliveries') }}">การส่งมอบอุปกรณ์</a>
+    </div>
+  </div>
+
+  <!-- Repairs -->
+  <div class="card p-3">
+    <div class="h2 mb-1">ระบบซ่อมบำรุง</div>
+    <div class="muted mb-2">Repairs</div>
+
+    <div class="stack" style="display:grid; gap:8px;">
+      <a class="btn w-100" href="{{ safe_href('report_repairs_claims') }}">ใบเคลม</a>
+      <a class="btn w-100" href="{{ safe_href('report_repairs_open_jobs') }}">งานซ่อมที่เปิดแล้ว</a>
+      <a class="btn w-100" href="{{ safe_href('report_repairs_equipment_status') }}">สถานะอุปกรณ์งานซ่อม</a>
+    </div>
+  </div>
+
+  <!-- Finance -->
+  <div class="card p-3">
+    <div class="h2 mb-1">ระบบการเงินและบัญชี</div>
+    <div class="muted mb-2">Finance</div>
+
+    <div class="stack" style="display:grid; gap:8px;">
+      <a class="btn w-100" href="{{ safe_href('report_rental_income') }}">รายได้จากการเช่า</a>
+      <a class="btn w-100" href="{{ safe_href('report_ar_detail') }}">รายละเอียดลูกหนี้</a>
+      <a class="btn w-100" href="{{ safe_href('report_ar_movement') }}">ความเคลื่อนไหวลูกหนี้</a>
+      <a class="btn w-100" href="{{ safe_href('report_ar_aging') }}">ยอดหนี้คงเหลือ (A/R Aging)</a>
+      <a class="btn w-100" href="{{ safe_href('report_ar_outstanding_by_customer') }}">ยอดหนี้คงเหลือ (ตามรหัสลูกหนี้)</a>
+      <a class="btn w-100" href="{{ safe_href('report_deposits') }}">เงินมัดจำ</a>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3 mt-3">
+  <div class="muted">
+    หมายเหตุ: รายงานบางตัวเป็น “เวอร์ชันแรก” (MVP) ใช้ข้อมูลจากเอกสารที่มีอยู่ในระบบปัจจุบัน
+    ถ้าคุณต้องการนิยามรายงานให้ “ตรงเป๊ะตามเอกสาร Requirement” (เช่น อ้างอิงเอกสารส่งมอบ, เงินมัดจำแบบ ledger)
+    ผมจะช่วยยกระดับเป็นรายงานแบบสมบูรณ์ต่อได้
+  </div>
+</div>
+{% endblock %}

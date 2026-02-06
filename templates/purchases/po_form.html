@@ -325,7 +325,68 @@
       </div>
     </div>
 
-  </form>
+  
+  <datalist id="poSkuList"></datalist>
+  <datalist id="poNameList"></datalist>
+
+  <script>
+  // PO Autocomplete (Requirement 3.7)
+  (function(){
+    const skuList = document.getElementById('poSkuList');
+    const nameList = document.getElementById('poNameList');
+
+    async function fetchSuggest(q){
+      try{
+        const res = await fetch(`/api/purchases/suggest?q=${encodeURIComponent(q)}`);
+        if(!res.ok) return [];
+        return await res.json();
+      }catch(e){
+        return [];
+      }
+    }
+
+    function fillDatalist(listEl, items, field){
+      listEl.innerHTML = '';
+      items.forEach(it=>{
+        const opt = document.createElement('option');
+        opt.value = it[field] || '';
+        opt.label = (it.sku && it.name) ? `${it.sku} · ${it.name}${it.brand?(' · '+it.brand):''}` : '';
+        listEl.appendChild(opt);
+      });
+    }
+
+    let timer=null;
+    document.addEventListener('input', (ev)=>{
+      const el = ev.target;
+      if(!el.classList || (!el.classList.contains('js-sku') && !el.classList.contains('js-name'))) return;
+      const q = (el.value||'').trim();
+      if(q.length < 2) return;
+
+      clearTimeout(timer);
+      timer = setTimeout(async ()=>{
+        const items = await fetchSuggest(q);
+        fillDatalist(skuList, items, 'sku');
+        fillDatalist(nameList, items, 'name');
+
+        // ถ้าผู้ใช้พิมพ์ SKU ตรง ๆ แล้วเจอ match -> เติม name/brand ในแถวเดียวกัน
+        if(el.classList.contains('js-sku')){
+          const match = items.find(x=> (x.sku||'').toLowerCase() === q.toLowerCase());
+          if(match){
+            const row = el.closest('tr');
+            if(row){
+              const nameEl = row.querySelector('.js-name');
+              const brandEl = row.querySelector('.js-brand');
+              if(nameEl && !nameEl.value) nameEl.value = match.name || '';
+              if(brandEl && !brandEl.value) brandEl.value = match.brand || '';
+            }
+          }
+        }
+      }, 250);
+    });
+  })();
+  </script>
+</form>
+
 </div>
 
 <!-- Supplier Modal -->
@@ -394,7 +455,68 @@
             <i class="bi bi-save me-1"></i> บันทึกผู้ขาย
           </button>
         </div>
-      </form>
+      
+  <datalist id="poSkuList"></datalist>
+  <datalist id="poNameList"></datalist>
+
+  <script>
+  // PO Autocomplete (Requirement 3.7)
+  (function(){
+    const skuList = document.getElementById('poSkuList');
+    const nameList = document.getElementById('poNameList');
+
+    async function fetchSuggest(q){
+      try{
+        const res = await fetch(`/api/purchases/suggest?q=${encodeURIComponent(q)}`);
+        if(!res.ok) return [];
+        return await res.json();
+      }catch(e){
+        return [];
+      }
+    }
+
+    function fillDatalist(listEl, items, field){
+      listEl.innerHTML = '';
+      items.forEach(it=>{
+        const opt = document.createElement('option');
+        opt.value = it[field] || '';
+        opt.label = (it.sku && it.name) ? `${it.sku} · ${it.name}${it.brand?(' · '+it.brand):''}` : '';
+        listEl.appendChild(opt);
+      });
+    }
+
+    let timer=null;
+    document.addEventListener('input', (ev)=>{
+      const el = ev.target;
+      if(!el.classList || (!el.classList.contains('js-sku') && !el.classList.contains('js-name'))) return;
+      const q = (el.value||'').trim();
+      if(q.length < 2) return;
+
+      clearTimeout(timer);
+      timer = setTimeout(async ()=>{
+        const items = await fetchSuggest(q);
+        fillDatalist(skuList, items, 'sku');
+        fillDatalist(nameList, items, 'name');
+
+        // ถ้าผู้ใช้พิมพ์ SKU ตรง ๆ แล้วเจอ match -> เติม name/brand ในแถวเดียวกัน
+        if(el.classList.contains('js-sku')){
+          const match = items.find(x=> (x.sku||'').toLowerCase() === q.toLowerCase());
+          if(match){
+            const row = el.closest('tr');
+            if(row){
+              const nameEl = row.querySelector('.js-name');
+              const brandEl = row.querySelector('.js-brand');
+              if(nameEl && !nameEl.value) nameEl.value = match.name || '';
+              if(brandEl && !brandEl.value) brandEl.value = match.brand || '';
+            }
+          }
+        }
+      }, 250);
+    });
+  })();
+  </script>
+</form>
+
     </div>
   </div>
 </div>

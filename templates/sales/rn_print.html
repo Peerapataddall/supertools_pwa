@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>พิมพ์ RN - {{ rn.doc_no if rn else '' }}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body{ font-family: Tahoma, Arial, sans-serif; color:#111; }
+    h1{ font-size: 18px; margin:0 0 8px; }
+    .muted{ color:#666; font-size: 12px; }
+    table{ width:100%; border-collapse: collapse; margin-top:10px; }
+    th,td{ border:1px solid #ddd; padding:6px 8px; font-size:12px; }
+    th{ background:#f5f5f5; text-align:left; }
+    .text-end{ text-align:right; }
+  </style>
+</head>
+<body>
+  {% if not rn %}
+    <h1>ไม่พบเอกสาร</h1>
+  {% else %}
+    <h1>ใบคืนสินค้า (RN) - Legacy</h1>
+    <div class="muted">เลขที่: {{ rn.doc_no }} • วันที่: {{ rn.doc_date }} • ลูกค้า: {{ rn.customer.name if rn.customer else '-' }}</div>
+    <table>
+      <thead><tr><th>SKU</th><th>รายการ</th><th class="text-end">จำนวน</th></tr></thead>
+      <tbody>
+        {% for it in rn.items %}
+        <tr><td>{{ it.sku }}</td><td>{{ it.name }}</td><td class="text-end">{{ it.qty }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  <script>window.print()</script>
+</body>
+</html>

@@ -200,9 +200,9 @@
       <label class="form-label">สถานะ</label>
       {% if is_edit %}
       <select name="status" id="status" class="form-select">
-        <option value="READY"  {{ 'selected' if e.status=='READY'  else '' }}>พร้อมให้เช่า</option>
-        <option value="RENTED" {{ 'selected' if e.status=='RENTED' else '' }}>ถูกเช่า</option>
-        <option value="REPAIR" {{ 'selected' if e.status=='REPAIR' else '' }}>รอซ่อม</option>
+        {% for s in (statuses or []) %}
+          <option value="{{ s.code }}" {{ 'selected' if e.status==s.code else '' }}>{{ s.name }}</option>
+        {% endfor %}
       </select>
       {% else %}
       <div class="pill"><i class="bi bi-check2-circle text-success"></i> ค่าเริ่มต้น: พร้อมให้เช่า</div>
@@ -215,6 +215,55 @@
       {% else %}
       <input class="form-control" id="sku_preview" value="จะสร้างอัตโนมัติเมื่อบันทึก" readonly>
       {% endif %}
+    </div>
+
+
+    <!-- ราคาเช่าแบบต่อช่วง (Requirement 2.1) -->
+    <div class="col-12">
+      <div class="st-card p-3">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <div class="fw-semibold">ราคาเช่าแบบต่อช่วง</div>
+            <div class="text-muted small">ระบบจะ “รวมช่วง” ให้อัตโนมัติ เช่น 45 วัน = 30 + 7 + 7 + 1</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="addPlanRow">
+            <i class="bi bi-plus-lg me-1"></i> เพิ่มช่วงราคา
+          </button>
+        </div>
+
+        <div class="table-responsive mt-2">
+          <table class="table table-sm align-middle" id="planTable">
+            <thead>
+              <tr class="text-muted">
+                <th style="width:120px">วัน (ช่วง)</th>
+                <th style="width:160px" class="text-end">ราคา</th>
+                <th>ชื่อช่วง</th>
+                <th style="width:70px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if is_edit and e.price_plans %}
+                {% for p in e.price_plans %}
+                <tr>
+                  <td><input class="form-control" name="plan_days" type="number" min="1" value="{{ p.duration_days }}"></td>
+                  <td><input class="form-control text-end" name="plan_price" type="number" step="0.01" min="0" value="{{ p.price }}"></td>
+                  <td><input class="form-control" name="plan_label" value="{{ p.label }}"></td>
+                  <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger delPlanRow">ลบ</button></td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td><input class="form-control" name="plan_days" type="number" min="1" value="1"></td>
+                  <td><input class="form-control text-end" name="plan_price" type="number" step="0.01" min="0" value="0"></td>
+                  <td><input class="form-control" name="plan_label" value="รายวัน"></td>
+                  <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger delPlanRow">ลบ</button></td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+        <div class="text-muted small">ถ้าไม่กรอกช่วงราคา ระบบจะคำนวณราคาแนะนำจาก “ต้นทุน/อายุการใช้งาน” (ราคาเข้าคืนทุน/วัน)</div>
+      </div>
     </div>
 
     <!-- รูปภาพ -->
@@ -278,5 +327,30 @@
   document.getElementById('category_id')?.addEventListener('change', updateSkuPreview);
   document.getElementById('received_date')?.addEventListener('input', updateSkuPreview);
   updateSkuPreview();
+
+
+  // Price plan rows
+  const planTable = document.getElementById('planTable');
+  const addBtn = document.getElementById('addPlanRow');
+  function bindDelButtons(){
+    planTable?.querySelectorAll('.delPlanRow')?.forEach(btn=>{
+      btn.onclick = ()=>{ btn.closest('tr')?.remove(); };
+    });
+  }
+  bindDelButtons();
+  if (addBtn){
+    addBtn.onclick = ()=>{
+      const tbody = planTable.querySelector('tbody');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="form-control" name="plan_days" type="number" min="1" value="1"></td>
+        <td><input class="form-control text-end" name="plan_price" type="number" step="0.01" min="0" value="0"></td>
+        <td><input class="form-control" name="plan_label" value=""></td>
+        <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger delPlanRow">ลบ</button></td>
+      `;
+      tbody.appendChild(tr);
+      bindDelButtons();
+    };
+  }
 </script>
 {% endblock %}

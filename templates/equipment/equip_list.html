@@ -78,6 +78,8 @@
   .badge-ready   { background:#e7f7ee; color:#0f8f4a; }
   .badge-rented  { background:#fff4e5; color:#b35300; }
   .badge-repair  { background:#eef2ff; color:#4f46e5; }
+  .badge-reserved{ background:#eefafc; color:#0284c7; }
+  .badge-lost    { background:#ffe9ea; color:#a30d1a; }
 
   /* ไอคอนการทำงาน */
   .act{
@@ -131,13 +133,23 @@
       <select class="form-select form-select-lg" name="status" onchange="this.form.submit()">
         <option value="" {{ ''==status and 'selected' or '' }}>ทุกสถานะ</option>
         <option value="READY"  {{ status=='READY'  and 'selected' or '' }}>พร้อมให้เช่า</option>
+        <option value="RESERVED" {{ status=='RESERVED' and 'selected' or '' }}>จองแล้ว</option>
         <option value="RENTED" {{ status=='RENTED' and 'selected' or '' }}>ถูกเช่า</option>
         <option value="REPAIR" {{ status=='REPAIR' and 'selected' or '' }}>รอซ่อม</option>
+        <option value="LOST" {{ status=='LOST' and 'selected' or '' }}>เสีย/สูญหาย</option>
       </select>
     </div>
     <div class="col-12 col-md-2">
       <label class="form-label mb-1 small text-muted">คลัง/สาขา</label>
       <input class="form-control form-control-lg" name="warehouse" value="{{ warehouse or '' }}" placeholder="เช่น MAIN" onchange="this.form.submit()">
+    </div>
+
+    <div class="col-12 col-md-2">
+      <label class="form-label mb-1 small text-muted">แจ้งเตือน</label>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="expiring" value="1" id="expiring" {{ 'checked' if request.args.get('expiring')=='1' else '' }} onchange="this.form.submit()">
+        <label class="form-check-label" for="expiring">ใกล้หมดอายุ (&le; 90 วัน)</label>
+      </div>
     </div>
 
 
@@ -187,6 +199,7 @@
           <th class="text-uppercase small">หมวดหมู่</th>
           <th class="text-uppercase small">คลัง</th>
           <th class="text-uppercase small">รับเข้า</th>
+          <th class="text-uppercase small">หมดอายุ</th>
           <th class="text-uppercase small text-center" style="width:160px">การทำงาน</th>
         </tr>
       </thead>
@@ -209,17 +222,35 @@
           </td>
           <td class="fw-medium">{{ r.name }}</td>
           <td>
-            {% if r.status=='READY' %}
-              <span class="badge badge-pill badge-ready">พร้อมให้เช่า</span>
-            {% elif r.status=='RENTED' %}
-              <span class="badge badge-pill badge-rented">ถูกเช่า</span>
+            {% set st = r.status %}
+            {% if st=='READY' %}
+              <span class="badge badge-pill badge-ready">{{ status_th.get(st, 'พร้อมให้เช่า') }}</span>
+            {% elif st=='RESERVED' %}
+              <span class="badge badge-pill badge-reserved">{{ status_th.get(st, 'จองแล้ว') }}</span>
+            {% elif st=='RENTED' %}
+              <span class="badge badge-pill badge-rented">{{ status_th.get(st, 'ถูกเช่า') }}</span>
+            {% elif st=='REPAIR' %}
+              <span class="badge badge-pill badge-repair">{{ status_th.get(st, 'รอซ่อม') }}</span>
+            {% elif st=='LOST' %}
+              <span class="badge badge-pill badge-lost">{{ status_th.get(st, 'เสีย/สูญหาย') }}</span>
             {% else %}
-              <span class="badge badge-pill badge-repair">รอซ่อม</span>
+              <span class="badge text-bg-light text-dark">{{ status_th.get(st, st) }}</span>
             {% endif %}
           </td>
           <td>{{ r.category.name }}</td>
           <td>{{ r.warehouse or 'MAIN' }}</td>
           <td>{{ r.received_date|strftime('%d/%m/%Y') }}</td>
+          <td>
+            {% if r.expiry_date %}
+              {% set dte = r.days_to_expiry %}
+              <span class="text-nowrap">{{ r.expiry_date|strftime('%d/%m/%Y') }}</span>
+              {% if dte is not none %}
+                {% if dte <= 30 %}<span class="badge text-bg-danger ms-1">{{ dte }}d</span>{% elif dte <= 90 %}<span class="badge text-bg-warning text-dark ms-1">{{ dte }}d</span>{% endif %}
+              {% endif %}
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
           <td class="text-center">
             <div class="d-inline-flex gap-2">
               <a class="act act-view"  href="{{ url_for('equip_view', eid=r.id) }}" title="ดูรายละเอียด"><i class="bi bi-eye"></i></a>

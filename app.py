@@ -366,7 +366,7 @@ class Customer(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 # ---------- Equipment Module ----------
-EQUIP_STATUS = ("READY", "RENTED", "REPAIR")
+EQUIP_STATUS = ("READY", "RESERVED", "RENTED", "REPAIR", "LOST")
 EQUIP_STATUS_THAI = {
     "READY": "พร้อมให้เช่า",
     "RESERVED": "จองไว้",
@@ -375,6 +375,46 @@ EQUIP_STATUS_THAI = {
     "LOST": "สูญหาย",
 }
 
+
+class EquipmentStatus(db.Model):
+    
+    __tablename__ = "equipment_status"
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(24), nullable=False, unique=True, index=True)   # เช่น READY/RENTED/...
+    label_th = db.Column(db.String(80), nullable=False)                        # ชื่อไทยที่แสดง
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+def _seed_equipment_statuses():
+    # สร้างสถานะเริ่มต้นถ้ายังไม่มีใน DB (ไม่ทำซ้ำ)
+    try:
+        if EquipmentStatus.query.first():
+            return
+        defaults = [
+            ("READY", "พร้อมให้เช่า", 10),
+            ("RESERVED", "จองไว้", 20),
+            ("RENTED", "ถูกเช่า", 30),
+            ("REPAIR", "รอซ่อม", 40),
+            ("LOST", "สูญหาย", 50),
+        ]
+        for code, label, order in defaults:
+            db.session.add(EquipmentStatus(code=code, label_th=label, sort_order=order, is_active=True))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+def get_equipment_status_label(code: str) -> str:
+    # ดึงชื่อสถานะ (ไทย) จาก DB ถ้ามี ไม่งั้น fallback dict
+    if not code:
+        return ""
+    try:
+        s = EquipmentStatus.query.filter_by(code=code).first()
+        if s and s.label_th:
+            return s.label_th
+    except Exception:
+        pass
+    return EQUIP_STATUS_THAI.get(code, code)
 
 # ---------- Global Status Thai Mapping ----------
 DOC_STATUS_THAI = {
@@ -449,7 +489,7 @@ class Equipment(db.Model):
 
     @property
     def status_th(self) -> str:
-        return EQUIP_STATUS_THAI.get(self.status, self.status)
+        return get_equipment_status_label(self.status)
 
     @property
     def lifetime_days(self) -> int:
@@ -495,6 +535,384 @@ class Equipment(db.Model):
     @property
     def current_value(self) -> float:
         return round(max(0.0, (self.cost or 0) - self.accumulated_depr), 2)
+
+    @property
+    def has_life(self) -> bool:
+        return bool((self.life_years or 0) + (self.life_months or 0) + (self.life_days or 0))
+
+    @property
+    def expiry_date(self) -> date | None:
+        """วันหมดอายุโดยประมาณ (Requirement 2.3)
+
+        หมายเหตุ: เพื่อให้ไม่ต้องพึ่งไลบรารีเพิ่ม เราแปลงปี/เดือนเป็นวันแบบประมาณ:
+          ปี=365 วัน, เดือน=30 วัน
+        ถ้าไม่ได้กำหนดอายุการใช้งาน จะคืน None
+        """
+        if not self.received_date or not self.has_life:
+            return None
+        total_days = (self.life_years or 0) * 365 + (self.life_months or 0) * 30 + (self.life_days or 0)
+        if total_days <= 0:
+            return None
+        return self.received_date + timedelta(days=int(total_days))
+
+    @property
+    def days_to_expiry(self) -> int | None:
+        if not self.expiry_date:
+            return None
+        return (self.expiry_date - date.today()).days
+
+    def rental_price_for_days(self, days: int) -> float:
+        """คำนวณราคาเช่าแบบ 'ราคาต่อช่วง' และรวมกันได้ (Requirement 2.1)
+
+        ใช้ greedy: เลือกช่วงที่ใหญ่ที่สุดที่ไม่เกินวันคงเหลือ แล้วตัดออกเรื่อย ๆ
+        ถ้าไม่มี price_plans จะ fallback เป็นราคาเข้าคืนทุนต่อวัน * days
+        """
+        try:
+            d = int(days or 0)
+        except Exception:
+            d = 0
+        if d <= 0:
+            return 0.0
+
+        plans = list(getattr(self, "price_plans", []) or [])
+        plans = [p for p in plans if (p.duration_days or 0) > 0 and (p.price or 0) >= 0]
+        plans.sort(key=lambda p: int(p.duration_days or 0), reverse=True)
+
+        if not plans:
+            return round((self.price_per_day_break_even or 0) * d, 2)
+
+        remain = d
+        total = 0.0
+        guard = 0
+        while remain > 0 and guard < 5000:
+            guard += 1
+            picked = None
+            for p in plans:
+                if int(p.duration_days) <= remain:
+                    picked = p
+                    break
+            if not picked:
+                picked = plans[-1]
+            total += float(picked.price or 0)
+            step = int(picked.duration_days or 0)
+            remain -= step if step > 0 else remain
+        return round(total, 2)
+
+    def rental_breakdown_for_days(self, days: int) -> list[dict]:
+        """คืน breakdown ของช่วงที่ใช้คิดราคา เพื่อแสดงผลใน UI"""
+        try:
+            d = int(days or 0)
+        except Exception:
+            d = 0
+        if d <= 0:
+            return []
+        plans = list(getattr(self, "price_plans", []) or [])
+        plans = [p for p in plans if (p.duration_days or 0) > 0 and (p.price or 0) >= 0]
+        plans.sort(key=lambda p: int(p.duration_days or 0), reverse=True)
+        if not plans:
+            return [{"duration_days": d, "price": round((self.price_per_day_break_even or 0) * d, 2), "label": "คำนวณจากต้นทุน/อายุ"}]
+        remain = d
+        out = []
+        guard = 0
+        while remain > 0 and guard < 5000:
+            guard += 1
+            picked = None
+            for p in plans:
+                if int(p.duration_days) <= remain:
+                    picked = p
+                    break
+            if not picked:
+                picked = plans[-1]
+            out.append({"duration_days": int(picked.duration_days), "price": float(picked.price or 0), "label": (picked.label or "")})
+            step = int(picked.duration_days or 0)
+            remain -= step if step > 0 else remain
+        return out
+
+
+
+
+# ==========================
+# Equipment expiry helpers
+# ==========================
+def _get_equipment_expiry_lists(within_days: int = 90):
+    """คืน (expiring, expired) สำหรับอุปกรณ์ตามอายุการใช้งาน (Requirement 2.3)
+    - expiring: ใกล้หมดอายุภายใน within_days
+    - expired: หมดอายุแล้ว (days_left < 0)
+    รูปแบบ list: [(Equipment, days_left), ...]
+    """
+    try:
+        within = int(within_days or 0)
+    except Exception:
+        within = 90
+
+    # คืนค่าเป็น list[dict] เพื่อให้ template ใช้งานง่าย (ไม่ต้อง unpack tuple)
+    expiring: list[dict] = []
+    expired: list[dict] = []
+
+    try:
+        eqs = Equipment.query.all()
+        today_ = date.today()
+        for e in eqs:
+            days_left = getattr(e, "days_to_expiry", None)
+            try:
+                days_left = int(days_left) if days_left is not None else None
+            except Exception:
+                days_left = None
+            if days_left is None:
+                # fallback จาก expiry_date ถ้ามี
+                ex = getattr(e, "expiry_date", None)
+                if ex:
+                    try:
+                        days_left = (ex - today_).days
+                    except Exception:
+                        days_left = None
+
+            if days_left is None:
+                continue
+
+            ex = getattr(e, "expiry_date", None)
+            item = {
+                "id": getattr(e, "id", None),
+                "sku": getattr(e, "sku", ""),
+                "name": getattr(e, "name", ""),
+                "status": getattr(e, "status", ""),
+                "received_date": getattr(e, "received_date", None),
+                "expiry_date": ex,
+                "days_left": int(days_left),
+            }
+
+            if days_left < 0:
+                expired.append(item)
+            elif days_left <= within:
+                expiring.append(item)
+    except Exception:
+        # ถ้าระบบยังไม่มีตาราง/คิวรีพัง ให้ไม่ทำให้หน้าอื่นล้ม
+        expiring, expired = [], []
+
+    # sort: ใกล้หมดอายุก่อน / หมดอายุนานสุดท้าย
+    try:
+        expiring.sort(key=lambda x: x.get("days_left", 0))
+        expired.sort(key=lambda x: x.get("days_left", 0))
+    except Exception:
+        pass
+
+    return expiring, expired
+
+
+def _compute_notifications(
+    *,
+    return_within_days: int = 7,
+    equip_within_days: int = 90,
+    pending_limit: int = 50,
+    due_limit: int = 50,
+    equip_limit: int = 50,
+    repair_limit: int = 50,
+    claim_limit: int = 50,
+):
+    """สรุปการแจ้งเตือนให้ใช้ทั้งหน้า /notifications และ badge ในเมนู
+
+    แนวคิดตามธุรกิจ Supertools:
+    1) ใบจอง/สัญญาใกล้ครบกำหนดคืน (อิง SalesDoc.contract_end)
+    2) อุปกรณ์ใกล้หมดอายุ/หมดอายุ (อิง Equipment.expiry_date)
+    3) เอกสารค้างอนุมัติ (SalesDoc ที่ status ยังไม่ APPROVED)
+    4) งานซ่อมค้าง (RepairJob.status != DONE)
+    5) ใบเคลมค้าง (Claim.status != CLOSED)
+
+    คืนค่าเป็น dict สำหรับ template:
+      {
+        "due_docs": [...],
+        "pending_docs": [...],
+        "equip_expiring": [...],
+        "equip_expired": [...],
+        "open_repairs": [...],
+        "open_claims": [...],
+        "counts": {...},
+        "total": int,
+      }
+    """
+
+    today = date.today()
+
+    # ------------------------------
+    # 1) ใบจอง/สัญญาใกล้ครบกำหนดคืน
+    # ------------------------------
+    due_docs = []
+    try:
+        horizon = today + timedelta(days=max(int(return_within_days), 0))
+
+        # BK = ใบจอง, CT = สัญญา (ตามโปรเจคนี้)
+        doc_types = ["BK", "CT"]
+
+        # สถานะที่ "ไม่นับ" ว่าเป็นงานค้าง (กัน false positive)
+        ignored_statuses = {
+            "CANCELLED", "CANCELED", "VOID", "DELETED",
+            "DONE", "CLOSED", "RETURNED",
+        }
+
+        q = (
+            SalesDoc.query
+            .options(joinedload(SalesDoc.customer))
+            .filter(
+                SalesDoc.doc_type.in_(doc_types),
+                SalesDoc.contract_end.isnot(None),
+            )
+        )
+
+        # ดึงเฉพาะที่ครบกำหนด <= horizon และยังไม่ปิดงาน
+        rows = q.order_by(SalesDoc.contract_end.asc()).limit(400).all()
+        for d in rows:
+            st = (d.status or "").upper().strip()
+            if st in ignored_statuses:
+                continue
+            end_d = d.contract_end
+            try:
+                end_d = end_d.date()
+            except Exception:
+                pass
+            if not end_d:
+                continue
+            if today <= end_d <= horizon:
+                days_left = (end_d - today).days
+                due_docs.append({
+                    "doc": d,
+                    "days_left": days_left,
+                    "due_date": end_d,
+                })
+
+        due_docs = due_docs[: max(int(due_limit), 0) or 0]
+    except Exception:
+        due_docs = []
+
+    # ---------------------------------
+    # 2) อุปกรณ์ใกล้หมดอายุ/หมดอายุ
+    # ---------------------------------
+    equip_expiring, equip_expired = _get_equipment_expiry_lists(int(equip_within_days))
+    equip_expiring = equip_expiring[: max(int(equip_limit), 0) or 0]
+    equip_expired = equip_expired[: max(int(equip_limit), 0) or 0]
+
+    # ------------------------------
+    # 3) เอกสารค้างอนุมัติ
+    # ------------------------------
+    pending_docs = []
+    try:
+        # เอกสารหลักที่ต้องมี flow อนุมัติ
+        tracked_types = ["QU", "BK", "CT", "BL", "IV", "RC"]
+        # ถ้า status ว่าง ให้ถือว่าเป็น DRAFT
+        q = (
+            SalesDoc.query
+            .options(joinedload(SalesDoc.customer))
+            .filter(SalesDoc.doc_type.in_(tracked_types))
+            .order_by(SalesDoc.date.desc(), SalesDoc.id.desc())
+            .limit(600)
+        )
+        rows = q.all()
+
+        def _is_pending(status: str) -> bool:
+            s = (status or "").upper().strip()
+            if not s:
+                return True
+            if s in {"APPROVED", "PAID", "DONE", "CLOSED"}:
+                return False
+            # รูปแบบภาษาไทย/คำอื่น ๆ ที่ถือว่า "ค้างอนุมัติ"
+            if "รอ" in (status or ""):
+                return True
+            return s in {"PENDING", "DRAFT", "WAITING", "ISSUED"}
+
+        for d in rows:
+            if _is_pending(d.status):
+                pending_docs.append(d)
+
+        pending_docs = pending_docs[: max(int(pending_limit), 0) or 0]
+    except Exception:
+        pending_docs = []
+
+    # ------------------------------
+    # 4) งานซ่อมค้าง
+    # ------------------------------
+    open_repairs = []
+    try:
+        open_repairs = (
+            db.session.query(RepairJob, Equipment)
+            .join(Equipment, RepairJob.equipment_id == Equipment.id)
+            .filter(RepairJob.status != "DONE")
+            .order_by(RepairJob.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        open_repairs = open_repairs[: max(int(repair_limit), 0) or 0]
+    except Exception:
+        open_repairs = []
+
+    # ------------------------------
+    # 5) ใบเคลมค้าง
+    # ------------------------------
+    open_claims = []
+    try:
+        open_claims = (
+            Claim.query
+            .options(joinedload(Claim.customer))
+            .filter(Claim.status != "CLOSED")
+            .order_by(Claim.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        open_claims = open_claims[: max(int(claim_limit), 0) or 0]
+    except Exception:
+        open_claims = []
+
+    counts = {
+        "due": len(due_docs),
+        "pending": len(pending_docs),
+        "equip_expiring": len(equip_expiring),
+        "equip_expired": len(equip_expired),
+        "repairs": len(open_repairs),
+        "claims": len(open_claims),
+    }
+    total = sum(counts.values())
+
+    return {
+        "due_docs": due_docs,
+        "pending_docs": pending_docs,
+        "equip_expiring": equip_expiring,
+        "equip_expired": equip_expired,
+        "open_repairs": open_repairs,
+        "open_claims": open_claims,
+        "counts": counts,
+        "total": total,
+        "settings": {
+            "return_within_days": int(return_within_days),
+            "equip_within_days": int(equip_within_days),
+        },
+    }
+
+
+class EquipmentPricePlan(db.Model):
+    """ตารางราคาเช่าแบบ 'ราคาต่อช่วง' (Requirement 2.1)
+
+    ตัวอย่าง:
+      - 1 วัน = 200
+      - 7 วัน = 1,200
+      - 30 วัน = 3,500
+    เวลาให้ราคา จะเลือกช่วงที่ "ไม่เกิน" จำนวนวันที่เช่า และเป็นช่วงที่มากที่สุด
+    แล้วรวมราคาหลายช่วงได้ (เช่น 45 วัน => 30วัน + 7วัน + 7วัน + 1วัน)
+    """
+    __tablename__ = "equipment_price_plan"
+    id = db.Column(db.Integer, primary_key=True)
+    equipment_id = db.Column(db.Integer, db.ForeignKey("equipment.id"), index=True, nullable=False)
+    duration_days = db.Column(db.Integer, nullable=False, default=1)  # จำนวนวันของช่วง
+    price = db.Column(db.Float, nullable=False, default=0.0)          # ราคาในช่วงนั้น
+    label = db.Column(db.String(120), default="")                     # ชื่อช่วง (เช่น รายวัน/รายสัปดาห์)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    equipment = db.relationship(
+        "Equipment",
+        backref=db.backref(
+            "price_plans",
+            lazy="select",
+            cascade="all, delete-orphan",
+            order_by="EquipmentPricePlan.duration_days.asc()"
+        )
+    )
 
 class EquipmentLog(db.Model):
     __tablename__ = "equipment_log"
@@ -1221,6 +1639,28 @@ def inject_perms():
 
     return {"can": _can}
 
+
+@app.context_processor
+def inject_notifications_badge():
+    """ทำ badge แจ้งเตือนให้เมนู (ไม่ต้องแก้ทุก view ให้ส่งตัวแปรเอง)"""
+    if not current_user.is_authenticated:
+        return {"notif_count": 0}
+
+    # กันกรณีหน้า login / init ยังไม่พร้อม
+    try:
+        data = _compute_notifications(
+            return_within_days=7,
+            equip_within_days=90,
+            pending_limit=10,
+            due_limit=10,
+            equip_limit=10,
+            repair_limit=10,
+            claim_limit=10,
+        )
+        return {"notif_count": int(data.get("counts", {}).get("total", 0) or 0)}
+    except Exception:
+        return {"notif_count": 0}
+
 def _unit_to_days(unit: str, n: int | float) -> int:
     """แปลงหน่วยเช่า + จำนวนหน่วย → จำนวนวัน (ปัดขึ้นอย่างปลอดภัย)"""
     u = (unit or "DAY").upper()
@@ -1418,7 +1858,9 @@ def bootstrap():
     ("transport.update_status", "อัปเดตสถานะเอกสารขนส่ง"),
 
     ("gifts.view",   "ดูเมนูของขวัญ"),
-    ("gifts.manage", "จัดการแคมเปญของขวัญ"),
+    ("gifts.manage", "จัดการแคมเปญของขวัญ"),    ("reports.view", "ดูรายงาน"),
+    ("reports.export", "Export รายงาน (Excel)"),
+
 ]
 
         codes_to_perm = {}
@@ -1659,6 +2101,96 @@ def _as_static_url(path: str) -> str:
     if p.startswith("static/"):
         p = p[7:]
     return url_for("static", filename=p)
+
+def _ar_aging_rows(as_of: date):
+    """
+    สรุปลูกหนี้คงค้าง (A/R Aging) จาก BL และตัดด้วย RC (แบบเต็มจำนวน)
+    - BL เป็นต้นทางหนี้
+    - ถ้า BL = PAID => ไม่ค้าง
+    - ถ้า BL ยังไม่ PAID แต่มี RC(ISSUED) ที่ parent เดียวกัน => ถือว่าตัดหนี้แล้ว (กันความไม่ตรงของสถานะ)
+    """
+    # 1) ดึง RC ที่ "ออกแล้ว" เพื่อใช้ตัดหนี้ (ตาม parent_id)
+    issued_rc_parent_ids = set()
+    try:
+        rc_q = (
+            SalesDoc.query
+            .filter(
+                SalesDoc.doc_type == "RC",
+                SalesDoc.date <= as_of,
+                db.func.upper(SalesDoc.status) == "ISSUED",
+            )
+            .with_entities(SalesDoc.parent_id)
+            .all()
+        )
+        issued_rc_parent_ids = {pid for (pid,) in rc_q if pid}
+    except Exception:
+        issued_rc_parent_ids = set()
+
+    # 2) ดึง BL ทั้งหมดที่ออกก่อน/เท่าวันรายงาน
+    bls = (
+        SalesDoc.query
+        .options(joinedload(SalesDoc.customer))
+        .filter(SalesDoc.doc_type == "BL", SalesDoc.date <= as_of)
+        .all()
+    )
+
+    by_customer = {}
+
+    for bl in bls:
+        st = (bl.status or "").upper()
+
+        # ถ้าชำระแล้ว ไม่ถือเป็นหนี้ค้าง
+        if st == "PAID":
+            continue
+
+        # ถ้า BL ยังไม่ PAID แต่มี RC(ISSUED) parent เดียวกัน => ถือว่าตัดแล้ว
+        if bl.parent_id and bl.parent_id in issued_rc_parent_ids:
+            continue
+
+        cust = bl.customer
+        cust_id = bl.customer_id
+
+        # โค้ดลูกค้าในระบบคุณยังไม่มี field code -> ใช้ tax_id หรือ id แทน
+        cust_code = (getattr(cust, "tax_id", "") or "").strip() or str(cust_id)
+        cust_name = (getattr(cust, "name", "") or "").strip()
+
+        # ยอดหนี้: ใช้ amount_grand เป็นหลัก (ตามระบบเอกสารคุณ)
+        amt = float(getattr(bl, "amount_grand", 0) or 0)
+
+        # วันครบกำหนด = วันเอกสาร + credit_days
+        cd = int(getattr(bl, "credit_days", 0) or 0)
+        due_date = (bl.date or as_of) + timedelta(days=cd)
+        dpd = (as_of - due_date).days  # days past due (ติดลบ = ยังไม่ถึงกำหนด)
+
+        # bucket
+        if dpd <= 30:
+            bucket = "b0_30"
+        elif dpd <= 60:
+            bucket = "b31_60"
+        elif dpd <= 90:
+            bucket = "b61_90"
+        else:
+            bucket = "b90p"
+
+        if cust_id not in by_customer:
+            by_customer[cust_id] = {
+                "customer_code": cust_code,
+                "customer_name": cust_name,
+                "total_due": 0.0,
+                "b0_30": 0.0,
+                "b31_60": 0.0,
+                "b61_90": 0.0,
+                "b90p": 0.0,
+            }
+
+        by_customer[cust_id]["total_due"] += amt
+        by_customer[cust_id][bucket] += amt
+
+    # sort by customer_code, customer_name
+    rows = list(by_customer.values())
+    rows.sort(key=lambda r: (r.get("customer_code") or "", r.get("customer_name") or ""))
+    return rows
+
 
 def _gen_running(prefix: str, Model):
     today = datetime.utcnow()
@@ -2278,8 +2810,9 @@ def home():
 @permission_required("dashboard.view")
 def dashboard():
     from collections import defaultdict
-    from datetime import datetime, time
+    from datetime import datetime, time, date, timedelta
     from sqlalchemy.orm import joinedload
+    from dateutil.relativedelta import relativedelta
 
     today = date.today()
     rng = (request.args.get("range") or "7d").lower()
@@ -2305,9 +2838,7 @@ def dashboard():
                     start_d, end_d = end_d, start_d
                 return start_d, end_d, "custom"
             except ValueError:
-                # ถ้าพิมพ์วันที่ผิด format ให้ fallback เป็น 7 วัน
                 return today - timedelta(days=6), today, "7d"
-        # ค่าอื่น ๆ ให้ fallback เป็น 7 วัน
         return today - timedelta(days=6), today, "7d"
 
     start, end, rng = _parse_range(rng)
@@ -2334,8 +2865,6 @@ def dashboard():
             return 0.0
 
     # ---------- 2) รายรับจากใบเสร็จรับเงิน (RC) ----------
-    # รองรับสถานะได้หลายแบบ (ระบบคุณใช้คำว่า "ชำระแล้ว" บน UI)
-    # ถ้าต้องการ "นับเฉพาะจ่ายแล้วจริง" ให้เหลือแค่ ["PAID","RECEIPTED"]
     rc_statuses = [
         "PAID", "Paid", "paid",
         "RECEIPTED", "Receipted", "receipted",
@@ -2361,7 +2890,6 @@ def dashboard():
     total_income = round(sum(income_by_day.values()), 2)
 
     # ---------- 3) รายจ่าย: GRN + งานซ่อม + ค่าเสื่อม ----------
-    # 3.1 ใบรับสินค้า (GoodsReceipt) ในช่วง
     grn_list = (
         GoodsReceipt.query
         .filter(
@@ -2370,6 +2898,7 @@ def dashboard():
         )
         .all()
     )
+
     grn_total = 0.0
     expense_by_day = defaultdict(float)
 
@@ -2395,30 +2924,34 @@ def dashboard():
 
     repairs_total = 0.0
     for job in repair_jobs:
-        cost = _safe_num(job.total_cost)
+        cost = _safe_num(getattr(job, "total_cost", 0.0))
         repairs_total += cost
         if job.closed_at:
-            d = job.closed_at.date()
-            expense_by_day[d] += cost
+            expense_by_day[job.closed_at.date()] += cost
 
-    # 3.3 ค่าเสื่อม (คำนวณแบบ straight-line จาก Equipment ทุกตัว)
+    # 3.3 ค่าเสื่อม (straight-line จาก Equipment ทุกตัว)
     equipments = Equipment.query.all()
     depreciation_total = 0.0
     for eq in equipments:
-        if not eq.received_date:
+        if not getattr(eq, "received_date", None):
             continue
-        # ช่วงที่นับค่าเสื่อมของตัวนี้จริง ๆ
+
         eq_start = max(start, eq.received_date)
-        eq_end_life = eq.received_date + timedelta(days=eq.lifetime_days - 1)
+        lifetime_days = int(getattr(eq, "lifetime_days", 0) or 0)
+        if lifetime_days <= 0:
+            continue
+
+        eq_end_life = eq.received_date + timedelta(days=lifetime_days - 1)
         eq_end = min(end, eq_end_life)
         if eq_start > eq_end:
             continue
+
         days_eq = (eq_end - eq_start).days + 1
-        daily_dep = _safe_num(eq.depreciation_per_day)
+        daily_dep = _safe_num(getattr(eq, "depreciation_per_day", 0.0))
         if daily_dep <= 0:
             continue
+
         depreciation_total += daily_dep * days_eq
-        # ลงเป็นรายวันให้กราฟด้วย
         for i in range(days_eq):
             d = eq_start + timedelta(days=i)
             expense_by_day[d] += daily_dep
@@ -2426,18 +2959,16 @@ def dashboard():
     total_expense = round(grn_total + repairs_total + depreciation_total, 2)
 
     # ---------- 4) สถานะใบจัดส่ง / ใบวางบิล ----------
-    # ใบจัดส่งทั้งหมดตอนนี้ (ไม่จำกัดช่วง)
     waiting_dn = DeliveryDoc.query.filter(DeliveryDoc.status == DeliveryStatus.PENDING).count()
     done_dn = DeliveryDoc.query.filter(DeliveryDoc.status == DeliveryStatus.DONE).count()
 
-    # ใบวางบิล (BL) ภายในช่วง + บิลเกินกำหนดชำระ (ดูวันที่วันนี้)
     bills = SalesDoc.query.filter(SalesDoc.doc_type == "BL").all()
     billed_in_range = [b for b in bills if b.date and start <= b.date <= end]
 
     overdue_count = 0
     for b in bills:
         status = (b.status or "").upper()
-        credit_days = b.credit_days or 0
+        credit_days = int(getattr(b, "credit_days", 0) or 0)
         if not b.date:
             continue
         due_date = b.date + timedelta(days=credit_days)
@@ -2464,11 +2995,7 @@ def dashboard():
     for eq in rented_equips:
         lg = last_rent_log.get(eq.id)
         cust_name = lg.customer_name if lg and lg.customer_name else "-"
-        renting_items.append({
-            "sku": eq.sku,
-            "name": eq.name,
-            "customer": cust_name,
-        })
+        renting_items.append({"sku": eq.sku, "name": eq.name, "customer": cust_name})
 
     # ---------- 6) Top 5 อุปกรณ์ทำเงินสูงสุด ----------
     item_income = defaultdict(float)
@@ -2492,11 +3019,7 @@ def dashboard():
     )
 
     repairs_list = []
-    status_th = {
-        "OPEN": "รอเริ่มงาน",
-        "IN_PROGRESS": "กำลังซ่อม",
-        "DONE": "ซ่อมเสร็จ",
-    }
+    status_th = {"OPEN": "รอเริ่มงาน", "IN_PROGRESS": "กำลังซ่อม", "DONE": "ซ่อมเสร็จ"}
     for job, eq, cust in open_repairs_q:
         repairs_list.append({
             "job_no": job.number,
@@ -2523,7 +3046,6 @@ def dashboard():
     income_series = [round(income_by_day.get(d, 0.0), 2) for d in days]
     expense_series = [round(expense_by_day.get(d, 0.0), 2) for d in days]
 
-    # helper หา first/last day ของเดือน
     def _month_range(y: int, m: int):
         first = date(y, m, 1)
         if m == 12:
@@ -2533,10 +3055,7 @@ def dashboard():
         return first, last
 
     cy, cm = today.year, today.month
-    if cm == 1:
-        py, pm = cy - 1, 12
-    else:
-        py, pm = cy, cm - 1
+    py, pm = (cy - 1, 12) if cm == 1 else (cy, cm - 1)
     ly, lm = cy - 1, cm
 
     def _sum_rc_in_month(y: int, m: int) -> float:
@@ -2562,18 +3081,9 @@ def dashboard():
         return round((cur - base) * 100.0 / base, 1)
 
     month_compare = {
-        "current": {
-            "label": f"{cm:02d}/{cy}",
-            "value": cur_month_val,
-        },
-        "prev": {
-            "label": f"{pm:02d}/{py}",
-            "value": prev_month_val,
-        },
-        "last_year": {
-            "label": f"{lm:02d}/{ly}",
-            "value": last_year_val,
-        },
+        "current": {"label": f"{cm:02d}/{cy}", "value": cur_month_val},
+        "prev": {"label": f"{pm:02d}/{py}", "value": prev_month_val},
+        "last_year": {"label": f"{lm:02d}/{ly}", "value": last_year_val},
         "delta_prev_pct": _pct_change(cur_month_val, prev_month_val),
         "delta_ly_pct": _pct_change(cur_month_val, last_year_val),
     }
@@ -2586,18 +3096,9 @@ def dashboard():
             "repair": round(repairs_total, 2),
             "grn": round(grn_total, 2),
         },
-        "delivery": {
-            "waiting": waiting_dn,
-            "done": done_dn,
-        },
-        "billing": {
-            "billed": len(billed_in_range),
-            "overdue": overdue_count,
-        },
-        "renting": {
-            "count": len(renting_items),
-            "items": renting_items,
-        },
+        "delivery": {"waiting": waiting_dn, "done": done_dn},
+        "billing": {"billed": len(billed_in_range), "overdue": overdue_count},
+        "renting": {"count": len(renting_items), "items": renting_items},
         "top_items": top_items,
         "repairs": repairs_list,
         "top_customers": top_customers,
@@ -2609,13 +3110,57 @@ def dashboard():
         },
     }
 
+    # -------------------------------
+    # Equipment expiry summary (Phase 1)
+    # -------------------------------
+    within_days = int(request.args.get("exp_within") or 90)
+
+    def _calc_expiry_date(e):
+        rd = getattr(e, "received_date", None) or getattr(e, "received_at", None)
+        if rd is None:
+            return None
+        try:
+            rd = rd.date()
+        except Exception:
+            pass
+
+        y = int(getattr(e, "life_years", 0) or 0)
+        m = int(getattr(e, "life_months", 0) or 0)
+        d = int(getattr(e, "life_days", 0) or 0)
+        try:
+            return rd + relativedelta(years=y, months=m) + timedelta(days=d)
+        except Exception:
+            return None
+
+    expiring = []
+    expired = []
+
+    try:
+        eqs = Equipment.query.all()
+        for e in eqs:
+            expiry = getattr(e, "expiry_date", None) or _calc_expiry_date(e)
+            if not expiry:
+                continue
+
+            days_left = (expiry - today).days
+            if days_left < 0:
+                expired.append((e, days_left))
+            elif days_left <= within_days:
+                expiring.append((e, days_left))
+    except Exception:
+        expiring, expired = [], []
+
     return render_template(
         "dashboard.html",
         start=start,
         end=end,
         rng=rng,
-        stats=stats,
         today=today,
+        stats=stats,
+expired=expired,
+        exp_within=within_days,
+        expiring_count=len(expiring),
+        expired_count=len(expired),
     )
 
 # ---- Auth ----
@@ -3499,12 +4044,328 @@ def cat_new():
         return redirect(url_for("cat_list"))
     return render_template("equipment/cat_form.html")
 
+
+
+@app.route("/equipment/categories/<int:cid>/edit", methods=["GET","POST"])
+@permission_required("equipment.manage")
+def cat_edit(cid):
+    c = Category.query.get_or_404(cid)
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        prefix = (request.form.get("prefix_sku") or "").strip()
+        if not name or not prefix:
+            flash("กรอกชื่อหมวดหมู่และ Prefix SKU", "danger")
+            return redirect(url_for("cat_edit", cid=cid))
+        # กันซ้ำกับคนอื่น
+        dup = Category.query.filter(
+            ((Category.name==name) | (Category.prefix_sku==prefix)) & (Category.id!=cid)
+        ).first()
+        if dup:
+            flash("ชื่อหมวดหมู่หรือ Prefix ซ้ำ", "warning")
+            return redirect(url_for("cat_edit", cid=cid))
+        c.name = name
+        c.prefix_sku = prefix
+        db.session.commit()
+        flash("บันทึกการแก้ไขหมวดหมู่แล้ว", "success")
+        return redirect(url_for("cat_list"))
+    return render_template("equipment/cat_form.html", is_edit=True, c=c)
+
+@app.post("/equipment/categories/<int:cid>/delete")
+@permission_required("equipment.manage")
+def cat_delete(cid):
+    c = Category.query.get_or_404(cid)
+    # กันลบถ้ามีอุปกรณ์ผูกอยู่
+    if Equipment.query.filter_by(category_id=c.id).first():
+        flash("ลบไม่ได้: ยังมีอุปกรณ์อยู่ในหมวดหมู่นี้", "danger")
+        return redirect(url_for("cat_list"))
+    db.session.delete(c)
+    db.session.commit()
+    flash("ลบหมวดหมู่แล้ว", "success")
+    return redirect(url_for("cat_list"))
+
+
+
+# ---------- Equipment Status (Customizable) ----------
+@app.get("/equipment/statuses")
+@permission_required("equipment.manage")
+def equip_status_list():
+    statuses = EquipmentStatus.query.order_by(EquipmentStatus.sort_order.asc(), EquipmentStatus.code.asc()).all()
+    return render_template("equipment/status_list.html", statuses=statuses)
+
+@app.route("/equipment/statuses/new", methods=["GET","POST"])
+@permission_required("equipment.manage")
+def equip_status_new():
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip().upper()
+        label_th = (request.form.get("label_th") or "").strip()
+        is_active = (request.form.get("is_active") or "1") == "1"
+        if not code or not label_th:
+            flash("กรอก Code และชื่อสถานะ", "danger")
+            return redirect(url_for("equip_status_new"))
+        if EquipmentStatus.query.filter_by(code=code).first():
+            flash("Code ซ้ำ", "warning")
+            return redirect(url_for("equip_status_new"))
+        db.session.add(EquipmentStatus(code=code, label_th=label_th, is_active=is_active, sort_order=100))
+        db.session.commit()
+        flash("เพิ่มสถานะแล้ว", "success")
+        return redirect(url_for("equip_status_list"))
+    return render_template("equipment/status_form.html", is_edit=False, s=None)
+
+@app.route("/equipment/statuses/<int:sid>/edit", methods=["GET","POST"])
+@permission_required("equipment.manage")
+def equip_status_edit(sid):
+    s = EquipmentStatus.query.get_or_404(sid)
+    if request.method == "POST":
+        s.label_th = (request.form.get("label_th") or "").strip()
+        s.is_active = (request.form.get("is_active") or "1") == "1"
+        db.session.commit()
+        flash("บันทึกแล้ว", "success")
+        return redirect(url_for("equip_status_list"))
+    return render_template("equipment/status_form.html", is_edit=True, s=s)
+
+@app.post("/equipment/statuses/<int:sid>/delete")
+@permission_required("equipment.manage")
+def equip_status_delete(sid):
+    s = EquipmentStatus.query.get_or_404(sid)
+    # กันลบถ้ามี equipment ใช้งาน status นี้
+    if Equipment.query.filter_by(status=s.code).first():
+        flash("ลบไม่ได้: ยังมีอุปกรณ์ใช้สถานะนี้อยู่", "danger")
+        return redirect(url_for("equip_status_list"))
+    db.session.delete(s)
+    db.session.commit()
+    flash("ลบสถานะแล้ว", "success")
+    return redirect(url_for("equip_status_list"))
+
+
+
+# ---------- Import (CSV) ----------
+@app.get("/import")
+@permission_required("equipment.manage")
+def import_index():
+    return render_template("import/index.html")
+
+@app.route("/import/categories", methods=["GET","POST"])
+@permission_required("equipment.manage")
+def import_categories():
+    result = None
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or not f.filename.lower().endswith(".csv"):
+            flash("กรุณาเลือกไฟล์ .csv", "danger")
+            return redirect(url_for("import_categories"))
+        import csv
+        created = updated = skipped = 0
+        data = f.stream.read().decode("utf-8-sig", errors="ignore").splitlines()
+        reader = csv.DictReader(data)
+        for row in reader:
+            name = (row.get("name") or "").strip()
+            prefix = (row.get("prefix_sku") or "").strip().upper()
+            if not name or not prefix:
+                skipped += 1
+                continue
+            c = Category.query.filter_by(prefix_sku=prefix).first()
+            if c:
+                c.name = name
+                updated += 1
+            else:
+                db.session.add(Category(name=name, prefix_sku=prefix))
+                created += 1
+        db.session.commit()
+        result = dict(created=created, updated=updated, skipped=skipped)
+        flash("นำเข้าหมวดหมู่สำเร็จ", "success")
+    return render_template("import/categories.html", result=result)
+
+@app.route("/import/equipment", methods=["GET","POST"])
+@permission_required("equipment.manage")
+def import_equipment():
+    result = None
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or not f.filename.lower().endswith(".csv"):
+            flash("กรุณาเลือกไฟล์ .csv", "danger")
+            return redirect(url_for("import_equipment"))
+        import csv
+        created = updated = skipped = 0
+        data = f.stream.read().decode("utf-8-sig", errors="ignore").splitlines()
+        reader = csv.DictReader(data)
+        for row in reader:
+            sku = (row.get("sku") or "").strip().upper()
+            name = (row.get("name") or "").strip()
+            category_prefix = (row.get("category_prefix") or "").strip().upper()
+            if not sku or not name or not category_prefix:
+                skipped += 1
+                continue
+            cat = Category.query.filter_by(prefix_sku=category_prefix).first()
+            if not cat:
+                skipped += 1
+                continue
+            def _int(x, default=0):
+                try: return int(float(x))
+                except Exception: return default
+            def _float(x, default=0.0):
+                try: return float(x)
+                except Exception: return default
+            from datetime import datetime as _dt
+            rd = (row.get("received_date") or "").strip()
+            try:
+                received_date = _dt.strptime(rd, "%Y-%m-%d").date() if rd else date.today()
+            except Exception:
+                received_date = date.today()
+            brand = (row.get("brand") or "").strip()
+            warehouse = (row.get("warehouse") or "MAIN").strip().upper()
+            status = (row.get("status") or "READY").strip().upper()
+            eq = Equipment.query.filter_by(sku=sku).first()
+            if eq:
+                eq.name = name
+                eq.brand = brand
+                eq.warehouse = warehouse
+                eq.category_id = cat.id
+                eq.received_date = received_date
+                eq.cost = _float(row.get("cost") or 0)
+                eq.life_years = _int(row.get("life_years") or 0)
+                eq.life_months = _int(row.get("life_months") or 0)
+                eq.life_days = _int(row.get("life_days") or 0)
+                eq.status = status
+                # ราคาเช่าแบบต่อช่วง: price_plans="1:200;7:1200"
+                if (row.get("price_plans") or "").strip():
+                    _set_price_plans_from_text(eq, row.get("price_plans"))
+                updated += 1
+            else:
+                db.session.add(Equipment(
+                    sku=sku, name=name, brand=brand, warehouse=warehouse,
+                    category_id=cat.id, received_date=received_date, cost=_float(row.get("cost") or 0),
+                    life_years=_int(row.get("life_years") or 0), life_months=_int(row.get("life_months") or 0), life_days=_int(row.get("life_days") or 0),
+                    status=status
+                ))
+                db.session.flush()
+                eq2 = Equipment.query.filter_by(sku=sku).first()
+                if eq2 and (row.get("price_plans") or "").strip():
+                    _set_price_plans_from_text(eq2, row.get("price_plans"))
+                created += 1
+        db.session.commit()
+        result = dict(created=created, updated=updated, skipped=skipped)
+        flash("นำเข้าอุปกรณ์สำเร็จ", "success")
+    return render_template("import/equipment.html", result=result)
+
+
+
+# ---------- Notifications ----------
+@app.get("/notifications")
+@login_required
+def notifications_index():
+    # ปรับช่วงได้จาก query string
+    # - return_days: ใกล้ครบกำหนดคืน/สิ้นสุดสัญญา (BK/CT) กี่วัน
+    # - equip_days: อุปกรณ์ใกล้หมดอายุ (lifetime) กี่วัน
+    return_days = int(request.args.get("return_days") or 7)
+    equip_days = int(request.args.get("equip_days") or 90)
+
+    data = _compute_notifications(
+        return_within_days=return_days,
+        equip_within_days=equip_days,
+    )
+
+    return render_template(
+        "notifications/index.html",
+        # config
+        return_days=return_days,
+        equip_days=equip_days,
+        # sections
+        due_docs=data["due_docs"],
+        pending_docs=data["pending_docs"],
+        equip_expiring=data["equip_expiring"],
+        equip_expired=data["equip_expired"],
+        open_repairs=data["open_repairs"],
+        open_claims=data["open_claims"],
+        counts=data["counts"],
+    )
+
 # ---------- Equipment ----------
+
+def _set_price_plans_from_form(eq):
+    """อ่านราคาเช่าแบบต่อช่วงจากฟอร์ม แล้วบันทึกลง equipment_price_plan
+
+    ฟอร์มจะส่ง list: plan_days[], plan_price[], plan_label[]
+    - เคลียร์ของเดิม แล้วใส่ใหม่ทั้งหมด
+    - ข้ามแถวที่ไม่ครบ หรือวัน <=0
+    """
+    if eq is None:
+        return
+    # clear old
+    try:
+        EquipmentPricePlan.query.filter_by(equipment_id=eq.id).delete(synchronize_session=False)
+    except Exception:
+        # fallback: ถ้า relationship ถูกโหลดแล้ว
+        try:
+            eq.price_plans.clear()
+        except Exception:
+            pass
+
+    days_list = request.form.getlist('plan_days')
+    price_list = request.form.getlist('plan_price')
+    label_list = request.form.getlist('plan_label')
+
+    n = max(len(days_list), len(price_list), len(label_list))
+    for i in range(n):
+        d = (days_list[i] if i < len(days_list) else '').strip()
+        pr = (price_list[i] if i < len(price_list) else '').strip()
+        lb = (label_list[i] if i < len(label_list) else '').strip()
+        if not d and not pr and not lb:
+            continue
+        try:
+            dd = int(float(d))
+        except Exception:
+            continue
+        if dd <= 0:
+            continue
+        try:
+            pp = float(pr or 0)
+        except Exception:
+            pp = 0.0
+        db.session.add(EquipmentPricePlan(equipment_id=eq.id, duration_days=dd, price=pp, label=lb))
+
+
+def _set_price_plans_from_text(eq, s: str):
+    """นำเข้าราคาเช่าแบบต่อช่วงจากข้อความ เช่น 1:200;7:1200;30:3500"""
+    if eq is None:
+        return
+    if not s:
+        return
+    try:
+        EquipmentPricePlan.query.filter_by(equipment_id=eq.id).delete(synchronize_session=False)
+    except Exception:
+        pass
+    parts = re.split(r"[;\n\r]+", str(s))
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # รองรับรูปแบบ 7=1200 หรือ 7:1200
+        if ':' in part:
+            a,b = part.split(':',1)
+        elif '=' in part:
+            a,b = part.split('=',1)
+        else:
+            continue
+        a=a.strip(); b=b.strip()
+        try:
+            dd=int(float(a))
+        except Exception:
+            continue
+        try:
+            pp=float(b)
+        except Exception:
+            pp=0.0
+        if dd<=0:
+            continue
+        db.session.add(EquipmentPricePlan(equipment_id=eq.id, duration_days=dd, price=pp, label=''))
+
+
 @app.route("/equipment")
 @permission_required("equipment.view")
 def equip_list():
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "").upper()
+    expiring = (request.args.get("expiring") or "").strip()
     warehouse = (request.args.get("warehouse") or "").strip()
     start = (request.args.get("start") or "").strip()
     end = (request.args.get("end") or "").strip()
@@ -3516,7 +4377,7 @@ def equip_list():
     if q:
         like = f"%{q}%"
         qry = qry.filter(or_(Equipment.sku.ilike(like), Equipment.name.ilike(like)))
-    if status in EQUIP_STATUS:
+    if status:
         qry = qry.filter(Equipment.status == status)
     if warehouse:
         qry = qry.filter(Equipment.warehouse == warehouse)
@@ -3527,6 +4388,12 @@ def equip_list():
         qry = qry.filter(Equipment.received_date <= end_d)
 
     rows = qry.order_by(Equipment.received_date.desc(), Equipment.id.desc()).all()
+
+    if expiring == "1":
+        today = date.today()
+        horizon = today + timedelta(days=90)
+        rows = [r for r in rows if (r.expiry_date is not None) and (r.expiry_date <= horizon)]
+        rows.sort(key=lambda r: (r.expiry_date or horizon), reverse=False)
     return render_template(
         "equipment/equip_list.html",
         rows=rows,
@@ -3535,7 +4402,7 @@ def equip_list():
         warehouse=warehouse,
         start=start,
         end=end,
-        status_th=EQUIP_STATUS_THAI,
+status_th=EQUIP_STATUS_THAI,
     )
 
 
@@ -3815,6 +4682,8 @@ def equip_new():
         db.session.add(eq)
         db.session.flush()
 
+        _set_price_plans_from_form(eq)
+
         # ถ้าสร้างจากรายการรอเพิ่ม -> ปิดรายการนั้น
         # NOTE: บางเทมเพลตอาจไม่ได้ส่ง incoming_id ตอน POST
         # เราจะพยายาม "เดา" รายการรอเพิ่มจากข้อมูลที่กรอก (name/brand/cost/date)
@@ -3868,6 +4737,9 @@ def equip_new():
         pending=pending,
         preset=preset,
         incoming=inc,
+        e=None,
+        status_th=EQUIP_STATUS_THAI,
+        statuses=EquipmentStatus.query.order_by(EquipmentStatus.sort_order.asc(), EquipmentStatus.code.asc()).all(),
         warehouses=_warehouse_choices(),
     )
 
@@ -3894,12 +4766,16 @@ def equip_edit(eid):
         e.life_months = request.form.get("life_months", type=int) or 0
         e.life_days   = request.form.get("life_days", type=int) or 0
         new_status = (request.form.get("status") or e.status).upper()
-        if new_status in EQUIP_STATUS and new_status != e.status:
+        # สถานะอุปกรณ์กำหนดเองได้ (Requirement 2.2)
+        active_status_codes = [s.code for s in EquipmentStatus.query.filter_by(is_active=True).all()]
+        allowed = set(active_status_codes) or set(EQUIP_STATUS)
+        if new_status in allowed and new_status != e.status:
             e.status = new_status
+            th = EQUIP_STATUS_THAI.get(new_status, new_status)
             db.session.add(EquipmentLog(
                 equipment_id=e.id,
                 action="STATUS",
-                note=f"สถานะเป็น {EQUIP_STATUS_THAI[new_status]}",
+                note=f"สถานะเป็น {th}",
                 user_id=(current_user.id if current_user.is_authenticated else None),
             ))
         if received:
@@ -3914,6 +4790,8 @@ def equip_edit(eid):
             except ValueError as ex:
                 flash(str(ex), "warning")
                 return redirect(url_for("equip_edit", eid=e.id))
+        _set_price_plans_from_form(e)
+
         db.session.add(EquipmentLog(
             equipment_id=e.id,
             action="EDIT",
@@ -3923,7 +4801,7 @@ def equip_edit(eid):
         db.session.commit()
         flash("บันทึกแล้ว", "success")
         return redirect(url_for("equip_view", eid=e.id))
-    return render_template("equipment/equip_form.html", cats=cats, e=e, status_th=EQUIP_STATUS_THAI, warehouses=_warehouse_choices())
+    return render_template("equipment/equip_form.html", cats=cats, e=e, status_th=EQUIP_STATUS_THAI, statuses=EquipmentStatus.query.order_by(EquipmentStatus.sort_order.asc(), EquipmentStatus.code.asc()).all(), warehouses=_warehouse_choices())
 
 @app.post("/equipment/<int:eid>/delete")
 @permission_required("equipment.manage")
@@ -4007,7 +4885,7 @@ def promo_delete(pid):
 def _best_promo_today() -> list[Promotion]:
     today = date.today()
     return (Promotion.query
-            .filter_by(active=True)
+            .filter_by(is_active=True)
             .filter((Promotion.start_date==None) | (Promotion.start_date<=today))
             .filter((Promotion.end_date==None)   | (Promotion.end_date>=today))
             .order_by(Promotion.id.desc())
@@ -4244,7 +5122,7 @@ def qu_list():
         q=q,
         start=start,
         end=end,
-        deliveries_map=deliveries_map,
+deliveries_map=deliveries_map,
         doc_type="QU",   # ✅ ส่งไปให้ template ใช้เช็คว่ามีใบส่งแล้วหรือยัง
     )
 
@@ -4264,44 +5142,102 @@ def _doc_credit_days_for_customer(doc: "SalesDoc", cust: "Customer") -> int:
             d = 0
     return max(0, d)
 
-def _customer_ar_documents(cust: "Customer", warehouse: str | None = None):
-    """
-    เอกสารลูกหนี้: ใช้ BL/IV ที่ยังไม่ชำระ (ไม่รวม CANCELLED)
+def _customer_ar_documents(
+    cust: "Customer",
+    warehouse: str | None = None,
+    as_of: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    """รวบรวมรายการลูกหนี้คงค้างของลูกค้า 1 ราย
+
+    Requirement (อิงจากที่คุยกัน):
+    - Q1 := ใช้ "ใบวางบิล" (BL) เป็นฐานลูกหนี้
+    - Q2 := due_date = วันที่เอกสาร + credit_days
+    - Q3 := ใช้ "ใบเสร็จรับเงิน" (RC) เป็นตัวตัดหนี้
+
     คืน list[dict] สำหรับ render/report
     """
+
+    if as_of is None:
+        as_of = date.today()
+
+    # ฐานลูกหนี้ = BL เท่านั้น
     q = SalesDoc.query.filter(SalesDoc.customer_id == cust.id)
-    q = q.filter(SalesDoc.doc_type.in_(["BL", "IV"]))
-    q = q.filter(SalesDoc.status.notin_(["PAID", "CANCELLED"]))
+    q = q.filter(SalesDoc.doc_type == "BL")
+    q = q.filter(SalesDoc.status != "CANCELLED")
     if warehouse:
         q = q.filter(SalesDoc.warehouse == warehouse)
-    docs = q.order_by(SalesDoc.date.asc()).all()
+    if date_from:
+        q = q.filter(SalesDoc.date >= date_from)
+    if date_to:
+        q = q.filter(SalesDoc.date <= date_to)
 
-    today = date.today()
+    bills = q.order_by(SalesDoc.date.asc()).all()
+
     rows = []
-    for d in docs:
-        credit = _doc_credit_days_for_customer(d, cust)
-        due = (d.date or today) + timedelta(days=credit)
-        overdue_days = (today - due).days
+    for bl in bills:
+        # เครดิตของเอกสารก่อน ถ้าไม่มีให้ fallback ไปที่ลูกค้า
+        credit = _doc_credit_days_for_customer(bl, cust)
+        doc_date = bl.date or as_of
+        due = doc_date + timedelta(days=credit)
+
+        # ===== Q3: ตัดหนี้ด้วย RC =====
+        # 1) RC ที่ผูกกับ BL โดยตรง (parent_id = BL.id)
+        rc_direct_sum = (
+            db.session.query(func.coalesce(func.sum(SalesDoc.amount_grand), 0.0))
+            .filter(SalesDoc.doc_type == "RC")
+            .filter(SalesDoc.parent_id == bl.id)
+            .filter(SalesDoc.status.in_(["ISSUED", "PAID"]))
+            .scalar()
+            or 0.0
+        )
+
+        # 2) กรณีเป็นรายงวด: ใช้ SalesInstallment.receipt_id (สถานะ RECEIPTED ถือว่าตัดหนี้แล้ว)
+        rc_inst_sum = (
+            db.session.query(func.coalesce(func.sum(SalesDoc.amount_grand), 0.0))
+            .select_from(SalesInstallment)
+            .join(SalesDoc, SalesDoc.id == SalesInstallment.receipt_id)
+            .filter(SalesInstallment.bill_id == bl.id)
+            .filter(SalesInstallment.status == "RECEIPTED")
+            .scalar()
+            or 0.0
+        )
+
+        rc_sum = float(rc_direct_sum or 0.0) + float(rc_inst_sum or 0.0)
+
+        bill_amount = float(bl.amount_grand or bl.amount_total or 0.0)
+        outstanding = max(0.0, bill_amount - rc_sum)
+
+        # ถ้าตัดหนี้หมดแล้ว ไม่ต้องโชว์ในรายงานลูกหนี้คงค้าง
+        if outstanding <= 0.000001:
+            continue
+
+        overdue_days = (as_of - due).days
         bucket = "CURRENT" if overdue_days <= 0 else (
             "1-30" if overdue_days <= 30 else
             "31-60" if overdue_days <= 60 else
             "61-90" if overdue_days <= 90 else
             "90+"
         )
+
         rows.append({
-            "id": d.id,
-            "number": d.number,
-            "doc_type": d.doc_type,
-            "status": d.status,
-            "warehouse": d.warehouse,
-            "date": d.date,
+            "id": bl.id,
+            "number": bl.number,
+            "doc_type": bl.doc_type,
+            "status": bl.status,
+            "warehouse": bl.warehouse,
+            "date": bl.date,
             "credit_days": credit,
             "due_date": due,
             "overdue_days": max(0, overdue_days),
             "bucket": bucket,
-            "amount": float(d.amount_grand or d.amount_total or 0.0),
-            "url": url_for("sales_doc_view", sid=d.id) if "sales_doc_view" in app.view_functions else None,
+            "amount": outstanding,   # ✅ ยอดลูกหนี้คงค้างหลังหัก RC
+            "amount_gross": bill_amount,
+            "rc_paid": rc_sum,
+            "url": url_for("sales_doc_view", sid=bl.id) if "sales_doc_view" in app.view_functions else None,
         })
+
     return rows
 
 def _aging_summary(rows):
@@ -4328,24 +5264,70 @@ def customers_aging(cid):
     )
 
 @app.get("/reports/ar-aging")
-@permission_required("customers.view")
+@login_required
+@permission_required("reports.view")
 def report_ar_aging():
-    wh = (request.args.get("warehouse") or "").strip() or None
-    q = Customer.query.order_by(Customer.name.asc()).all()
-    data = []
-    for c in q:
-        rows = _customer_ar_documents(c, warehouse=wh)
-        if not rows:
-            continue
-        data.append({
-            "customer": c,
-            "summary": _aging_summary(rows),
-            "rows_count": len(rows),
-        })
-    # เรียงลูกหนี้มาก -> น้อย
-    data.sort(key=lambda x: x["summary"]["TOTAL"], reverse=True)
-    return render_template("reports/ar_aging.html", data=data, warehouse=wh)
+    """A/R Aging report (ตาม BL) และตัดหนี้ด้วย RC
+    - Q1: ใบวางบิล (BL) เป็นต้นทางหนี้
+    - Q2: วันครบกำหนด = BL.date + credit_days
+    - Q3: ใช้ RC (ใบเสร็จรับเงิน) เป็นตัวตัดหนี้
+    """
+    # date range (ใช้เป็นช่วงที่ “ตัดหนี้/ออกรายงาน”)
+    start_s = (request.args.get("start") or "").strip()
+    end_s = (request.args.get("end") or "").strip()
 
+    def _parse_date(s):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    start_d = _parse_date(start_s) or (date.today().replace(day=1))
+    end_d = _parse_date(end_s) or date.today()
+
+    # rows = สรุปตามลูกค้า (จาก BL แล้วตัดด้วย RC)
+    rows = _ar_aging_rows(as_of=end_d)
+
+    # summary buckets
+    summary = {
+        "total_due": sum((r.get("total_due") or 0) for r in rows),
+        "b0_30": sum((r.get("b0_30") or 0) for r in rows),
+        "b31_60": sum((r.get("b31_60") or 0) for r in rows),
+        "b61_90": sum((r.get("b61_90") or 0) for r in rows),
+        "b90p": sum((r.get("b90p") or 0) for r in rows),
+    }
+
+    # Export Excel
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers = [
+            ("รหัสลูกค้า", "customer_code"),
+            ("ชื่อลูกค้า", "customer_name"),
+            ("ยอดคงค้าง", "total_due"),
+            ("0-30 วัน", "b0_30"),
+            ("31-60 วัน", "b31_60"),
+            ("61-90 วัน", "b61_90"),
+            (">90 วัน", "b90p"),
+        ]
+        data = []
+        for r in rows:
+            data.append({k: r.get(k) for _, k in headers})
+        return _xlsx_send(
+            "รายงานลูกหนี้คงค้าง(Aging)",
+            f"ar_aging_{end_d.isoformat()}",
+            headers=headers,
+            rows=data,
+        )
+
+    return render_template(
+        "reports/ar_aging.html",
+        rows=rows,
+        summary=summary,
+        start=start_d.isoformat(),
+        end=end_d.isoformat(),
+        as_of=end_d,
+    )
 @app.route("/sales/quotes/new", methods=["GET", "POST"])
 @permission_required("sales.manage")
 def qu_new():
@@ -4822,6 +5804,82 @@ def renting_customer_for_sku(sku: str) -> str:
 
 
 # ---- API: Equipment search (SKU + name) ----
+
+@app.get("/api/purchases/suggest")
+@permission_required("purchases.view")
+def api_purchases_suggest():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify([])
+
+    # limit length
+    q2 = q[:100]
+    like = f"%{q2}%"
+
+    results = []
+
+    # 1) From Equipment table
+    try:
+        eqs = (
+            Equipment.query
+            .filter(or_(
+                Equipment.sku.ilike(like),
+                Equipment.name.ilike(like),
+                Equipment.brand.ilike(like) if hasattr(Equipment, "brand") else False,
+            ))
+            .order_by(Equipment.sku.asc())
+            .limit(10)
+            .all()
+        )
+        for e in eqs:
+            results.append({
+                "sku": e.sku,
+                "name": e.name,
+                "brand": getattr(e, "brand", "") or "",
+                "source": "equipment",
+            })
+    except Exception:
+        pass
+
+    # 2) From IncomingEquipment (if exists)
+    try:
+        if "IncomingEquipment" in globals():
+            incs = (
+                IncomingEquipment.query
+                .filter(or_(
+                    IncomingEquipment.sku.ilike(like),
+                    IncomingEquipment.name.ilike(like),
+                    IncomingEquipment.brand.ilike(like) if hasattr(IncomingEquipment, "brand") else False,
+                ))
+                .order_by(IncomingEquipment.sku.asc())
+                .limit(10)
+                .all()
+            )
+            for it in incs:
+                results.append({
+                    "sku": it.sku,
+                    "name": it.name,
+                    "brand": getattr(it, "brand", "") or "",
+                    "source": "incoming",
+                })
+    except Exception:
+        pass
+
+    # de-dup by sku+name
+    seen=set()
+    dedup=[]
+    for r in results:
+        k=(r.get("sku",""), r.get("name",""))
+        if k in seen:
+            continue
+        seen.add(k)
+        dedup.append(r)
+        if len(dedup)>=15:
+            break
+
+    return jsonify(dedup)
+
+
 @app.get("/api/equipment/search")
 @permission_required("equipment.view")
 def api_equipment_search():
@@ -4852,6 +5910,21 @@ def api_equipment_search():
             "value": f"[{e.sku}] {e.name}",
         })
     return jsonify(out)
+
+
+@app.get("/api/equipment/<int:eid>/rental-price")
+@permission_required("equipment.view")
+def api_equipment_rental_price(eid):
+    """คำนวณราคาเช่าแบบต่อช่วง (Requirement 2.1)
+
+    Query:
+      - days: int
+    """
+    e = Equipment.query.get_or_404(eid)
+    days = request.args.get("days", type=int) or 0
+    total = e.rental_price_for_days(days)
+    breakdown = e.rental_breakdown_for_days(days)
+    return jsonify({"equipment_id": e.id, "days": days, "total": total, "breakdown": breakdown})
 
 # ---- API: Catalog search (Categories + Equipment) for autocomplete in PO/QU ----
 @app.get("/api/catalog/search")
@@ -5134,6 +6207,38 @@ def api_categories_search():
             "category_name": (c.name or "").strip(),
         })
     return jsonify(out)
+
+
+
+@app.route("/sales/quotes/<int:qid>/open-job", methods=["POST"])
+@permission_required("sales.manage")
+def qu_open_job(qid):
+    """
+    3.4 เปิดงานเช่าจากใบเสนอราคา (สร้างใบจอง BK) ได้ แม้ใบเสนอราคายังไม่อนุมัติ
+    - ถ้ามี BK อยู่แล้ว: ไปหน้า BK เลย
+    - ถ้ายังไม่มี: สร้าง BK จาก QU (ข้ามรายการที่ถูก REJECTED เท่านั้น)
+    """
+    q = SalesDoc.query.get_or_404(qid)
+    if q.doc_type != "QU":
+        flash("เอกสารนี้ไม่ใช่ใบเสนอราคา", "warning")
+        return redirect(url_for("qu_view", qid=qid))
+
+    # ถ้ามีใบจองแล้วให้ไปหน้าเดิม
+    bk = SalesDoc.query.filter_by(parent_id=q.id, doc_type="BK").order_by(SalesDoc.id.desc()).first()
+    if bk:
+        flash("มีใบจองจากใบเสนอราคานี้แล้ว", "info")
+        return redirect(url_for("bk_view", bid=bk.id))
+
+    try:
+        bk = _create_booking_from_quote(q, approved_by=current_user.username if current_user else "SYSTEM")
+        db.session.add(bk)
+        db.session.commit()
+        flash("สร้างใบจอง (BK) จากใบเสนอราคาแล้ว", "success")
+        return redirect(url_for("bk_view", bid=bk.id))
+    except Exception as e:
+        db.session.rollback()
+        flash(f"สร้างใบจองไม่สำเร็จ: {e}", "danger")
+        return redirect(url_for("qu_view", qid=qid))
 
 
 @app.route("/sales/quotes/<int:qid>/preview")
@@ -5482,7 +6587,7 @@ def _doc_list(doc_type: str, title_th: str):
         q=q,
         start=start,
         end=end,
-        doc_type=doc_type,
+doc_type=doc_type,
         page_title=title_th,
         show_new=False,
     )
@@ -5544,7 +6649,7 @@ def contract_list():
         q=q,
         start=start,
         end=end,
-        stats=stats,
+stats=stats,
     )
 
 @app.route("/sales/contracts/<int:cid>")
@@ -6717,7 +7822,7 @@ def returns_list():
         q=q,
         start=start,
         end=end,
-    )
+)
 
 
 @app.route("/returns/new", methods=["GET", "POST"])
@@ -8836,6 +9941,23 @@ def run_startup_tasks():
         try:
             db.create_all()
             print("[init] db.create_all completed")
+            # --- SQLite schema auto-fix (กัน error no such column) ---
+            try:
+                if db.engine.url.get_backend_name() == "sqlite":
+                    conn = db.engine.raw_connection()
+                    cur = conn.cursor()
+                    cur.execute("PRAGMA table_info(repair_jobs)")
+                    cols = {row[1] for row in cur.fetchall()}
+                    if "job_type" not in cols:
+                        cur.execute("ALTER TABLE repair_jobs ADD COLUMN job_type VARCHAR(20)")
+                    if "is_billable" not in cols:
+                        cur.execute("ALTER TABLE repair_jobs ADD COLUMN is_billable BOOLEAN DEFAULT 0")
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+            except Exception as _e:
+                print(f"[init] sqlite schema autofix skipped: {_e}")
+
         except OperationalError as e:
             print(f"[init] db.create_all failed: {e}")
 
@@ -9900,6 +11022,985 @@ def export_equipment_report_excel():
         pass
 
     return _xlsx_response(wb, "equipment_report.xlsx")
+
+
+
+
+
+# =========================================================
+# Reports (6.1.8) - ทุกหน้ามี filter ช่วงวันที่ + export Excel
+# =========================================================
+
+def _parse_ymd(s: str):
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _get_date_range(default_days: int = 30):
+    """อ่านช่วงวันที่จาก querystring (?start=YYYY-MM-DD&end=YYYY-MM-DD)
+    ถ้าไม่ส่งมา จะ default เป็นย้อนหลัง default_days ถึงวันนี้
+    """
+    end_d = _parse_ymd(request.args.get("end")) or date.today()
+    start_d = _parse_ymd(request.args.get("start")) or (end_d - timedelta(days=default_days))
+    if start_d > end_d:
+        start_d, end_d = end_d, start_d
+    return start_d, end_d
+
+
+@app.get("/reports")
+@login_required
+@permission_required("reports.view")
+def reports_index():
+    return render_template("reports/index.html")
+
+# ============================================================
+# REPORTS (Requirement 6.1.8) - ADDITIONAL ROUTES
+# วางโค้ดชุดนี้ไว้ "ต่อท้าย" ส่วน reports ใน app.py
+# (หลัง report_repairs_claims / report_ar_aging ฯลฯ)
+# ============================================================
+
+# ---------- helpers ----------
+def _safe_float(x):
+    try:
+        return float(x or 0)
+    except Exception:
+        return 0.0
+
+def _doc_no(d):
+    return getattr(d, "doc_no", None) or getattr(d, "number", None) or ""
+
+def _date_or_none(v):
+    return getattr(v, "date", None) or getattr(v, "grn_date", None) or getattr(v, "delivery_date", None)
+
+# ---------------- Rental reports (เพิ่มเติม) ----------------
+
+@app.get("/reports/rental/by-customer")
+@login_required
+@permission_required("reports.view")
+def report_rental_by_customer():
+    """
+    รายงานใบงานเช่า (รายละเอียดตามรหัสลูกค้า)
+    - ใช้ SalesDoc doc_type = CT/CONTRACT เป็นเอกสารงานเช่าหลัก
+    - แตกแถวตามรายการ (SalesItem) เพื่อเห็นรายละเอียด
+    - ฟิลเตอร์: ช่วงวันที่ (SalesDoc.date) + customer_id (optional)
+    """
+    start_d, end_d = _get_date_range(90)
+    customer_id = request.args.get("customer_id", type=int)
+
+    # Docs
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["CT","CONTRACT"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+    if customer_id:
+        qs = qs.filter(SalesDoc.customer_id == customer_id)
+
+    docs = qs.options(selectinload(SalesDoc.items), joinedload(SalesDoc.customer)).order_by(SalesDoc.date.asc()).all()
+
+    columns = [
+        ("วันที่", "date"),
+        ("เลขที่สัญญา/งานเช่า", "doc_no"),
+        ("รหัสลูกค้า", "customer_code"),
+        ("ชื่อลูกค้า", "customer_name"),
+        ("โครงการ", "project_name"),
+        ("รายการ", "item_name"),
+        ("จำนวน", "qty"),
+        ("หน่วยเช่า", "rent_unit"),
+        ("ระยะเวลา", "rent_duration"),
+        ("ราคา/หน่วย", "unit_price"),
+        ("รวม", "line_total"),
+    ]
+    rows = []
+    for d in docs:
+        cust = getattr(d, "customer", None)
+        for it in (getattr(d, "items", None) or []):
+            rows.append({
+                "date": getattr(d, "date", None),
+                "doc_no": _doc_no(d),
+                "customer_code": getattr(cust, "code", "") or getattr(cust, "customer_code", ""),
+                "customer_name": getattr(cust, "name", "") or getattr(d, "customer_name", ""),
+                "project_name": getattr(d, "project_name", ""),
+                "item_name": getattr(it, "name", ""),
+                "qty": _safe_float(getattr(it, "qty", 0)),
+                "rent_unit": getattr(it, "rent_unit", ""),
+                "rent_duration": getattr(it, "rent_duration", ""),
+                "unit_price": _safe_float(getattr(it, "unit_price", 0)),
+                "line_total": _safe_float(getattr(it, "line_total", 0) or getattr(it, "line_subtotal", 0)),
+            })
+
+    # Export
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานใบงานเช่า(ตามลูกค้า)", f"rental_by_customer_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานใบงานเช่า (รายละเอียดตามรหัสลูกค้า)", columns, rows, start_d, end_d, "report_rental_by_customer")
+
+
+@app.get("/reports/rental/equipment-status")
+@login_required
+@permission_required("reports.view")
+def report_rental_equipment_status():
+    """
+    รายงานอุปกรณ์ถูกเช่า / รอซ่อม / พร้อมให้เช่า
+    - อิงสถานะจาก Equipment.status (READY/RENTED/REPAIR/LOST ฯลฯ)
+    - ฟิลเตอร์ช่วงวันที่: ใช้ Equipment.created_at (ถ้ามี) เป็นช่วง "รับเข้าระบบ"
+    """
+    start_d, end_d = _get_date_range(365)
+
+    qs = Equipment.query
+    if hasattr(Equipment, "created_at"):
+        qs = qs.filter(Equipment.created_at >= datetime.combine(start_d, time.min),
+                       Equipment.created_at <= datetime.combine(end_d, time.max))
+
+    items = qs.order_by(Equipment.status.asc(), Equipment.sku.asc()).limit(5000).all()
+
+    columns = [
+        ("SKU", "sku"),
+        ("ชื่ออุปกรณ์", "name"),
+        ("หมวดหมู่", "category"),
+        ("ยี่ห้อ/รุ่น", "brand"),
+        ("คลัง", "warehouse"),
+        ("สถานะ", "status"),
+    ]
+    rows = []
+    for e in items:
+        cat = getattr(e, "category", None)
+        rows.append({
+            "sku": getattr(e, "sku", ""),
+            "name": getattr(e, "name", ""),
+            "category": getattr(cat, "name", "") if cat else "",
+            "brand": getattr(e, "brand", ""),
+            "warehouse": getattr(e, "warehouse", ""),
+            "status": getattr(e, "status", ""),
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานสถานะอุปกรณ์ (เช่า/ซ่อม/พร้อม)", f"equipment_status_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานอุปกรณ์ถูกเช่า / รอซ่อม / พร้อมให้เช่า", columns, rows, start_d, end_d, "report_rental_equipment_status")
+
+
+@app.get("/reports/rental/by-project")
+@login_required
+@permission_required("reports.view")
+def report_rental_by_project():
+    """
+    รายงานอุปกรณ์ถูกเช่าแยกตามโครงการ
+    - ใช้ SalesDoc (CT) และรวมยอดตาม project_name
+    """
+    start_d, end_d = _get_date_range(180)
+
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["CT","CONTRACT"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    docs = qs.all()
+
+    agg = {}
+    for d in docs:
+        pj = (getattr(d, "project_name", "") or "-").strip() or "-"
+        agg.setdefault(pj, {"project_name": pj, "contracts": 0, "amount": 0.0})
+        agg[pj]["contracts"] += 1
+        agg[pj]["amount"] += _safe_float(getattr(d, "grand_total", 0) or getattr(d, "total", 0) or 0)
+
+    rows = sorted(list(agg.values()), key=lambda r: (-r["amount"], r["project_name"]))
+    columns = [("โครงการ", "project_name"), ("จำนวนสัญญา/งานเช่า", "contracts"), ("ยอดรวม", "amount")]
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานงานเช่าแยกตามโครงการ", f"rental_by_project_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานอุปกรณ์ถูกเช่าแยกตามโครงการ (สรุปตามเอกสารงานเช่า)", columns, rows, start_d, end_d, "report_rental_by_project")
+
+
+@app.get("/reports/rental/due-return")
+@login_required
+@permission_required("reports.view")
+def report_rental_due_return():
+    """
+    รายงานกำหนดคืนอุปกรณ์
+    - ใช้ SalesDoc.contract_end เป็นวันกำหนดสิ้นสุดสัญญา (ถ้ามี)
+    - ฟิลเตอร์ช่วงวันที่: contract_end อยู่ในช่วง
+    """
+    start_d, end_d = _get_date_range(30)
+
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["CT","CONTRACT"]))
+    if hasattr(SalesDoc, "contract_end"):
+        qs = qs.filter(SalesDoc.contract_end != None)
+        qs = qs.filter(SalesDoc.contract_end >= start_d, SalesDoc.contract_end <= end_d)
+
+    docs = qs.options(joinedload(SalesDoc.customer)).order_by(SalesDoc.contract_end.asc()).all()
+
+    columns = [
+        ("กำหนดคืน/สิ้นสุด", "due_date"),
+        ("เลขที่สัญญา/งานเช่า", "doc_no"),
+        ("ลูกค้า", "customer_name"),
+        ("โครงการ", "project_name"),
+        ("ยอดรวม", "amount"),
+        ("สถานะ", "status"),
+    ]
+    rows=[]
+    for d in docs:
+        cust = getattr(d, "customer", None)
+        rows.append({
+            "due_date": getattr(d, "contract_end", None),
+            "doc_no": _doc_no(d),
+            "customer_name": getattr(cust, "name", "") or getattr(d, "customer_name", ""),
+            "project_name": getattr(d, "project_name", ""),
+            "amount": _safe_float(getattr(d, "grand_total", 0) or getattr(d, "total", 0) or 0),
+            "status": getattr(d, "status", ""),
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานกำหนดคืนอุปกรณ์", f"due_return_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานกำหนดคืนอุปกรณ์ (อิงวันสิ้นสุดสัญญา)", columns, rows, start_d, end_d, "report_rental_due_return")
+
+
+@app.get("/reports/rental/pattern")
+@login_required
+@permission_required("reports.view")
+def report_rental_pattern():
+    """
+    รายงานแบบการเช่าลูกค้า (รายวัน/เดือน/ปี)
+    - วิเคราะห์จาก SalesItem.rent_unit ในเอกสารงานเช่า (CT)
+    - สรุปต่อ "ลูกค้า" ว่าเช่าด้วยหน่วยอะไรเป็นหลัก + จำนวนบรรทัดรายการ
+    """
+    start_d, end_d = _get_date_range(365)
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["CT","CONTRACT"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    docs = qs.options(selectinload(SalesDoc.items), joinedload(SalesDoc.customer)).all()
+
+    agg = {}
+    for d in docs:
+        cust = getattr(d, "customer", None)
+        cid = getattr(cust, "id", None) or getattr(d, "customer_id", None) or 0
+        cname = getattr(cust, "name", "") or getattr(d, "customer_name", "")
+        cc = getattr(cust, "code", "") or getattr(cust, "customer_code", "")
+        agg.setdefault(cid, {"customer_code": cc, "customer_name": cname, "DAY":0, "MONTH":0, "YEAR":0, "HOUR":0, "items":0})
+        for it in (getattr(d, "items", None) or []):
+            u = (getattr(it, "rent_unit", "") or "").upper().strip()
+            if u not in ("HOUR","DAY","MONTH","YEAR"):
+                u = "DAY"
+            agg[cid][u] += 1
+            agg[cid]["items"] += 1
+
+    rows=[]
+    for cid, r in agg.items():
+        # mode = unit with max count
+        unit_counts={k:r[k] for k in ("HOUR","DAY","MONTH","YEAR")}
+        mode=max(unit_counts, key=lambda k: unit_counts[k]) if r["items"] else "-"
+        rows.append({
+            "customer_code": r["customer_code"],
+            "customer_name": r["customer_name"],
+            "hour": r["HOUR"],
+            "day": r["DAY"],
+            "month": r["MONTH"],
+            "year": r["YEAR"],
+            "mode": mode,
+            "items": r["items"],
+        })
+
+    rows = sorted(rows, key=lambda x: (-x["items"], x["customer_name"]))
+
+    columns=[("รหัสลูกค้า","customer_code"),("ชื่อลูกค้า","customer_name"),("ชั่วโมง","hour"),("รายวัน","day"),("รายเดือน","month"),("รายปี","year"),("รูปแบบหลัก","mode"),("จำนวนรายการ","items")]
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานแบบการเช่า(รายวัน/เดือน/ปี)", f"rental_pattern_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานแบบการเช่าลูกค้า (รายวัน/เดือน/ปี)", columns, rows, start_d, end_d, "report_rental_pattern")
+
+
+# ---------------- Warehouse reports (เพิ่มเติม) ----------------
+
+@app.get("/reports/warehouse/received")
+@login_required
+@permission_required("reports.view")
+def report_warehouse_received():
+    """
+    รายงานอุปกรณ์ที่รับเข้า
+    - ใช้ GoodsReceipt (RC) และ GRNItem (รายการรับเข้า)
+    - ฟิลเตอร์ช่วงวันที่: grn_date
+    """
+    start_d, end_d = _get_date_range(90)
+
+    qs = GoodsReceipt.query
+    if hasattr(GoodsReceipt, "grn_date"):
+        qs = qs.filter(GoodsReceipt.grn_date >= start_d, GoodsReceipt.grn_date <= end_d)
+
+    grns = qs.options(selectinload(GoodsReceipt.items), joinedload(GoodsReceipt.po)).order_by(GoodsReceipt.grn_date.asc()).all()
+
+    columns=[
+        ("วันที่รับเข้า","grn_date"),
+        ("เลขที่รับสินค้า","grn_no"),
+        ("อ้างอิง PO","po_no"),
+        ("SKU","sku"),
+        ("รายการ","name"),
+        ("ยี่ห้อ","brand"),
+        ("จำนวน","qty"),
+        ("หน่วย","unit"),
+        ("ต้นทุน/หน่วย","unit_cost"),
+    ]
+    rows=[]
+    for g in grns:
+        po = getattr(g, "po", None)
+        for it in (getattr(g, "items", None) or []):
+            rows.append({
+                "grn_date": getattr(g, "grn_date", None),
+                "grn_no": getattr(g, "number", ""),
+                "po_no": getattr(po, "number", "") if po else "",
+                "sku": getattr(it, "sku", ""),
+                "name": getattr(it, "name", ""),
+                "brand": getattr(it, "brand", ""),
+                "qty": _safe_float(getattr(it, "qty", 0)),
+                "unit": getattr(it, "unit", ""),
+                "unit_cost": _safe_float(getattr(it, "unit_cost", 0)),
+            })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานอุปกรณ์ที่รับเข้า", f"warehouse_received_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานอุปกรณ์ที่รับเข้า", columns, rows, start_d, end_d, "report_warehouse_received")
+
+
+@app.get("/reports/warehouse/by-category")
+@login_required
+@permission_required("reports.view")
+def report_warehouse_by_category():
+    """
+    รายงานอุปกรณ์ตามหมวดหมู่สินค้า
+    - ใช้ Equipment + Category
+    - สรุปจำนวนตามหมวดหมู่ + สถานะ (READY/RENTED/REPAIR)
+    """
+    start_d, end_d = _get_date_range(3650)  # ไม่เน้นช่วงวันที่มากนัก
+
+    items = Equipment.query.options(joinedload(Equipment.category)).all()
+    agg = {}
+    for e in items:
+        cat = getattr(getattr(e, "category", None), "name", "") or "ไม่ระบุหมวด"
+        st = (getattr(e, "status", "") or "").upper()
+        agg.setdefault(cat, {"category":cat,"total":0,"READY":0,"RENTED":0,"REPAIR":0,"OTHER":0})
+        agg[cat]["total"] += 1
+        if st in ("READY","RENTED","REPAIR"):
+            agg[cat][st] += 1
+        else:
+            agg[cat]["OTHER"] += 1
+
+    rows = sorted(list(agg.values()), key=lambda r: (-r["total"], r["category"]))
+    columns=[("หมวดหมู่","category"),("ทั้งหมด","total"),("พร้อมให้เช่า","READY"),("ถูกเช่า","RENTED"),("รอซ่อม","REPAIR"),("อื่นๆ","OTHER")]
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานอุปกรณ์ตามหมวดหมู่", f"equip_by_category_{date.today()}", headers, rows)
+
+    return _render_report_table("รายงานอุปกรณ์ตามหมวดหมู่สินค้า", columns, rows, start_d, end_d, "report_warehouse_by_category")
+
+
+@app.get("/reports/warehouse/spares-remaining")
+@login_required
+@permission_required("reports.view")
+def report_spares_remaining():
+    """
+    รายงานอะไหล่คงเหลือ
+    - ใช้ SparePart.stock_qty
+    """
+    start_d, end_d = _get_date_range(3650)
+    parts = SparePart.query.filter(SparePart.is_active == True).order_by(SparePart.name.asc()).all()
+
+    columns=[("รหัส","code"),("ชื่ออะไหล่","name"),("คงเหลือ","stock_qty"),("หน่วย","unit"),("ต้นทุน/หน่วย","unit_cost")]
+    rows=[]
+    for p in parts:
+        rows.append({
+            "code": getattr(p,"code",""),
+            "name": getattr(p,"name",""),
+            "stock_qty": _safe_float(getattr(p,"stock_qty",0)),
+            "unit": getattr(p,"unit",""),
+            "unit_cost": _safe_float(getattr(p,"unit_cost",0)),
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานอะไหล่คงเหลือ", f"spares_remaining_{date.today()}", headers, rows)
+
+    return _render_report_table("รายงานอะไหล่คงเหลือ", columns, rows, start_d, end_d, "report_spares_remaining")
+
+
+@app.get("/reports/warehouse/spares-used-in-repairs")
+@login_required
+@permission_required("reports.view")
+def report_spares_used_in_repairs():
+    """
+    รายงานอะไหล่ถูกใช้ในงานซ่อม
+    - ใช้ RepairItem (part_id, qty, line_total) + RepairJob (opened_date/created_at)
+    - ฟิลเตอร์ช่วงวันที่: RepairJob.opened_date ถ้ามี ไม่งั้นใช้ created_at
+    """
+    start_d, end_d = _get_date_range(90)
+
+    jobs = RepairJob.query.options(selectinload(RepairJob.items)).all()
+
+    columns=[("วันที่","date"),("เลขที่งานซ่อม","job_no"),("อะไหล่","part_name"),("จำนวน","qty"),("ราคา/หน่วย","unit_price"),("รวม","line_total")]
+    rows=[]
+    for j in jobs:
+        jd = getattr(j, "opened_date", None) or (getattr(j, "created_at", None).date() if getattr(j, "created_at", None) else None)
+        if jd and (jd < start_d or jd > end_d):
+            continue
+        for it in (getattr(j,"items",None) or []):
+            rows.append({
+                "date": jd,
+                "job_no": getattr(j,"job_no","") or getattr(j,"number",""),
+                "part_name": getattr(it,"part_name","") or getattr(it,"part_code",""),
+                "qty": _safe_float(getattr(it,"qty",0)),
+                "unit_price": _safe_float(getattr(it,"unit_price",0)),
+                "line_total": _safe_float(getattr(it,"line_total",0)),
+            })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานอะไหล่ถูกใช้ในงานซ่อม", f"spares_used_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานอะไหล่ถูกใช้ในงานซ่อม", columns, rows, start_d, end_d, "report_spares_used_in_repairs")
+
+
+@app.get("/reports/warehouse/deliveries")
+@login_required
+@permission_required("reports.view")
+def report_deliveries():
+    """
+    รายงานการส่งมอบอุปกรณ์
+    - ใช้ DeliveryDoc + DeliveryItem
+    - ฟิลเตอร์ช่วงวันที่: delivery_date (ถ้ามี) ไม่งั้น schedule_at
+    """
+    start_d, end_d = _get_date_range(30)
+
+    docs = DeliveryDoc.query.options(selectinload(DeliveryDoc.items), joinedload(DeliveryDoc.vehicle), joinedload(DeliveryDoc.driver)).order_by(DeliveryDoc.id.desc()).limit(2000).all()
+
+    columns=[
+        ("วันที่ส่ง","delivery_date"),
+        ("เลขที่เอกสาร","number"),
+        ("ประเภท","d_type"),
+        ("สถานะ","status"),
+        ("ต้นทาง","source"),
+        ("รถ","vehicle"),
+        ("พนักงานขับ","driver"),
+        ("จำนวนรายการ","items_count"),
+    ]
+    rows=[]
+    for d in docs:
+        dd = getattr(d, "delivery_date", None) or (getattr(d, "schedule_at", None).date() if getattr(d, "schedule_at", None) else None)
+        if dd and (dd < start_d or dd > end_d):
+            continue
+        vehicle = getattr(getattr(d,"vehicle",None),"plate_no","") or getattr(getattr(d,"vehicle",None),"name","")
+        driver = getattr(getattr(d,"driver",None),"name","")
+        rows.append({
+            "delivery_date": dd,
+            "number": getattr(d,"number",""),
+            "d_type": str(getattr(d,"d_type","")),
+            "status": str(getattr(d,"status","")),
+            "source": f"{getattr(d,'source_type','')}#{getattr(d,'source_id','')}",
+            "vehicle": vehicle,
+            "driver": driver,
+            "items_count": len(getattr(d,"items",[]) or []),
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานการส่งมอบอุปกรณ์", f"deliveries_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานการส่งมอบอุปกรณ์", columns, rows, start_d, end_d, "report_deliveries")
+
+
+# ---------------- Repairs reports (เพิ่มเติม) ----------------
+
+@app.get("/reports/repairs/equipment-status")
+@login_required
+@permission_required("reports.view")
+def report_repairs_equipment_status():
+    """
+    รายงานสถานะอุปกรณ์งานซ่อม
+    - แสดงรายการอุปกรณ์ที่ status=REPAIR พร้อมข้อมูล job ล่าสุด (ถ้าหาได้)
+    """
+    start_d, end_d = _get_date_range(3650)
+
+    # equipment under repair
+    eqs = Equipment.query.filter(func.upper(Equipment.status) == "REPAIR").order_by(Equipment.sku.asc()).all()
+
+    # map last job by sku (ถ้า RepairJob เก็บ equipment_sku/sku)
+    last_job_by_sku = {}
+    try:
+        jobs = RepairJob.query.order_by(RepairJob.id.desc()).limit(5000).all()
+        for j in jobs:
+            sku = (getattr(j, "equipment_sku", "") or getattr(j, "sku", "") or "").strip()
+            if sku and sku not in last_job_by_sku:
+                last_job_by_sku[sku] = j
+    except Exception:
+        pass
+
+    columns=[("SKU","sku"),("ชื่ออุปกรณ์","name"),("หมวดหมู่","category"),("ยี่ห้อ/รุ่น","brand"),("เลขที่งานซ่อมล่าสุด","job_no"),("สถานะงานซ่อม","job_status")]
+    rows=[]
+    for e in eqs:
+        cat = getattr(getattr(e,"category",None),"name","") if getattr(e,"category",None) else ""
+        j = last_job_by_sku.get(getattr(e,"sku",""))
+        rows.append({
+            "sku": getattr(e,"sku",""),
+            "name": getattr(e,"name",""),
+            "category": cat,
+            "brand": getattr(e,"brand",""),
+            "job_no": getattr(j,"job_no","") if j else "",
+            "job_status": getattr(j,"status","") if j else "",
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานสถานะอุปกรณ์งานซ่อม", f"repairs_equipment_status_{date.today()}", headers, rows)
+
+    return _render_report_table("รายงานสถานะอุปกรณ์งานซ่อม", columns, rows, start_d, end_d, "report_repairs_equipment_status")
+
+
+# ---------------- Finance reports (เพิ่มเติม) ----------------
+
+def _bl_paid_map(start_d=None, end_d=None):
+    """
+    ทำ map ว่า BL# -> paid_amount จาก RC โดยอิง ref_no/ref_doc_no
+    หมายเหตุ: เป็น heuristic (MVP) เพราะในระบบปัจจุบันยังไม่เห็นตาราง link BL<->RC แบบ normalize
+    """
+    paid = {}
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["RC","RECEIPT"]))
+    if hasattr(SalesDoc, "date") and start_d and end_d:
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+    for rc in qs.all():
+        ref = (getattr(rc,"ref_no","") or getattr(rc,"ref_doc_no","") or "").strip()
+        if not ref:
+            continue
+        paid.setdefault(ref, 0.0)
+        paid[ref] += _safe_float(getattr(rc,"grand_total",0) or getattr(rc,"total",0) or 0)
+    return paid
+
+@app.get("/reports/finance/ar-detail")
+@login_required
+@permission_required("reports.view")
+def report_ar_detail():
+    """
+    รายงานรายละเอียดลูกหนี้
+    - แสดงใบวางบิล (BL) ทีละใบ: ยอด, ยอดชำระแล้ว, คงเหลือ, กำหนดชำระ
+    - ใช้ RC มาตัดโดย matching ref_no = BL.doc_no/number (MVP)
+    """
+    start_d, end_d = _get_date_range(180)
+
+    bl_qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        bl_qs = bl_qs.filter(SalesDoc.doc_type.in_(["BL","BILL"]))
+    if hasattr(SalesDoc, "date"):
+        bl_qs = bl_qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    bls = bl_qs.options(joinedload(SalesDoc.customer)).order_by(SalesDoc.date.asc()).all()
+    paid_map = _bl_paid_map(start_d, end_d)
+
+    columns=[("วันที่","date"),("เลขที่ BL","doc_no"),("ลูกหนี้","customer_name"),("ครบกำหนด","due_date"),("ยอดหนี้","amount"),("ชำระแล้ว","paid"),("คงเหลือ","balance"),("สถานะ","status")]
+    rows=[]
+    for bl in bls:
+        cust = getattr(bl,"customer",None)
+        docno=_doc_no(bl)
+        amount=_safe_float(getattr(bl,"grand_total",0) or getattr(bl,"total",0) or 0)
+        paid=_safe_float(paid_map.get(docno,0))
+        due = None
+        try:
+            cd = int(getattr(bl,"credit_days",0) or 0)
+            if getattr(bl,"date",None):
+                due = getattr(bl,"date")+timedelta(days=cd)
+        except Exception:
+            pass
+        rows.append({
+            "date": getattr(bl,"date",None),
+            "doc_no": docno,
+            "customer_name": getattr(cust,"name","") or getattr(bl,"customer_name",""),
+            "due_date": due,
+            "amount": amount,
+            "paid": paid,
+            "balance": max(amount-paid, 0),
+            "status": getattr(bl,"status",""),
+        })
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานรายละเอียดลูกหนี้", f"ar_detail_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานรายละเอียดลูกหนี้ (BL + ตัดด้วย RC แบบอ้างอิงเลขที่)", columns, rows, start_d, end_d, "report_ar_detail")
+
+
+@app.get("/reports/finance/ar-movement")
+@login_required
+@permission_required("reports.view")
+def report_ar_movement():
+    """
+    รายงานความเคลื่อนไหวลูกหนี้
+    - รวมรายการ BL (เพิ่มหนี้) และ RC (ตัดหนี้) ในช่วงวันที่
+    """
+    start_d, end_d = _get_date_range(90)
+
+    rows=[]
+    # BL
+    bl_qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        bl_qs = bl_qs.filter(SalesDoc.doc_type.in_(["BL","BILL"]))
+    if hasattr(SalesDoc, "date"):
+        bl_qs = bl_qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+    bls = bl_qs.options(joinedload(SalesDoc.customer)).all()
+    for bl in bls:
+        cust=getattr(bl,"customer",None)
+        rows.append({
+            "date": getattr(bl,"date",None),
+            "customer": getattr(cust,"name","") or getattr(bl,"customer_name",""),
+            "doc_no": _doc_no(bl),
+            "type": "เพิ่มหนี้ (BL)",
+            "debit": _safe_float(getattr(bl,"grand_total",0) or getattr(bl,"total",0) or 0),
+            "credit": 0.0,
+            "ref": "",
+        })
+
+    # RC
+    rc_qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        rc_qs = rc_qs.filter(SalesDoc.doc_type.in_(["RC","RECEIPT"]))
+    if hasattr(SalesDoc, "date"):
+        rc_qs = rc_qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+    rcs = rc_qs.options(joinedload(SalesDoc.customer)).all()
+    for rc in rcs:
+        cust=getattr(rc,"customer",None)
+        rows.append({
+            "date": getattr(rc,"date",None),
+            "customer": getattr(cust,"name","") or getattr(rc,"customer_name",""),
+            "doc_no": _doc_no(rc),
+            "type": "ตัดหนี้ (RC)",
+            "debit": 0.0,
+            "credit": _safe_float(getattr(rc,"grand_total",0) or getattr(rc,"total",0) or 0),
+            "ref": (getattr(rc,"ref_no","") or getattr(rc,"ref_doc_no","") or ""),
+        })
+
+    rows = sorted(rows, key=lambda r: (r["date"] or date.min, r["type"], r["doc_no"]))
+
+    columns=[("วันที่","date"),("ลูกหนี้","customer"),("เลขที่เอกสาร","doc_no"),("ประเภท","type"),("เดบิต","debit"),("เครดิต","credit"),("อ้างอิง","ref")]
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานความเคลื่อนไหวลูกหนี้", f"ar_movement_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานความเคลื่อนไหวลูกหนี้ (BL/RC)", columns, rows, start_d, end_d, "report_ar_movement")
+
+
+@app.get("/reports/finance/ar-outstanding-by-customer")
+@login_required
+@permission_required("reports.view")
+def report_ar_outstanding_by_customer():
+    """
+    รายงานยอดหนี้คงเหลือ (รายละเอียดตามรหัสลูกหนี้)
+    - สรุปยอดคงเหลือ BL - RC ต่อ "ลูกค้า"
+    - ใช้ matching ref_no (RC) = เลขที่ BL เป็นตัวตัด (MVP)
+    """
+    start_d, end_d = _get_date_range(365)
+
+    # load BL
+    bls = (SalesDoc.query
+           .filter(SalesDoc.doc_type.in_(["BL","BILL"]))
+           .filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+           .options(joinedload(SalesDoc.customer))
+           .all())
+
+    # paid by BL no (rc ref)
+    paid_by_bl = _bl_paid_map(start_d, end_d)
+
+    agg={}
+    for bl in bls:
+        cust=getattr(bl,"customer",None)
+        cid=getattr(cust,"id",None) or getattr(bl,"customer_id",None) or 0
+        agg.setdefault(cid,{
+            "customer_code": getattr(cust,"code","") or getattr(cust,"customer_code",""),
+            "customer_name": getattr(cust,"name","") or getattr(bl,"customer_name",""),
+            "debit":0.0,
+            "credit":0.0,
+            "balance":0.0,
+        })
+        docno=_doc_no(bl)
+        amount=_safe_float(getattr(bl,"grand_total",0) or getattr(bl,"total",0) or 0)
+        paid=_safe_float(paid_by_bl.get(docno,0))
+        agg[cid]["debit"] += amount
+        agg[cid]["credit"] += paid
+
+    rows=[]
+    for cid,r in agg.items():
+        r["balance"]=max(r["debit"]-r["credit"], 0)
+        rows.append(r)
+
+    rows=sorted(rows, key=lambda r: (-r["balance"], r["customer_name"]))
+
+    columns=[("รหัสลูกหนี้","customer_code"),("ชื่อลูกหนี้","customer_name"),("เพิ่มหนี้ (BL)","debit"),("ตัดหนี้ (RC)","credit"),("คงเหลือ","balance")]
+
+    if request.args.get("export") in ("1","true","yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานยอดหนี้คงเหลือ(ตามลูกหนี้)", f"ar_outstanding_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานยอดหนี้คงเหลือ (รายละเอียดตามรหัสลูกหนี้) — MVP", columns, rows, start_d, end_d, "report_ar_outstanding_by_customer")
+
+
+@app.get("/reports/finance/deposits")
+@login_required
+@permission_required("reports.view")
+def report_deposits():
+    """
+    รายงานเงินมัดจำ (Placeholder)
+    หมายเหตุ: ในระบบปัจจุบันยังไม่เห็นตาราง ledger เงินมัดจำที่ normalize
+    ถ้าคุณบอกว่า “เงินมัดจำ” อยู่ในเอกสารชนิดไหน (เช่น SalesDoc.doc_type = DP?) หรือ table ไหน
+    ผมจะทำรายงานจริงให้ตรง requirement ได้ทันที
+    """
+    return render_template("reports/empty.html",
+                          title="รายงานเงินมัดจำ",
+                          subtitle="Finance · Deposits",
+                          hint="ตอนนี้เป็น Placeholder — ต้องระบุว่าเงินมัดจำเก็บอยู่ในเอกสาร/ตารางใดในระบบปัจจุบัน")
+
+
+
+def _render_report_table(title, columns, rows, start_d, end_d, export_endpoint):
+    """render รายงานแบบตาราง + ฟิลเตอร์ช่วงวันที่"""
+    return render_template(
+        "reports/report_table.html",
+        title=title,
+        columns=columns,
+        rows=rows,
+        start=start_d.isoformat(),
+        end=end_d.isoformat(),
+        export_endpoint=export_endpoint,
+    )
+
+
+def _export_report_xlsx(title, filename, headers, rows):
+    return _xlsx_send(title, filename, headers=headers, rows=rows)
+
+
+# ---------------- Customer reports ----------------
+
+@app.get("/reports/customers/rent-history")
+@login_required
+@permission_required("reports.view")
+def report_customer_rent_history():
+    start_d, end_d = _get_date_range(90)
+
+    # ใช้ SalesDoc (CT=สัญญา) เป็นหลัก ถ้าไม่มี ให้แสดงว่าง
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["CT", "CONTRACT"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    docs = qs.order_by(SalesDoc.id.desc()).limit(2000).all()
+
+    columns = [
+        ("วันที่", "date"),
+        ("เลขที่เอกสาร", "doc_no"),
+        ("ลูกค้า", "customer_name"),
+        ("โครงการ", "project_name"),
+        ("ยอดรวม", "grand_total"),
+        ("สถานะ", "status"),
+    ]
+    rows = []
+    for d in docs:
+        rows.append(
+            {
+                "date": getattr(d, "date", None),
+                "doc_no": getattr(d, "doc_no", getattr(d, "number", "")),
+                "customer_name": getattr(getattr(d, "customer", None), "name", "") or getattr(d, "customer_name", ""),
+                "project_name": getattr(getattr(d, "project", None), "name", "") or getattr(d, "project_name", ""),
+                "grand_total": float(getattr(d, "grand_total", 0) or getattr(d, "total", 0) or 0),
+                "status": getattr(d, "status", ""),
+            }
+        )
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers = [(h, k) for h, k in columns]
+        return _export_report_xlsx("รายงานประวัติการเช่าลูกค้า", f"rent_history_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานประวัติการเช่าลูกค้า", columns, rows, start_d, end_d, "report_customer_rent_history")
+
+
+# ---------------- Sales reports ----------------
+
+@app.get("/reports/rental/quotation-status")
+@login_required
+@permission_required("reports.view")
+def report_quotation_by_status():
+    start_d, end_d = _get_date_range(90)
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["QU", "QUOTATION"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    docs = qs.all()
+    buckets = {}
+    for d in docs:
+        st = (getattr(d, "status", "") or "UNKNOWN").upper()
+        buckets.setdefault(st, {"status": st, "count": 0, "total": 0.0})
+        buckets[st]["count"] += 1
+        buckets[st]["total"] += float(getattr(d, "grand_total", 0) or getattr(d, "total", 0) or 0)
+
+    rows = sorted(buckets.values(), key=lambda r: r["status"])
+    columns = [("สถานะ", "status"), ("จำนวน", "count"), ("ยอดรวม", "total")]
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers = [(h, k) for h, k in columns]
+        return _export_report_xlsx("รายงานใบเสนอราคา (เรียงตามสถานะ)", f"quotation_status_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานใบเสนอราคา (เรียงตามสถานะ)", columns, rows, start_d, end_d, "report_quotation_by_status")
+
+
+@app.get("/reports/rental/income")
+@login_required
+@permission_required("reports.view")
+def report_rental_income():
+    start_d, end_d = _get_date_range(90)
+    # รายได้จากงานเช่า: ใช้ RC (ใบเสร็จรับเงิน) เป็นหลัก (Q3)
+    qs = SalesDoc.query
+    if hasattr(SalesDoc, "doc_type"):
+        qs = qs.filter(SalesDoc.doc_type.in_(["RC", "RECEIPT"]))
+    if hasattr(SalesDoc, "date"):
+        qs = qs.filter(SalesDoc.date >= start_d, SalesDoc.date <= end_d)
+
+    docs = qs.order_by(SalesDoc.date.asc()).all()
+    columns = [("วันที่", "date"), ("เลขที่", "doc_no"), ("ลูกค้า", "customer_name"), ("ยอดรับ", "amount"), ("อ้างอิง", "ref_no")]
+    rows = []
+    for d in docs:
+        rows.append({
+            "date": getattr(d, "date", None),
+            "doc_no": getattr(d, "doc_no", getattr(d, "number", "")),
+            "customer_name": getattr(getattr(d, "customer", None), "name", "") or getattr(d, "customer_name", ""),
+            "amount": float(getattr(d, "grand_total", 0) or getattr(d, "total", 0) or 0),
+            "ref_no": getattr(d, "ref_no", "") or getattr(d, "ref_doc_no", ""),
+        })
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานรายได้จากงานเช่า", f"rental_income_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานรายได้จากงานเช่า", columns, rows, start_d, end_d, "report_rental_income")
+
+
+# ---------------- Warehouse / Equipment reports ----------------
+
+@app.get("/reports/warehouse/stock")
+@login_required
+@permission_required("reports.view")
+def report_stock_remaining():
+    start_d, end_d = _get_date_range(365)
+    # คงเหลือปัจจุบัน (ไม่ใช้ช่วงวันที่จริงมากนัก แต่คงไว้เพื่อมาตรฐาน)
+    qs = Equipment.query
+    items = qs.order_by(Equipment.id.asc()).limit(5000).all()
+
+    columns = [("SKU", "sku"), ("ชื่ออุปกรณ์", "name"), ("หมวดหมู่", "category"), ("สถานะ", "status"), ("ราคาขาย/วัน", "rate")]
+    rows=[]
+    for it in items:
+        rows.append({
+            "sku": getattr(it, "sku", "") or getattr(it, "code", ""),
+            "name": getattr(it, "name", ""),
+            "category": getattr(getattr(it, "category", None), "name", "") or getattr(it, "category_name", ""),
+            "status": getattr(it, "status", ""),
+            "rate": float(getattr(it, "rate_day", 0) or getattr(it, "rate", 0) or 0),
+        })
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานอุปกรณ์คงเหลือ", f"stock_remaining_{date.today()}", headers, rows)
+
+    return _render_report_table("รายงานอุปกรณ์คงเหลือ", columns, rows, start_d, end_d, "report_stock_remaining")
+
+
+@app.get("/reports/repairs/open-jobs")
+@login_required
+@permission_required("reports.view")
+def report_repairs_open_jobs():
+    start_d, end_d = _get_date_range(90)
+    qs = RepairJob.query
+    if hasattr(RepairJob, "opened_at"):
+        qs = qs.filter(RepairJob.opened_at >= datetime.combine(start_d, time.min),
+                       RepairJob.opened_at <= datetime.combine(end_d, time.max))
+    # open jobs = ยังไม่ปิด
+    if hasattr(RepairJob, "closed_at"):
+        qs = qs.filter(RepairJob.closed_at.is_(None))
+
+    jobs = qs.order_by(getattr(RepairJob, "opened_at", RepairJob.id).desc()).limit(2000).all()
+    columns=[("เลขที่งานซ่อม", "number"), ("วันที่เปิด", "opened_at"), ("อุปกรณ์", "equipment"), ("ลูกค้า", "customer"), ("อาการเสีย", "symptom"), ("สถานะ", "status")]
+    rows=[]
+    for j in jobs:
+        rows.append({
+            "number": getattr(j, "number", getattr(j, "job_no", "")),
+            "opened_at": getattr(j, "opened_at", ""),
+            "equipment": getattr(getattr(j, "equipment", None), "name", ""),
+            "customer": getattr(getattr(j, "customer", None), "name", ""),
+            "symptom": getattr(j, "symptom", ""),
+            "status": getattr(j, "status", ""),
+        })
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานงานซ่อมที่เปิดแล้ว", f"repairs_open_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานงานซ่อมที่เปิดแล้ว", columns, rows, start_d, end_d, "report_repairs_open_jobs")
+
+
+@app.get("/reports/repairs/claims")
+@login_required
+@permission_required("reports.view")
+def report_repairs_claims():
+    start_d, end_d = _get_date_range(90)
+    qs = Claim.query
+    if hasattr(Claim, "created_at"):
+        qs = qs.filter(Claim.created_at >= datetime.combine(start_d, time.min),
+                       Claim.created_at <= datetime.combine(end_d, time.max))
+    claims=qs.order_by(getattr(Claim, "created_at", Claim.id).desc()).limit(2000).all()
+
+    columns=[("เลขที่เคลม", "number"), ("วันที่", "created_at"), ("ลูกค้า", "customer"), ("สถานะ", "status"), ("รายละเอียด", "note")]
+    rows=[]
+    for c in claims:
+        rows.append({
+            "number": getattr(c, "number", ""),
+            "created_at": getattr(c, "created_at", ""),
+            "customer": getattr(getattr(c, "customer", None), "name", ""),
+            "status": getattr(c, "status", ""),
+            "note": getattr(c, "note", "") or getattr(c, "symptom", ""),
+        })
+
+    if request.args.get("export") in ("1", "true", "yes"):
+        headers=[(h,k) for h,k in columns]
+        return _export_report_xlsx("รายงานใบเคลม", f"claims_{start_d}_{end_d}", headers, rows)
+
+    return _render_report_table("รายงานใบเคลม", columns, rows, start_d, end_d, "report_repairs_claims")
+
+
+# ---------------- Finance reports ----------------
+
+@app.get("/reports/finance/ar-aging")
+@login_required
+@permission_required("reports.view")
+def report_finance_ar_aging_alias():
+    # alias ไปหน้าเดิม
+    return redirect(url_for("report_ar_aging", **request.args))
+
 
 
 

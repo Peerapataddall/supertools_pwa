@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set title = "Import อุปกรณ์" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>Import อุปกรณ์</h1>
+    <div class="muted">อัปโหลด CSV เพื่อเพิ่ม/อัปเดตอุปกรณ์ (อ้างอิงหมวดด้วย prefix)</div>
+  </div>
+  <div class="actions"><a class="btn btn-ghost" href="{{ url_for('import_index') }}">กลับ</a></div>
+</div>
+
+<div class="card"><div class="card-body">
+  <div class="alert alert-info">
+    รูปแบบ CSV (หัวตาราง):<br>
+    <code>sku,name,brand,warehouse,category_prefix,received_date,cost,life_years,life_months,life_days,status</code><br>
+    - received_date รูปแบบ <code>YYYY-MM-DD</code><br>
+    - ถ้า <b>sku ซ้ำ</b> ระบบจะอัปเดตข้อมูลให้
+  </div>
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".csv" class="form-control" required>
+    <button class="btn btn-primary mt-3" type="submit"><i class="bi bi-upload"></i> อัปโหลด</button>
+  </form>
+
+  {% if result %}
+  <hr>
+  <h6>ผลลัพธ์</h6>
+  <ul class="mb-0">
+    <li>เพิ่มใหม่: {{ result.created }}</li>
+    <li>อัปเดต: {{ result.updated }}</li>
+    <li>ข้าม/ผิดพลาด: {{ result.skipped }}</li>
+  </ul>
+  {% endif %}
+</div></div>
+{% endblock %}

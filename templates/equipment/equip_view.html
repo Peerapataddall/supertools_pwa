@@ -116,6 +116,72 @@
       </div>
     </div>
 
+
+
+    <!-- ชุดที่ 2: ราคาเช่าแบบต่อช่วง + วันหมดอายุ -->
+    <div class="st-card">
+      <div class="st-card-hd d-flex align-items-center gap-2">
+        <i class="bi bi-tags"></i> ราคาเช่า (ต่อช่วง) & วันหมดอายุ
+      </div>
+      <div class="st-card-bd">
+        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
+          <div>
+            {% if e.expiry_date %}
+              {% set dte = e.days_to_expiry %}
+              <span class="muted">หมดอายุ: </span>
+              <b>{{ e.expiry_date|strftime('%d/%m/%Y') }}</b>
+              {% if dte is not none %}
+                {% if dte <= 30 %}
+                  <span class="chip bad ms-2"><i class="bi bi-exclamation-triangle"></i> เหลือ {{ dte }} วัน</span>
+                {% elif dte <= 90 %}
+                  <span class="chip warn ms-2"><i class="bi bi-hourglass-split"></i> เหลือ {{ dte }} วัน</span>
+                {% else %}
+                  <span class="chip ms-2"><i class="bi bi-check2"></i> เหลือ {{ dte }} วัน</span>
+                {% endif %}
+              {% endif %}
+            {% else %}
+              <span class="muted">ยังไม่กำหนดวันหมดอายุ (กำหนดอายุการใช้งานเพื่อให้ระบบแจ้งเตือน)</span>
+            {% endif %}
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <label class="muted">ลองคำนวณ:</label>
+            <input id="rentDays" type="number" min="1" value="1" class="form-control form-control-sm" style="width:90px">
+            <button id="calcRent" class="btn btn-sm btn-outline-primary" type="button">คำนวณราคา</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr class="text-muted">
+                <th>ช่วง (วัน)</th>
+                <th class="text-end">ราคา</th>
+                <th>ชื่อช่วง</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if e.price_plans %}
+                {% for p in e.price_plans %}
+                <tr>
+                  <td>{{ p.duration_days }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(p.price or 0) }}</td>
+                  <td>{{ p.label or '-' }}</td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="3" class="text-muted">ยังไม่มีช่วงราคา (ระบบจะใช้ราคาเข้าคืนทุน/วันเป็นค่าเริ่มต้น)</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <div class="muted">รวมทั้งหมด</div>
+          <div class="fw-semibold" id="rentTotal">-</div>
+        </div>
+        <div id="rentBreakdown" class="muted small mt-1"></div>
+      </div>
+    </div>
     <!-- ชุดที่ 3: รายละเอียดค่าเสื่อมสภาพปัจจุบัน -->
     <div class="st-card">
       <div class="st-card-hd d-flex align-items-center gap-2">
@@ -192,4 +258,26 @@
   </div>
 </div>
 
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  const btn = document.getElementById('calcRent');
+  const daysEl = document.getElementById('rentDays');
+  const totalEl = document.getElementById('rentTotal');
+  const bdEl = document.getElementById('rentBreakdown');
+  async function calc(){
+    const days = parseInt(daysEl?.value || '0', 10) || 0;
+    if (!days){ totalEl.textContent='-'; bdEl.textContent=''; return; }
+    const res = await fetch(`{{ url_for('api_equipment_rental_price', eid=e.id) }}?days=${days}`);
+    const data = await res.json();
+    totalEl.textContent = new Intl.NumberFormat().format(data.total.toFixed(2)) + ' บาท';
+    const items = (data.breakdown || []).map(x=> `${x.duration_days}วัน=${new Intl.NumberFormat().format((x.price||0).toFixed(2))}`);
+    bdEl.textContent = items.length ? ('รายละเอียด: ' + items.join(' + ')) : '';
+  }
+  btn?.addEventListener('click', calc);
+  daysEl?.addEventListener('change', calc);
+  calc();
+</script>
 {% endblock %}

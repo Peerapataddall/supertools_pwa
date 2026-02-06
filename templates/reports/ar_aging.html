@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set title = "รายงานลูกหนี้คงค้าง (AR Aging)" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>รายงานลูกหนี้คงค้าง (AR Aging)</h1>
+    <div class="muted">อ้างอิงใบวางบิล (BL) และตัดหนี้ด้วยใบเสร็จรับเงิน (RC) • ณ วันที่ {{ as_of }}</div>
+  </div>
+  <div class="actions">
+    <form method="get" class="d-flex gap-2 align-items-end flex-wrap">
+      <div>
+        <label class="form-label mb-1">เริ่มต้น</label>
+        <input class="form-control" type="date" name="start" value="{{ start }}">
+      </div>
+      <div>
+        <label class="form-label mb-1">สิ้นสุด / ณ วันที่</label>
+        <input class="form-control" type="date" name="end" value="{{ end }}">
+      </div>
+      <div class="pb-0">
+        <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> ดูรายงาน</button>
+      </div>
+      <div class="pb-0">
+        <a class="btn btn-outline-light" href="{{ url_for('report_ar_aging', start=start, end=end, export=1) }}">
+          <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-2 mb-2">
+  <div class="col-md-3">
+    <div class="card p-2">
+      <div class="muted small">ยอดคงค้างรวม</div>
+      <div class="h5 mb-0">{{ '%.2f'|format(summary.total_due or 0) }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-2">
+      <div class="muted small">0-30 วัน</div>
+      <div class="h5 mb-0">{{ '%.2f'|format(summary.b0_30 or 0) }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-2">
+      <div class="muted small">31-60 วัน</div>
+      <div class="h5 mb-0">{{ '%.2f'|format(summary.b31_60 or 0) }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-2">
+      <div class="muted small">>60 วัน</div>
+      <div class="h5 mb-0">{{ '%.2f'|format((summary.b61_90 or 0) + (summary.b90p or 0)) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-0">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0">
+      <thead>
+        <tr>
+          <th>รหัสลูกค้า</th>
+          <th>ชื่อลูกค้า</th>
+          <th class="text-end">ยอดคงค้าง</th>
+          <th class="text-end">0-30</th>
+          <th class="text-end">31-60</th>
+          <th class="text-end">61-90</th>
+          <th class="text-end">90+</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.customer_code }}</td>
+          <td>{{ r.customer_name }}</td>
+          <td class="text-end">{{ '%.2f'|format(r.total_due or 0) }}</td>
+          <td class="text-end">{{ '%.2f'|format(r.b0_30 or 0) }}</td>
+          <td class="text-end">{{ '%.2f'|format(r.b31_60 or 0) }}</td>
+          <td class="text-end">{{ '%.2f'|format(r.b61_90 or 0) }}</td>
+          <td class="text-end">{{ '%.2f'|format(r.b90p or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-white-50 py-4">ไม่มีข้อมูล</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

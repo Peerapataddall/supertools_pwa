@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set title = "ดู RN - Legacy" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>ดู RN - Legacy</h1>
+    <div class="muted">{{ rn.doc_no if rn else '' }}</div>
+  </div>
+  <div class="actions">
+    {% if rn %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('rn_list') }}">กลับ</a>
+    <a class="btn btn-primary" target="_blank" href="{{ url_for('rn_print', rn_id=rn.id) }}">พิมพ์</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card"><div class="card-body">
+  {% if not rn %}
+    <div class="alert alert-danger mb-0">ไม่พบเอกสาร</div>
+  {% else %}
+    <div class="row g-2">
+      <div class="col-md-4"><b>ลูกค้า:</b> {{ rn.customer.name if rn.customer else '-' }}</div>
+      <div class="col-md-4"><b>วันที่:</b> {{ rn.doc_date }}</div>
+      <div class="col-md-4"><b>สถานะ:</b> {{ rn.status }}</div>
+    </div>
+    <hr>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>SKU</th><th>รายการ</th><th class="text-end">จำนวน</th></tr></thead>
+        <tbody>
+          {% for it in rn.items %}
+          <tr>
+            <td>{{ it.sku }}</td>
+            <td>{{ it.name }}</td>
+            <td class="text-end">{{ it.qty }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div></div>
+{% endblock %}

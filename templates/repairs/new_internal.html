@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}เปิดงานซ่อมเอง{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h5 m-0"><i class="bi bi-plus-circle"></i> เปิดงานซ่อมเอง (งานซ่อมภายใน)</h1>
+      <div class="text-muted small">ไม่ออกใบเสนอราคา • ใช้สำหรับบันทึกการซ่อมบำรุงภายใน</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('repairs.list_') }}">
+      <i class="bi bi-arrow-left"></i> กลับ
+    </a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+
+      <form class="row g-2 mb-3" method="get">
+        <div class="col-md-8">
+          <input class="form-control" name="q" value="{{ q or '' }}" placeholder="ค้นหาอุปกรณ์ด้วย SKU หรือชื่อ" />
+        </div>
+        <div class="col-md-4 d-grid">
+          <button class="btn btn-outline-primary" type="submit"><i class="bi bi-search me-1"></i>ค้นหา</button>
+        </div>
+      </form>
+
+      <form method="post" class="row g-3">
+        <div class="col-12">
+          <label class="form-label">เลือกอุปกรณ์ <span class="text-danger">*</span></label>
+          <select class="form-select" name="equipment_id" required>
+            <option value="">— เลือก —</option>
+            {% for e in equipments %}
+              <option value="{{ e.id }}">{{ e.sku }} — {{ e.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">ถ้าไม่เจอ ให้พิมพ์ค้นหาแล้วกดค้นหาอีกครั้ง (แสดง 50 รายการแรก)</div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">หัวข้องานซ่อม</label>
+          <input class="form-control" name="title" placeholder="เว้นว่างได้ ระบบจะใช้ชื่ออุปกรณ์" />
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">รายละเอียด / อาการ</label>
+          <textarea class="form-control" name="notes" rows="4" placeholder="เช่น เสียงดัง, สตาร์ทไม่ติด, เปลี่ยนถ่าน, ทำความสะอาด ฯลฯ"></textarea>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-success" type="submit">
+            <i class="bi bi-check2-circle me-1"></i> บันทึกและเปิดงาน
+          </button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('repairs.list_') }}">ยกเลิก</a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

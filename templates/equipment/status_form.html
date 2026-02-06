@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set title = "แก้ไขสถานะอุปกรณ์" if is_edit else "เพิ่มสถานะอุปกรณ์" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>{{ "แก้ไขสถานะอุปกรณ์" if is_edit else "เพิ่มสถานะอุปกรณ์" }}</h1>
+    <div class="muted">Code ใช้เป็นค่าที่บันทึกในฐานข้อมูล (แนะนำตัวพิมพ์ใหญ่ เช่น READY)</div>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ url_for('equip_status_list') }}">กลับ</a>
+  </div>
+</div>
+
+<div class="card"><div class="card-body">
+  <form method="post">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Code</label>
+        <input class="form-control" name="code" value="{{ s.code if s else '' }}" {% if is_edit %}readonly{% endif %} required>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">ชื่อสถานะ (ไทย)</label>
+        <input class="form-control" name="label_th" value="{{ s.label_th if s else '' }}" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">สถานะใช้งาน</label>
+        <select class="form-select" name="is_active">
+          <option value="1" {% if (s and s.is_active) or not s %}selected{% endif %}>ใช้งาน</option>
+          <option value="0" {% if s and not s.is_active %}selected{% endif %}>ปิด</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> บันทึก</button>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

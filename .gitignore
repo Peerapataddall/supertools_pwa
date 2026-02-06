@@ -17,3 +17,4 @@ instance/
 
 # IDE settings
 .vscode/
+static/uploads/

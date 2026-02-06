@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set title = "นำเข้าข้อมูล (Import)" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>นำเข้าข้อมูล (Import)</h1>
+    <div class="muted">อัปโหลดไฟล์ CSV เพื่อเพิ่ม/อัปเดตข้อมูลเข้าระบบ</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h5 class="mb-1">นำเข้าหมวดหมู่</h5>
+      <div class="muted mb-3">CSV columns: name,prefix_sku</div>
+      <a class="btn btn-primary" href="{{ url_for('import_categories') }}">ไปหน้าอัปโหลด</a>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h5 class="mb-1">นำเข้าอุปกรณ์</h5>
+      <div class="muted mb-3">CSV columns: sku,name,brand,warehouse,category_prefix,received_date,cost,life_years,life_months,life_days,status</div>
+      <a class="btn btn-primary" href="{{ url_for('import_equipment') }}">ไปหน้าอัปโหลด</a>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

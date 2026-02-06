@@ -11,12 +11,17 @@
       <i class="bi bi-tools"></i>
       งานซ่อม
     </h1>
-    <form class="d-flex" method="get" action="{{ url_for('repairs.list_') }}">
+    <div class="d-flex align-items-center gap-2">
+      <a class="btn btn-sm btn-success" href="{{ url_for('repairs.new_') }}">
+        <i class="bi bi-plus-circle me-1"></i> เปิดงานซ่อมเอง
+      </a>
+      <form class="d-flex" method="get" action="{{ url_for('repairs.list_') }}">
       <input type="search" class="form-control form-control-sm me-2" name="q"
              placeholder="ค้นหาเลขที่งาน/เคลม/ลูกค้า/อุปกรณ์"
              value="{{ request.args.get('q','') }}">
       <button class="btn btn-sm btn-outline-secondary">ค้นหา</button>
     </form>
+    </div>
   </div>
 
   <!-- Tabs filter -->

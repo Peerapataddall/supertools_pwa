@@ -95,6 +95,7 @@
           <tr class="text-nowrap">
             <th style="width:220px;">Prefix</th>
             <th>ชื่อหมวดหมู่</th>
+            <th class="text-end" style="width:160px;">จัดการ</th>
           </tr>
         </thead>
         <tbody id="catTbody">
@@ -102,6 +103,12 @@
           <tr data-key="{{ (c.prefix_sku ~ ' ' ~ c.name)|lower }}">
             <td><span class="prefix-badge"><i class="bi bi-upc-scan"></i> {{ c.prefix_sku }}</span></td>
             <td class="fw-semibold">{{ c.name }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('cat_edit', cid=c.id) }}" title="แก้ไข"><i class="bi bi-pencil"></i></a>
+              <form method="post" action="{{ url_for('cat_delete', cid=c.id) }}" style="display:inline;" onsubmit="return confirm('ลบหมวดหมู่นี้?')">
+                <button class="btn btn-sm btn-outline-danger" type="submit" title="ลบ"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
           </tr>
           {% else %}
           <tr><td colspan="2" class="text-center text-muted py-4">

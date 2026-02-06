@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set title = "ใบคืนสินค้า (RN) - Legacy" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>ใบคืนสินค้า (RN) - Legacy</h1>
+    <div class="muted">หน้านี้สร้างไว้เพื่อไม่ให้ route เดิม 500 (สามารถย้ายไปใช้ Return Note ใหม่ได้)</div>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('returns_new') if 'returns_new' in globals() else '#' }}">สร้างใบคืน (ใหม่)</a>
+  </div>
+</div>
+
+<div class="card"><div class="card-body">
+  {% if rns %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>เลขที่</th><th>วันที่</th><th>ลูกค้า</th><th class="text-end">รายการ</th><th></th></tr></thead>
+      <tbody>
+        {% for d in rns %}
+        <tr>
+          <td>{{ d.doc_no }}</td>
+          <td>{{ d.doc_date }}</td>
+          <td>{{ d.customer.name if d.customer else '-' }}</td>
+          <td class="text-end">{{ d.items|length }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('rn_view', rn_id=d.id) }}">เปิด</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="alert alert-info mb-0">ยังไม่มีข้อมูล RN (Legacy)</div>
+  {% endif %}
+</div></div>
+{% endblock %}

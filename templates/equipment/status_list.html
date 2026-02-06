@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set title = "สถานะอุปกรณ์" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>สถานะอุปกรณ์</h1>
+    <div class="muted">กำหนดหัวข้อสถานะเองได้ (ใช้เป็นชื่อที่แสดงในระบบ)</div>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('equip_status_new') }}"><i class="bi bi-plus-circle"></i> เพิ่มสถานะ</a>
+  </div>
+</div>
+
+<div class="card"><div class="card-body">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th style="width:160px;">Code</th>
+          <th>ชื่อสถานะ (ไทย)</th>
+          <th class="text-center" style="width:120px;">ใช้งาน</th>
+          <th class="text-end" style="width:160px;">จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in statuses %}
+        <tr>
+          <td><span class="badge text-bg-light">{{ s.code }}</span></td>
+          <td class="fw-semibold">{{ s.label_th }}</td>
+          <td class="text-center">
+            {% if s.is_active %}<span class="badge text-bg-success">ON</span>{% else %}<span class="badge text-bg-secondary">OFF</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('equip_status_edit', sid=s.id) }}"><i class="bi bi-pencil"></i></a>
+            <form method="post" action="{{ url_for('equip_status_delete', sid=s.id) }}" style="display:inline;" onsubmit="return confirm('ลบสถานะนี้?')">
+              <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% set title = "สร้างใบคืนจากใบจอง (BK)" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>สร้างใบคืนจากใบจอง (BK)</h1>
+    <div class="muted">เลือก BK แล้วสร้าง Return Note</div>
+  </div>
+</div>
+
+<div class="card"><div class="card-body">
+  <form method="get" class="row g-2">
+    <div class="col-md-6">
+      <label class="form-label">ค้นหา BK</label>
+      <input class="form-control" name="q" placeholder="เลขที่ใบจอง/ชื่อลูกค้า" value="{{ request.args.get('q','') }}">
+    </div>
+    <div class="col-md-2 d-flex align-items-end">
+      <button class="btn btn-primary w-100" type="submit"><i class="bi bi-search"></i> ค้นหา</button>
+    </div>
+  </form>
+  <hr>
+  {% if bks %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>เลขที่ BK</th><th>วันที่</th><th>ลูกค้า</th><th class="text-end">รายการ</th><th></th></tr></thead>
+      <tbody>
+        {% for b in bks %}
+        <tr>
+          <td>{{ b.doc_no }}</td>
+          <td>{{ b.doc_date }}</td>
+          <td>{{ b.customer.name if b.customer else '-' }}</td>
+          <td class="text-end">{{ b.items|length }}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('returns_create_from_bk', bk_id=b.id) }}">
+              <button class="btn btn-sm btn-success" type="submit">สร้างใบคืน</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="alert alert-info mb-0">ไม่มีข้อมูล BK ตามเงื่อนไข</div>
+  {% endif %}
+</div></div>
+{% endblock %}

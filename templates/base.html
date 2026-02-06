@@ -28,9 +28,7 @@
       --shell-radius:1.5rem;
     }
 
-    html,body{
-      height:100%;
-    }
+    html,body{ height:100%; }
 
     body{
       margin:0;
@@ -56,13 +54,10 @@
       z-index:1030;
     }
 
-    .brandbar .container-fluid{
-      max-width:1440px;
-    }
+    .brandbar .container-fluid{ max-width:1440px; }
 
     .brand-logo{
-      width:48px;
-      height:48px;
+      width:48px; height:48px;
       object-fit:cover;
       border-radius:16px;
       display:block;
@@ -98,7 +93,6 @@
       color:#111827;
       box-shadow:0 4px 14px rgba(15,23,42,.18);
     }
-
     .avatar-sm{ width:28px; height:28px; font-size:.8rem; font-weight:700; }
     .avatar-md{ width:40px; height:40px; font-size:1rem; font-weight:700; }
     .avatar-initials{ line-height:1; }
@@ -138,13 +132,10 @@
       overflow:auto;
     }
 
-    .st-sidebar-header{
-      padding:0 .6rem .25rem;
-    }
+    .st-sidebar-header{ padding:0 .6rem .25rem; }
 
     .st-sidebar-logo{
-      width:40px;
-      height:40px;
+      width:40px; height:40px;
       border-radius:14px;
       object-fit:cover;
       box-shadow:0 8px 22px rgba(15,23,42,.35);
@@ -161,26 +152,16 @@
     }
 
     @media (max-width:991.98px){
-      .st-shell{
-        padding:1rem;
-      }
-      .st-main-area{
-        border-radius:1.25rem;
-      }
+      .st-shell{ padding:1rem; }
+      .st-main-area{ border-radius:1.25rem; }
     }
-
     @media (max-width:767.98px){
-      .st-shell{
-        padding:0.75rem;
-      }
+      .st-shell{ padding:0.75rem; }
     }
 
     /* ===== Sidebar nav styling ===== */
     .st-side-nav{ font-size:.9rem; }
-
-    .st-side-nav-section + .st-side-nav-section{
-      margin-top:0.35rem;
-    }
+    .st-side-nav-section + .st-side-nav-section{ margin-top:0.35rem; }
 
     .st-side-nav-label{
       font-size:.75rem;
@@ -203,17 +184,8 @@
       transition:all .18s ease-out;
     }
 
-    .st-side-link i{
-      font-size:1rem;
-      flex-shrink:0;
-      opacity:.95;
-    }
-
-    .st-side-link span{
-      white-space:nowrap;
-      text-overflow:ellipsis;
-      overflow:hidden;
-    }
+    .st-side-link i{ font-size:1rem; flex-shrink:0; opacity:.95; }
+    .st-side-link span{ white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
 
     .st-side-link::before{
       content:"";
@@ -229,10 +201,7 @@
       transform:translateX(3px);
       background:rgba(15,23,42,.55);
     }
-
-    .st-side-link:hover::before{
-      opacity:1;
-    }
+    .st-side-link:hover::before{ opacity:1; }
 
     .st-side-link.is-active{
       background:linear-gradient(135deg,#ffffff,#fef3e7);
@@ -240,14 +209,8 @@
       box-shadow:0 14px 40px rgba(15,23,42,.55);
       transform:translateX(2px);
     }
-
-    .st-side-link.is-active i{
-      color:var(--brand-accent);
-    }
-
-    .st-side-link.is-active::before{
-      opacity:0;
-    }
+    .st-side-link.is-active i{ color:var(--brand-accent); }
+    .st-side-link.is-active::before{ opacity:0; }
 
     /* ✅ Disabled menu item (no route yet) */
     .st-side-link.is-disabled{
@@ -276,9 +239,7 @@
       box-shadow:0 10px 28px rgba(15,23,42,.08);
     }
 
-    footer{
-      color:#6b7280;
-    }
+    footer{ color:#6b7280; }
   </style>
 
   {% block head %}{% endblock %}
@@ -341,6 +302,7 @@
       {% set initials = (parts[0][0] ~ (parts|length>1 and parts[-1][0] or ''))|upper %}
       {% set is_admin = ((current_user.is_admin | default(false, true)) or (current_user.is_superuser | default(false, true))) %}
       {% set ep = request.endpoint or '' %}
+      {% set notif_count = notif_count|default(0, true) %}
 
       <div class="d-flex align-items-center gap-2 mb-3">
         <div class="avatar avatar-md"><span class="avatar-initials">{{ initials }}</span></div>
@@ -362,6 +324,17 @@
             </a>
           </li>
           {% endif %}
+
+          {# Notifications #}
+          <li>
+            <a href="{{ url_for('notifications_index') }}" class="st-side-link {% if request.path.startswith('/notifications') %}is-active{% endif %}">
+              <i class="bi bi-bell"></i>
+              <span>Notifications</span>
+              {% if notif_count and notif_count > 0 %}
+                <span class="badge rounded-pill bg-danger ms-auto">{{ notif_count }}</span>
+              {% endif %}
+            </a>
+          </li>
 
           {# 6.1.1 ระบบลูกค้า #}
           {% if can('customers.view') or is_admin %}
@@ -427,7 +400,9 @@
           {% if can('equipment.view') or is_admin %}
           {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
           {% set is_eq_new  = ep in ['equip_new'] %}
-          {% set is_cat     = ep in ['cat_list','cat_new'] %}
+          {% set is_cat     = ep in ['cat_list','cat_new','cat_edit'] %}
+          {% set is_stat    = ep in ['equip_status_list','equip_status_new','equip_status_edit'] %}
+          {% set is_import  = ep in ['import_index','import_categories','import_equipment'] %}
           <li class="st-side-nav-section mt-3">
             <div class="st-side-nav-label">6.1.3 ระบบคลังสินค้า</div>
             <ul class="list-unstyled mb-0">
@@ -448,6 +423,18 @@
                 <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
                   <i class="bi bi-tags"></i>
                   <span>หมวดหมู่</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('equip_status_list') }}" class="st-side-link {% if is_stat %}is-active{% endif %}">
+                  <i class="bi bi-toggle-on"></i>
+                  <span>สถานะอุปกรณ์</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('import_index') }}" class="st-side-link {% if is_import %}is-active{% endif %}">
+                  <i class="bi bi-upload"></i>
+                  <span>นำเข้าข้อมูล (Import)</span>
                 </a>
               </li>
               {% endif %}
@@ -633,14 +620,170 @@
           </li>
           {% endif %}
 
+          
           {# 6.1.8 ระบบรายงาน (เพิ่มเติม) #}
           <li class="st-side-nav-section mt-3">
-            <div class="st-side-nav-label">6.1.8 รายงาน (เพิ่มเติม)</div>
+            <div class="st-side-nav-label">6.1.8 ระบบรายงาน (เพิ่มเติม)</div>
             <ul class="list-unstyled mb-0">
-              <li><a class="st-side-link is-disabled" href="#"><i class="bi bi encourages bi-bar-chart-line"></i><span>กลุ่มรายงาน (ตาม Requirement)</span></a></li>
-              <li><a class="st-side-link is-disabled" href="#"><i class="bi bi-graph-up"></i><span>รายงานงานเช่า/คลัง/ซ่อม/การเงิน (ชุดใหญ่)</span></a></li>
+              <li class="text-white-50 small px-2 mt-1">กลุ่มรายงาน</li>
+
+              <li class="text-white-50 small px-2 mt-2">ระบบลูกค้า</li>
+              <li>
+                <a href="{{ url_for('report_customer_rent_history') }}" class="st-side-link {% if ep=='report_customer_rent_history' %}is-active{% endif %}">
+                  <i class="bi bi-clock-history"></i>
+                  <span>รายงานประวัติการเช่าลูกค้า</span>
+                </a>
+              </li>
+
+              <li class="text-white-50 small px-2 mt-2">ระบบงานเช่า</li>
+              <li>
+                <a href="{{ url_for('report_quotation_by_status') }}" class="st-side-link {% if ep=='report_quotation_by_status' %}is-active{% endif %}">
+                  <i class="bi bi-file-text"></i>
+                  <span>รายงานใบเสนอราคา (เรียงตามสถานะ)</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_by_customer') }}" class="st-side-link {% if ep=='report_rental_by_customer' %}is-active{% endif %}">
+                  <i class="bi bi-person-lines-fill"></i>
+                  <span>รายงานใบงานเช่า (รายละเอียดตามรหัสลูกค้า)</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_income') }}" class="st-side-link {% if ep=='report_rental_income' %}is-active{% endif %}">
+                  <i class="bi bi-cash-coin"></i>
+                  <span>รายงานรายได้จากงานเช่า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_equipment_status', status='RENTED') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='RENTED' %}is-active{% endif %}">
+                  <i class="bi bi-box-arrow-up-right"></i>
+                  <span>รายงานอุปกรณ์ถูกเช่า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_equipment_status', status='REPAIR') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='REPAIR' %}is-active{% endif %}">
+                  <i class="bi bi-tools"></i>
+                  <span>รายงานอุปกรณ์รอซ่อม</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_equipment_status', status='READY') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='READY' %}is-active{% endif %}">
+                  <i class="bi bi-check2-circle"></i>
+                  <span>รายงานอุปกรณ์พร้อมให้เช่า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_by_project') }}" class="st-side-link {% if ep=='report_rental_by_project' %}is-active{% endif %}">
+                  <i class="bi bi-diagram-3"></i>
+                  <span>รายงานอุปกรณ์ถูกเช่าแยกตามโครงการ</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_due_return') }}" class="st-side-link {% if ep=='report_rental_due_return' %}is-active{% endif %}">
+                  <i class="bi bi-calendar-event"></i>
+                  <span>รายงานกำหนดคืนอุปกรณ์</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_rental_pattern') }}" class="st-side-link {% if ep=='report_rental_pattern' %}is-active{% endif %}">
+                  <i class="bi bi-bar-chart-line"></i>
+                  <span>รายงานแบบการเช่าลูกค้า (รายวัน/รายเดือน/รายปี)</span>
+                </a>
+              </li>
+
+              <li class="text-white-50 small px-2 mt-2">ระบบคลังสินค้า</li>
+              <li>
+                <a href="{{ url_for('report_stock_remaining') }}" class="st-side-link {% if ep=='report_stock_remaining' %}is-active{% endif %}">
+                  <i class="bi bi-boxes"></i>
+                  <span>รายงานอุปกรณ์คงเหลือ</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_warehouse_received') }}" class="st-side-link {% if ep=='report_warehouse_received' %}is-active{% endif %}">
+                  <i class="bi bi-truck"></i>
+                  <span>รายงานอุปกรณ์ที่รับเข้า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_warehouse_by_category') }}" class="st-side-link {% if ep=='report_warehouse_by_category' %}is-active{% endif %}">
+                  <i class="bi bi-tags"></i>
+                  <span>รายงานอุปกรณ์ตามหมวดหมู่สินค้า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_spares_remaining') }}" class="st-side-link {% if ep=='report_spares_remaining' %}is-active{% endif %}">
+                  <i class="bi bi-nut"></i>
+                  <span>รายงานอะไหล่คงเหลือ</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_spares_used_in_repairs') }}" class="st-side-link {% if ep=='report_spares_used_in_repairs' %}is-active{% endif %}">
+                  <i class="bi bi-wrench-adjustable"></i>
+                  <span>รายงานอะไหล่ถูกใช้ในงานซ่อม</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_deliveries') }}" class="st-side-link {% if ep=='report_deliveries' %}is-active{% endif %}">
+                  <i class="bi bi-truck-front"></i>
+                  <span>รายงานการส่งมอบอุปกรณ์</span>
+                </a>
+              </li>
+
+              <li class="text-white-50 small px-2 mt-2">ระบบซ่อมบำรุง</li>
+              <li>
+                <a href="{{ url_for('report_repairs_claims') }}" class="st-side-link {% if ep=='report_repairs_claims' %}is-active{% endif %}">
+                  <i class="bi bi-shield-exclamation"></i>
+                  <span>รายงานใบเคลม</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_repairs_open_jobs') }}" class="st-side-link {% if ep=='report_repairs_open_jobs' %}is-active{% endif %}">
+                  <i class="bi bi-tools"></i>
+                  <span>รายงานงานซ่อมที่เปิดแล้ว</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_repairs_equipment_status') }}" class="st-side-link {% if ep=='report_repairs_equipment_status' %}is-active{% endif %}">
+                  <i class="bi bi-clipboard2-pulse"></i>
+                  <span>รายงานสถานะอุปกรณ์งานซ่อม</span>
+                </a>
+              </li>
+
+              <li class="text-white-50 small px-2 mt-2">ระบบการเงิน และบัญชี</li>
+              <li>
+                <a href="{{ url_for('report_rental_income') }}" class="st-side-link {% if ep=='report_rental_income' %}is-active{% endif %}">
+                  <i class="bi bi-cash-coin"></i>
+                  <span>รายงานรายได้จากการเช่า</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_ar_detail') }}" class="st-side-link {% if ep=='report_ar_detail' %}is-active{% endif %}">
+                  <i class="bi bi-receipt"></i>
+                  <span>รายงานรายละเอียดลูกหนี้</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_ar_movement') }}" class="st-side-link {% if ep=='report_ar_movement' %}is-active{% endif %}">
+                  <i class="bi bi-arrow-left-right"></i>
+                  <span>รายงานความเคลื่อนไหวลูกหนี้</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_ar_outstanding_by_customer') }}" class="st-side-link {% if ep=='report_ar_outstanding_by_customer' %}is-active{% endif %}">
+                  <i class="bi bi-clipboard-data"></i>
+                  <span>รายงานยอดหนี้คงเหลือ (รายละเอียดตามรหัสลูกหนี้)</span>
+                </a>
+              </li>
+              <li>
+                <a href="{{ url_for('report_deposits') }}" class="st-side-link {% if ep=='report_deposits' %}is-active{% endif %}">
+                  <i class="bi bi-piggy-bank"></i>
+                  <span>รายงานเงินมัดจำ</span>
+                </a>
+              </li>
+
             </ul>
           </li>
+
 
           {# การตั้งค่า (คงไว้ท้ายสุด) #}
           {% if can('users.manage') or is_admin or can('company.manage') %}
@@ -694,6 +837,8 @@
 <div class="st-shell">
   {% if current_user.is_authenticated %}
   <aside class="st-sidebar d-none d-md-flex flex-column">
+    {% set notif_count = notif_count|default(0, true) %}
+
     <div class="st-sidebar-header d-flex align-items-center gap-2 mb-3">
       <img src="{{ url_for('static', filename='images/logo-supertool.png') }}" alt="Supertools" class="st-sidebar-logo">
       <div>
@@ -715,6 +860,17 @@
         </li>
         {% endif %}
 
+        {# Notifications (Desktop) #}
+        <li>
+          <a href="{{ url_for('notifications_index') }}" class="st-side-link {% if request.path.startswith('/notifications') %}is-active{% endif %}">
+            <i class="bi bi-bell"></i>
+            <span>Notifications</span>
+            {% if notif_count and notif_count > 0 %}
+              <span class="badge rounded-pill bg-danger ms-auto">{{ notif_count }}</span>
+            {% endif %}
+          </a>
+        </li>
+
         {# 6.1.1 ระบบลูกค้า #}
         {% if can('customers.view') or is_admin %}
         <li class="st-side-nav-section mt-3">
@@ -728,9 +884,9 @@
             </li>
             <li>
               <a class="st-side-link" href="{{ url_for('rent_history_list') }}">
-                  <i class="bi bi-clock-history"></i>
-                  <span>ดูประวัติการเช่า</span>
-                </a>
+                <i class="bi bi-clock-history"></i>
+                <span>ดูประวัติการเช่า</span>
+              </a>
             </li>
           </ul>
         </li>
@@ -779,7 +935,9 @@
         {% if can('equipment.view') or is_admin %}
         {% set is_eq_list = ep in ['equip_list','equip_view','equip_edit'] %}
         {% set is_eq_new  = ep in ['equip_new'] %}
-        {% set is_cat     = ep in ['cat_list','cat_new'] %}
+        {% set is_cat     = ep in ['cat_list','cat_new','cat_edit'] %}
+        {% set is_stat    = ep in ['equip_status_list','equip_status_new','equip_status_edit'] %}
+        {% set is_import  = ep in ['import_index','import_categories','import_equipment'] %}
         <li class="st-side-nav-section mt-3">
           <div class="st-side-nav-label">6.1.3 ระบบคลังสินค้า</div>
           <ul class="list-unstyled mb-0">
@@ -800,6 +958,18 @@
               <a href="{{ url_for('cat_list') }}" class="st-side-link {% if is_cat %}is-active{% endif %}">
                 <i class="bi bi-tags"></i>
                 <span>หมวดหมู่</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('equip_status_list') }}" class="st-side-link {% if is_stat %}is-active{% endif %}">
+                <i class="bi bi-toggle-on"></i>
+                <span>สถานะอุปกรณ์</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('import_index') }}" class="st-side-link {% if is_import %}is-active{% endif %}">
+                <i class="bi bi-upload"></i>
+                <span>นำเข้าข้อมูล (Import)</span>
               </a>
             </li>
             {% endif %}
@@ -985,18 +1155,169 @@
         </li>
         {% endif %}
 
+        
         {# 6.1.8 ระบบรายงาน (เพิ่มเติม) #}
         <li class="st-side-nav-section mt-3">
-          <div class="st-side-nav-label">6.1.8 รายงาน (เพิ่มเติม)</div>
+          <div class="st-side-nav-label">6.1.8 ระบบรายงาน (เพิ่มเติม)</div>
           <ul class="list-unstyled mb-0">
+            <li class="text-white-50 small px-2 mt-1">กลุ่มรายงาน</li>
+
+            <li class="text-white-50 small px-2 mt-2">ระบบลูกค้า</li>
             <li>
-              <a class="st-side-link is-disabled" href="#">
+              <a href="{{ url_for('report_customer_rent_history') }}" class="st-side-link {% if ep=='report_customer_rent_history' %}is-active{% endif %}">
+                <i class="bi bi-clock-history"></i>
+                <span>รายงานประวัติการเช่าลูกค้า</span>
+              </a>
+            </li>
+
+            <li class="text-white-50 small px-2 mt-2">ระบบงานเช่า</li>
+            <li>
+              <a href="{{ url_for('report_quotation_by_status') }}" class="st-side-link {% if ep=='report_quotation_by_status' %}is-active{% endif %}">
+                <i class="bi bi-file-text"></i>
+                <span>รายงานใบเสนอราคา (เรียงตามสถานะ)</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_by_customer') }}" class="st-side-link {% if ep=='report_rental_by_customer' %}is-active{% endif %}">
+                <i class="bi bi-person-lines-fill"></i>
+                <span>รายงานใบงานเช่า (รายละเอียดตามรหัสลูกค้า)</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_income') }}" class="st-side-link {% if ep=='report_rental_income' %}is-active{% endif %}">
+                <i class="bi bi-cash-coin"></i>
+                <span>รายงานรายได้จากงานเช่า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_equipment_status', status='RENTED') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='RENTED' %}is-active{% endif %}">
+                <i class="bi bi-box-arrow-up-right"></i>
+                <span>รายงานอุปกรณ์ถูกเช่า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_equipment_status', status='REPAIR') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='REPAIR' %}is-active{% endif %}">
+                <i class="bi bi-tools"></i>
+                <span>รายงานอุปกรณ์รอซ่อม</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_equipment_status', status='READY') }}" class="st-side-link {% if ep=='report_rental_equipment_status' and request.args.get('status')=='READY' %}is-active{% endif %}">
+                <i class="bi bi-check2-circle"></i>
+                <span>รายงานอุปกรณ์พร้อมให้เช่า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_by_project') }}" class="st-side-link {% if ep=='report_rental_by_project' %}is-active{% endif %}">
+                <i class="bi bi-diagram-3"></i>
+                <span>รายงานอุปกรณ์ถูกเช่าแยกตามโครงการ</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_due_return') }}" class="st-side-link {% if ep=='report_rental_due_return' %}is-active{% endif %}">
+                <i class="bi bi-calendar-event"></i>
+                <span>รายงานกำหนดคืนอุปกรณ์</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_rental_pattern') }}" class="st-side-link {% if ep=='report_rental_pattern' %}is-active{% endif %}">
                 <i class="bi bi-bar-chart-line"></i>
-                <span>รายงานตาม Requirement (ชุดใหญ่)</span>
+                <span>รายงานแบบการเช่าลูกค้า (รายวัน/รายเดือน/รายปี)</span>
+              </a>
+            </li>
+
+            <li class="text-white-50 small px-2 mt-2">ระบบคลังสินค้า</li>
+            <li>
+              <a href="{{ url_for('report_stock_remaining') }}" class="st-side-link {% if ep=='report_stock_remaining' %}is-active{% endif %}">
+                <i class="bi bi-boxes"></i>
+                <span>รายงานอุปกรณ์คงเหลือ</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_warehouse_received') }}" class="st-side-link {% if ep=='report_warehouse_received' %}is-active{% endif %}">
+                <i class="bi bi-truck"></i>
+                <span>รายงานอุปกรณ์ที่รับเข้า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_warehouse_by_category') }}" class="st-side-link {% if ep=='report_warehouse_by_category' %}is-active{% endif %}">
+                <i class="bi bi-tags"></i>
+                <span>รายงานอุปกรณ์ตามหมวดหมู่สินค้า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_spares_remaining') }}" class="st-side-link {% if ep=='report_spares_remaining' %}is-active{% endif %}">
+                <i class="bi bi-nut"></i>
+                <span>รายงานอะไหล่คงเหลือ</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_spares_used_in_repairs') }}" class="st-side-link {% if ep=='report_spares_used_in_repairs' %}is-active{% endif %}">
+                <i class="bi bi-wrench-adjustable"></i>
+                <span>รายงานอะไหล่ถูกใช้ในงานซ่อม</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_deliveries') }}" class="st-side-link {% if ep=='report_deliveries' %}is-active{% endif %}">
+                <i class="bi bi-truck-front"></i>
+                <span>รายงานการส่งมอบอุปกรณ์</span>
+              </a>
+            </li>
+
+            <li class="text-white-50 small px-2 mt-2">ระบบซ่อมบำรุง</li>
+            <li>
+              <a href="{{ url_for('report_repairs_claims') }}" class="st-side-link {% if ep=='report_repairs_claims' %}is-active{% endif %}">
+                <i class="bi bi-shield-exclamation"></i>
+                <span>รายงานใบเคลม</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_repairs_open_jobs') }}" class="st-side-link {% if ep=='report_repairs_open_jobs' %}is-active{% endif %}">
+                <i class="bi bi-tools"></i>
+                <span>รายงานงานซ่อมที่เปิดแล้ว</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_repairs_equipment_status') }}" class="st-side-link {% if ep=='report_repairs_equipment_status' %}is-active{% endif %}">
+                <i class="bi bi-clipboard2-pulse"></i>
+                <span>รายงานสถานะอุปกรณ์งานซ่อม</span>
+              </a>
+            </li>
+
+            <li class="text-white-50 small px-2 mt-2">ระบบการเงิน และบัญชี</li>
+            <li>
+              <a href="{{ url_for('report_rental_income') }}" class="st-side-link {% if ep=='report_rental_income' %}is-active{% endif %}">
+                <i class="bi bi-cash-coin"></i>
+                <span>รายงานรายได้จากการเช่า</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_ar_detail') }}" class="st-side-link {% if ep=='report_ar_detail' %}is-active{% endif %}">
+                <i class="bi bi-receipt"></i>
+                <span>รายงานรายละเอียดลูกหนี้</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_ar_movement') }}" class="st-side-link {% if ep=='report_ar_movement' %}is-active{% endif %}">
+                <i class="bi bi-arrow-left-right"></i>
+                <span>รายงานความเคลื่อนไหวลูกหนี้</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_ar_outstanding_by_customer') }}" class="st-side-link {% if ep=='report_ar_outstanding_by_customer' %}is-active{% endif %}">
+                <i class="bi bi-clipboard-data"></i>
+                <span>รายงานยอดหนี้คงเหลือ (รายละเอียดตามรหัสลูกหนี้)</span>
+              </a>
+            </li>
+            <li>
+              <a href="{{ url_for('report_deposits') }}" class="st-side-link {% if ep=='report_deposits' %}is-active{% endif %}">
+                <i class="bi bi-piggy-bank"></i>
+                <span>รายงานเงินมัดจำ</span>
               </a>
             </li>
           </ul>
         </li>
+
 
         {# การตั้งค่า #}
         {% if can('users.manage') or is_admin or can('company.manage') %}
