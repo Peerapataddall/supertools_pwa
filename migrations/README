@@ -1,8 +1,1 @@
-Updated files:
-1) supertools_pwa/app.py
-   - _clone_items now copies allocated_skus/category fields
-   - added _backfill_child_allocated_skus to repair existing BL/IV/RC docs created before fix
-   - _doc_view and bl_print/iv_print/rc_print call backfill
-
-2) supertools_pwa/templates/sales/sd_print.html
-   - print now shows SKU full using allocated_skus (or fallback to [SKU] in name or equipment.sku/code)
+Single-database configuration for Flask.
